@@ -1,67 +1,84 @@
-# 招行信用卡账单自动分析（本地）
+# 知恒 KeepWise
 
-这个项目用于读取你导出的 `eml` 账单，自动生成分类统计和可交互 HTML 报告。
+> 本地优先的个人财富管理工具。  
+> 当前版本已实现：信用卡账单自动解析、消费分类、预算核对分析报告。
+
+## 项目定位
+
+**知恒（KeepWise）** 目标是做一个本地运行、数据可控的财富管理软件：
+
+- 投资记录与资产管理是核心
+- 消费记录用于预算核对与资金复盘
+- 默认本地处理，不依赖云端保存个人财务数据
+
+当前仓库阶段：已完成“支出盘点模块”。
+
+## 当前可用功能
+
+- 批量解析招行信用卡 `eml` 账单
+- 自动分类（商户映射 + 关键词规则）
+- 待确认交易输出（便于人工校对）
+- 排除规则（如购车大额：保留明细、排除统计）
+- 交互式 HTML 报告：
+  - 月份单选
+  - 分类/商户筛选
+  - 交易列表排序
+  - 趋势图金额点位
+  - 金额隐私开关（`***`）
 
 ## 快速开始（3 步）
 
-1. 把账单文件放到这个目录：`data/input/raw/eml/cmb/`
-2. 在项目根目录执行：`./run_report.sh`
-3. 打开报告：`data/output/reports/consumption_report.html`
-
-就这么简单。日常使用只需要这 3 步。
-
-## 你只需要记住的目录
-
-- `data/input/raw/eml/cmb/`  
-  放原始账单 `eml` 文件。
-- `data/output/reports/`  
-  查看最终报告（用户主要使用这里）。
-- `data/rules/`  
-  可编辑规则文件（分类、排除等）。
-- `data/work/processed/`  
-  中间和分析数据（给后续深度分析使用）。
-
-## 规则文件怎么用
-
-首次运行后会自动生成这 3 个文件：
-
-- `data/rules/merchant_map.csv`：商户映射到分类
-- `data/rules/category_rules.csv`：关键词分类规则
-- `data/rules/analysis_exclusions.csv`：排除分析规则（如购车大额）
-
-常见做法：
-
-1. 跑一次脚本，看报告和待确认记录。
-2. 补充 `merchant_map.csv` 里未识别商户的分类。
-3. 再跑一次脚本，分类会更准确。
-
-## 报告里能看到什么
-
-- 总消费、均额、月度趋势、分类占比
-- 高频商户筛选、分类筛选、关键词筛选
-- 可排序交易列表
-- 隐私眼睛开关（隐藏金额为 `***`）
-
-## 关于“排除统计但保留数据”
-
-如果有一次性大额支出（例如购车）会干扰日常消费分析，可以在  
-`data/rules/analysis_exclusions.csv` 增加规则。
-
-效果是：
-
-- 原始交易仍然保留在明细数据里
-- 但不会计入日常消费分析口径
-
-## 进阶：手动运行命令（可选）
-
-如果你需要自定义参数，可以使用：
+1. 把账单文件放到：`data/input/raw/eml/cmb/`
+2. 在项目根目录运行：
 
 ```bash
-python3 scripts/parse_cmb_statements.py \
-  --input data/input/raw/eml/cmb \
-  --glob "*.eml" \
-  --out data/work/processed \
-  --merchant-map data/rules/merchant_map.csv \
-  --category-rules data/rules/category_rules.csv \
-  --analysis-exclusions data/rules/analysis_exclusions.csv
+./run_report.sh
 ```
+
+3. 打开报告：`data/output/reports/consumption_report.html`
+
+## 目录说明
+
+- `data/input/raw/eml/cmb/`：原始账单输入目录
+- `data/rules/`：可编辑规则目录
+- `data/output/reports/`：用户查看报告目录
+- `data/work/processed/`：处理中间数据目录
+
+## 规则维护
+
+首次运行会自动生成规则文件：
+
+- `data/rules/merchant_map.csv`
+- `data/rules/category_rules.csv`
+- `data/rules/analysis_exclusions.csv`
+
+建议流程：
+
+1. 先跑一次报告
+2. 查看待确认与商户建议
+3. 补充规则
+4. 再跑一次提升准确率
+
+## 输出文件
+
+主要查看：
+
+- `data/output/reports/consumption_report.html`
+- `data/output/reports/consumption_analysis.json`
+
+分析明细：
+
+- `data/work/processed/statements/transactions.csv`
+- `data/work/processed/category/classified_transactions.csv`
+- `data/work/processed/category/needs_review.csv`
+
+## 隐私与安全
+
+- 数据默认仅在本地处理
+- 支持报告金额隐藏（隐私眼睛）
+- `.gitignore` 默认忽略用户账单、规则内容、处理中间数据与报告产物
+
+## 开发计划
+
+后续将进入“本地财富管理主模块”开发（投资账户、资产总览、预算、AI 建议）。  
+详见：`DEVELOPMENT_PLAN.md`
