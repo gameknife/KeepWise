@@ -1,0 +1,32 @@
+# macOS / Python cache
+.DS_Store
+__pycache__/
+*.py[cod]
+
+# Local databases / temp
+data/db/
+*.log
+
+# User input data (raw statements / manual records)
+data/input/raw/**
+!data/input/raw/
+!data/input/raw/**/
+!data/input/raw/**/.gitkeep
+
+# User-maintained private rules
+data/rules/**
+!data/rules/
+!data/rules/**/
+!data/rules/**/.gitkeep
+
+# Processing artifacts
+data/work/processed/**
+!data/work/processed/
+!data/work/processed/**/
+!data/work/processed/**/.gitkeep
+
+# User-facing generated reports
+data/output/reports/**
+!data/output/reports/
+!data/output/reports/**/
+!data/output/reports/**/.gitkeep
