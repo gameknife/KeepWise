@@ -1,7 +1,13 @@
 # 知恒 KeepWise
 
+[![Demo](https://img.shields.io/badge/Demo-GitHub%20Pages-2ea44f?style=for-the-badge)](https://gameknife.github.io/KeepWise/examples/demo/)
+
 > 本地优先的个人财富管理工具。  
 > 当前版本已实现：信用卡账单自动解析、消费分类、预算核对分析报告。
+
+## 在线 Demo
+
+**立即体验（GitHub Pages）：[https://gameknife.github.io/KeepWise/examples/demo/](https://gameknife.github.io/KeepWise/examples/demo/)**
 
 ## 项目定位
 
@@ -37,6 +43,30 @@
 
 3. 打开报告：`data/output/reports/consumption_report.html`
 
+## Demo 示例（已脱敏）
+
+在线地址（推荐直接访问）：
+
+- [https://gameknife.github.io/KeepWise/examples/demo/](https://gameknife.github.io/KeepWise/examples/demo/)
+
+仓库内已提供可交互示例：
+
+- `examples/demo/consumption_report.html`
+- `examples/demo/index.html`（用于 GitHub Pages 目录入口）
+
+配套数据与 CSV：
+
+- `examples/demo/consumption_analysis.json`
+- `examples/category/summary_by_expense_category.csv`
+- `examples/category/summary_by_merchant.csv`
+- `examples/category/needs_review.csv`
+
+说明：
+
+- 示例数据已做商户/摘要/来源脱敏。
+- 金额已做混淆处理，仅用于交互展示。
+- 若希望在 GitHub 上直接在线访问交互页面，建议启用 GitHub Pages 并指向该文件。
+
 ## 目录说明
 
 - `data/input/raw/eml/cmb/`：原始账单输入目录
@@ -58,6 +88,14 @@
 2. 查看待确认与商户建议
 3. 补充规则
 4. 再跑一次提升准确率
+
+## 生成脱敏 Demo（可选）
+
+当你更新了本地真实数据后，可重新生成示例：
+
+```bash
+python3 scripts/generate_demo_example.py
+```
 
 ## 输出文件
 
