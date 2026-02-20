@@ -231,6 +231,7 @@ def parse_manual_rows(
                     "account_name": account_name,
                     "total_assets_cents": 0,
                     "transfer_amount_cents": 0,
+                    "has_total_assets": False,
                 },
             )
             if account_name:
@@ -243,12 +244,23 @@ def parse_manual_rows(
             total_assets_text = row_get(row, mapping_idx.get("total_assets"))
             if total_assets_text:
                 bucket["total_assets_cents"] = parse_amount_to_cents(total_assets_text)
+                bucket["has_total_assets"] = True
         except (ValueError, InvalidOperation) as exc:
             errors.append(f"第{i}行: {exc}")
 
     parsed: list[ParsedInvestmentRow] = []
+    last_known_assets_cents: int | None = None
     for snapshot_date in sorted(buckets.keys()):
         item = buckets[snapshot_date]
+        if item["has_total_assets"]:
+            last_known_assets_cents = item["total_assets_cents"]
+        elif last_known_assets_cents is not None:
+            # 手动流水里部分日期只有资金进出，没有总资产快照，沿用上一条总资产避免错误归零。
+            item["total_assets_cents"] = last_known_assets_cents
+        elif item["transfer_amount_cents"] != 0:
+            errors.append(f"{snapshot_date}: 缺少总资产金额且无可继承历史值，已跳过该日期")
+            continue
+
         if item["total_assets_cents"] == 0 and item["transfer_amount_cents"] == 0:
             continue
         parsed.append(

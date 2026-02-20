@@ -137,3 +137,25 @@
   - 交易总账深度 CRUD。
   - 预算、对账、AI 建议。
   - 云同步与复杂自动化。
+
+## 13) M1 当前落地进展（已实现）
+
+- 新增迁移：`db/migrations/0004_add_account_valuations.sql`
+  - 新表 `account_valuations`：用于现金/不动产按账户快照记录。
+- `scripts/m0_web_app.py` 新增能力：
+  - 现金/不动产手工录入：`POST /api/assets/manual`
+  - 账户元数据：`GET /api/meta/accounts`
+  - 投资区间收益率（现金加权/Modified Dietz）：
+    - `GET /api/analytics/investment-return`
+  - 投资资产曲线：
+    - `GET /api/analytics/investment-curve`
+  - 财富总览：
+    - `GET /api/analytics/wealth-overview`
+  - 财富增长曲线：
+    - `GET /api/analytics/wealth-curve`
+- `scripts/assets/m0_app.html` 与 `scripts/assets/m0_app.css` 已扩展为 M1 工作台：
+  - 导入中心（保留）
+  - 记录录入（投资 + 现金/不动产）
+  - 收益分析（区间收益率 + 投资总资产曲线 + 区间累计收益率曲线）
+  - 财富总览（聚合 + 财富曲线）
+  - 基础查询（交易/投资/非投资资产）

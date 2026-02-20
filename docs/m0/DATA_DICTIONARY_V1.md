@@ -76,6 +76,22 @@
 | account_type | TEXT | 是 | `credit_card/investment/...` |
 | currency | TEXT | 是 | 币种 |
 
+### 2.5 account_valuations（现金/不动产快照）
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| id | TEXT | 是 | 主键 |
+| account_id | TEXT | 是 | 账户 ID |
+| account_name | TEXT | 是 | 账户名称 |
+| asset_class | TEXT | 是 | `cash` / `real_estate` |
+| snapshot_date | TEXT | 是 | 快照日期 |
+| value_cents | INTEGER | 是 | 资产金额（分） |
+| source_type | TEXT | 是 | 目前为 `manual` |
+| source_file | TEXT | 否 | 文件来源（预留） |
+| import_job_id | TEXT | 否 | 导入任务（预留） |
+| created_at | TEXT | 是 | 创建时间 |
+| updated_at | TEXT | 是 | 更新时间 |
+
 ## 3. 必要数据结构调整（M0）
 
 1. `import_jobs.source_type` 扩展支持 `youzhiyouxing_export`。
@@ -83,6 +99,7 @@
 3. 为基础查询建立索引：
    - `transactions(month_key, source_type)`
    - `investment_records(snapshot_date, source_type, account_id)`
+   - `account_valuations(asset_class, snapshot_date, account_id)`
 
 ## 4. 基础查询口径（M0）
 

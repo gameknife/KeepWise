@@ -3,24 +3,26 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>KeepWise M0 工作台</title>
+  <title>KeepWise M1 工作台</title>
   <link rel="stylesheet" href="/assets/m0_app.css">
 </head>
 <body>
   <div class="container">
     <section class="hero">
-      <h1>KeepWise M0 工作台</h1>
-      <p>范围：EML 交互导入、投资记录单条录入、有知有行批量导入、基础查询展示。</p>
+      <h1>KeepWise M1 工作台</h1>
+      <p>主线：投资记录维护、区间收益率（现金加权）、财富总览、增长曲线。</p>
       <div class="tabs">
         <button class="tab-btn active" data-tab="tab-import">导入中心</button>
-        <button class="tab-btn" data-tab="tab-invest-manual">投资单条录入</button>
+        <button class="tab-btn" data-tab="tab-records">记录录入</button>
+        <button class="tab-btn" data-tab="tab-return">收益分析</button>
+        <button class="tab-btn" data-tab="tab-wealth">财富总览</button>
         <button class="tab-btn" data-tab="tab-query">基础查询</button>
       </div>
     </section>
 
     <section id="tab-import" class="panel">
       <h2>导入中心</h2>
-      <p class="hint">先预览再确认导入。EML 使用文件上传；有知有行支持 CSV / XLSX。</p>
+      <p class="hint">先预览再确认导入。EML 支持多文件；有知有行支持 CSV / XLSX。</p>
 
       <h3>EML 导入</h3>
       <div class="row">
@@ -68,36 +70,191 @@
       </div>
     </section>
 
-    <section id="tab-invest-manual" class="panel hidden">
-      <h2>投资记录单条录入</h2>
-      <p class="hint">金额单位为元，系统入库时自动转为分。</p>
-      <div class="row-3">
+    <section id="tab-records" class="panel hidden">
+      <h2>记录录入</h2>
+      <p class="hint">金额单位为元，系统自动转换为分。</p>
+
+      <div class="split-grid">
+        <div class="sub-panel">
+          <h3>投资记录单条录入</h3>
+          <div class="row-3">
+            <div>
+              <label>账户名称</label>
+              <input id="invAccountName" type="text" value="有知有行投资账户">
+            </div>
+            <div>
+              <label>快照日期</label>
+              <input id="invSnapshotDate" type="date">
+            </div>
+            <div>
+              <label>总资产（元）</label>
+              <input id="invTotalAssets" type="number" step="0.01">
+            </div>
+            <div>
+              <label>转入转出金额（元）</label>
+              <input id="invTransferAmount" type="number" step="0.01" value="0">
+            </div>
+          </div>
+          <div class="actions">
+            <button id="invSaveBtn" class="btn primary">保存投资记录</button>
+          </div>
+          <div id="invStatus" class="status hidden"></div>
+        </div>
+
+        <div class="sub-panel">
+          <h3>现金/不动产记录录入</h3>
+          <div class="row-3">
+            <div>
+              <label>资产类型</label>
+              <select id="assetClass">
+                <option value="cash">现金账户</option>
+                <option value="real_estate">不动产账户</option>
+              </select>
+            </div>
+            <div>
+              <label>账户名称</label>
+              <input id="assetAccountName" type="text" value="家庭现金账户">
+            </div>
+            <div>
+              <label>快照日期</label>
+              <input id="assetSnapshotDate" type="date">
+            </div>
+            <div>
+              <label>资产金额（元）</label>
+              <input id="assetValue" type="number" step="0.01">
+            </div>
+          </div>
+          <div class="actions">
+            <button id="assetSaveBtn" class="btn primary">保存资产记录</button>
+          </div>
+          <div id="assetStatus" class="status hidden"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="tab-return" class="panel hidden">
+      <h2>收益分析（现金加权）</h2>
+      <p class="hint">公式：Modified Dietz。支持 YTD、近一年、近三年、成立以来、自定义区间。</p>
+
+      <div class="row-4">
         <div>
-          <label>账户名称</label>
-          <input id="invAccountName" type="text" value="有知有行投资账户">
+          <label>投资账户</label>
+          <select id="retAccountId"></select>
         </div>
         <div>
-          <label>快照日期</label>
-          <input id="invSnapshotDate" type="date">
+          <label>区间预设</label>
+          <select id="retPreset">
+            <option value="ytd">年度（YTD）</option>
+            <option value="1y" selected>近一年</option>
+            <option value="3y">近三年</option>
+            <option value="since_inception">成立以来</option>
+            <option value="custom">自定义</option>
+          </select>
         </div>
         <div>
-          <label>总资产（元）</label>
-          <input id="invTotalAssets" type="number" step="0.01">
+          <label>开始日期（custom）</label>
+          <input id="retFrom" type="date">
         </div>
         <div>
-          <label>转入转出金额（元）</label>
-          <input id="invTransferAmount" type="number" step="0.01" value="0">
+          <label>结束日期（可选）</label>
+          <input id="retTo" type="date">
         </div>
       </div>
       <div class="actions">
-        <button id="invSaveBtn" class="btn primary">保存记录</button>
+        <button id="retRefreshAccountsBtn" class="btn secondary">刷新账户列表</button>
       </div>
-      <div id="invStatus" class="status hidden"></div>
+      <div id="retStatus" class="status hidden"></div>
+      <div id="retMetrics" class="grid-metrics hidden"></div>
+
+      <div class="pill-tabs" id="retChartTabs">
+        <button class="pill-tab active" data-view="asset">总资产曲线</button>
+        <button class="pill-tab" data-view="return">累计收益率曲线</button>
+      </div>
+
+      <div id="retChartAssetView" class="chart-card">
+        <div class="chart-header">投资账户总资产曲线</div>
+        <div id="retCurveLegend" class="legend hidden"></div>
+        <div id="retCurveChart" class="chart-host"></div>
+      </div>
+
+      <div id="retChartReturnView" class="chart-card hidden">
+        <div class="chart-header">区间累计收益率曲线（现金加权）</div>
+        <div id="retRateLegend" class="legend hidden"></div>
+        <div id="retRateChart" class="chart-host"></div>
+      </div>
+
+      <div class="table-wrap hidden" id="retFlowWrap">
+        <table>
+          <thead>
+            <tr><th>日期</th><th>转入转出(元)</th><th>权重</th></tr>
+          </thead>
+          <tbody id="retFlowBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="tab-wealth" class="panel hidden">
+      <h2>财富总览</h2>
+      <p class="hint">按投资、现金、不动产三类聚合展示，并支持随时间曲线。</p>
+
+      <h3>总览快照</h3>
+      <div class="row">
+        <div>
+          <label>as_of（可选）</label>
+          <input id="wealthAsOf" type="date">
+        </div>
+        <div></div>
+      </div>
+      <div class="actions">
+        <button id="wealthOverviewBtn" class="btn primary">查询总览</button>
+      </div>
+      <div id="wealthStatus" class="status hidden"></div>
+      <div id="wealthMetrics" class="grid-metrics hidden"></div>
+      <div class="table-wrap hidden" id="wealthRowsWrap">
+        <table>
+          <thead>
+            <tr><th>类型</th><th>账户</th><th>日期</th><th>金额(元)</th></tr>
+          </thead>
+          <tbody id="wealthRowsBody"></tbody>
+        </table>
+      </div>
+
+      <h3 style="margin-top:16px">财富增长曲线</h3>
+      <div class="row-4">
+        <div>
+          <label>区间预设</label>
+          <select id="wealthPreset">
+            <option value="ytd">年度（YTD）</option>
+            <option value="1y" selected>近一年</option>
+            <option value="3y">近三年</option>
+            <option value="since_inception">成立以来</option>
+            <option value="custom">自定义</option>
+          </select>
+        </div>
+        <div>
+          <label>开始日期（custom）</label>
+          <input id="wealthFrom" type="date">
+        </div>
+        <div>
+          <label>结束日期（可选）</label>
+          <input id="wealthTo" type="date">
+        </div>
+        <div></div>
+      </div>
+      <div class="actions">
+        <button id="wealthCurveBtn" class="btn secondary">加载财富曲线</button>
+      </div>
+      <div id="wealthCurveMetrics" class="grid-metrics hidden"></div>
+      <div class="chart-card">
+        <div class="chart-header">财富总览曲线</div>
+        <div id="wealthCurveLegend" class="legend hidden"></div>
+        <div id="wealthCurveChart" class="chart-host"></div>
+      </div>
     </section>
 
     <section id="tab-query" class="panel hidden">
       <h2>基础查询</h2>
-      <p class="hint">仅提供筛选、列表与简单汇总。</p>
+      <p class="hint">提供交易、投资、非投资资产记录的筛选与列表。</p>
 
       <h3>交易查询</h3>
       <div class="row-3">
@@ -113,9 +270,7 @@
       <div id="qTxMetrics" class="grid-metrics hidden"></div>
       <div class="table-wrap hidden" id="qTxWrap">
         <table>
-          <thead>
-            <tr><th>日期</th><th>商户</th><th>摘要</th><th>金额(元)</th><th>分类</th><th>来源</th></tr>
-          </thead>
+          <thead><tr><th>日期</th><th>商户</th><th>摘要</th><th>金额(元)</th><th>分类</th><th>来源</th></tr></thead>
           <tbody id="qTxBody"></tbody>
         </table>
       </div>
@@ -134,10 +289,34 @@
       <div id="qInvMetrics" class="grid-metrics hidden"></div>
       <div class="table-wrap hidden" id="qInvWrap">
         <table>
-          <thead>
-            <tr><th>日期</th><th>账户</th><th>总资产(元)</th><th>转入转出(元)</th><th>来源</th></tr>
-          </thead>
+          <thead><tr><th>日期</th><th>账户</th><th>总资产(元)</th><th>转入转出(元)</th><th>来源</th></tr></thead>
           <tbody id="qInvBody"></tbody>
+        </table>
+      </div>
+
+      <h3 style="margin-top:16px">非投资资产查询</h3>
+      <div class="row-3">
+        <div><label>开始日期</label><input id="qAssetFrom" type="date"></div>
+        <div><label>结束日期</label><input id="qAssetTo" type="date"></div>
+        <div>
+          <label>资产类型</label>
+          <select id="qAssetClass">
+            <option value="">全部</option>
+            <option value="cash">现金</option>
+            <option value="real_estate">不动产</option>
+          </select>
+        </div>
+        <div><label>账户 ID</label><input id="qAssetAccountId" type="text"></div>
+        <div><label>limit</label><input id="qAssetLimit" type="number" value="100"></div>
+      </div>
+      <div class="actions">
+        <button id="qAssetBtn" class="btn secondary">查询非投资资产</button>
+      </div>
+      <div id="qAssetMetrics" class="grid-metrics hidden"></div>
+      <div class="table-wrap hidden" id="qAssetWrap">
+        <table>
+          <thead><tr><th>日期</th><th>类型</th><th>账户</th><th>金额(元)</th><th>来源</th></tr></thead>
+          <tbody id="qAssetBody"></tbody>
         </table>
       </div>
     </section>
@@ -147,10 +326,40 @@
     const state = {
       emlPreviewToken: "",
       yzxyPreviewToken: "",
+      investmentAccounts: [],
     };
 
     function money(cents) {
       return (Number(cents || 0) / 100).toFixed(2);
+    }
+
+    function pct(value) {
+      if (value === null || value === undefined || Number.isNaN(Number(value))) return "-";
+      return `${(Number(value) * 100).toFixed(2)}%`;
+    }
+
+    function formatYuanShortFromCents(cents) {
+      const yuan = Number(cents || 0) / 100;
+      const abs = Math.abs(yuan);
+      if (abs >= 100000000) return `${(yuan / 100000000).toFixed(2)}亿`;
+      if (abs >= 10000) return `${(yuan / 10000).toFixed(1)}万`;
+      return yuan.toFixed(0);
+    }
+
+    function buildReturnReferenceLines(rows) {
+      const candidates = [-30, -20, -10, -5, 0, 5, 10, 20, 30, 40, 50];
+      const values = (rows || [])
+        .map(row => Number(row.cumulative_return_pct))
+        .filter(v => Number.isFinite(v));
+      const minVal = values.length ? Math.min(...values) : -5;
+      const maxVal = values.length ? Math.max(...values) : 5;
+      return candidates
+        .filter(v => v >= minVal - 2 && v <= maxVal + 2)
+        .map(v => ({
+          value: v,
+          label: `${v}%`,
+          color: v === 0 ? "#b45309" : "#d2d9c7",
+        }));
     }
 
     function setStatus(el, ok, text) {
@@ -217,6 +426,242 @@
           });
         });
       });
+    }
+
+    function setTodayIfEmpty(elId) {
+      const el = document.getElementById(elId);
+      if (el && !el.value) {
+        el.value = new Date().toISOString().slice(0, 10);
+      }
+    }
+
+    function syncCustomDateState(selectId, fromInputId) {
+      const selectEl = document.getElementById(selectId);
+      const fromEl = document.getElementById(fromInputId);
+      const apply = () => {
+        const isCustom = selectEl.value === "custom";
+        fromEl.disabled = !isCustom;
+        if (!isCustom) fromEl.value = "";
+      };
+      selectEl.addEventListener("change", apply);
+      apply();
+    }
+
+    function renderLineChart(hostId, legendId, rows, seriesDefs, options = {}) {
+      const host = document.getElementById(hostId);
+      const legend = document.getElementById(legendId);
+      if (!rows || rows.length === 0) {
+        host.innerHTML = `<div class="empty">暂无可视化数据</div>`;
+        legend.classList.add("hidden");
+        return;
+      }
+
+      const width = 1000;
+      const height = 360;
+      const padLeft = 60;
+      const padRight = 24;
+      const padTop = 16;
+      const padBottom = 30;
+      const chartWidth = width - padLeft - padRight;
+      const chartHeight = height - padTop - padBottom;
+
+      const yTickCount = Math.max(2, Number(options.yTickCount || 4));
+      const includeZero = options.includeZero !== false;
+      const yAxisFormatter = options.yAxisFormatter || ((v) => `${Number(v).toFixed(2)}`);
+      const referenceLines = Array.isArray(options.referenceLines) ? options.referenceLines : [];
+
+      const values = rows.flatMap(row => seriesDefs.map(s => Number(row[s.key])));
+      const numericValues = values.filter(v => Number.isFinite(v));
+      if (numericValues.length === 0) {
+        host.innerHTML = `<div class="empty">暂无可视化数据</div>`;
+        legend.classList.add("hidden");
+        return;
+      }
+
+      let minVal = Math.min(...numericValues);
+      let maxVal = Math.max(...numericValues);
+      if (includeZero) {
+        minVal = Math.min(minVal, 0);
+        maxVal = Math.max(maxVal, 0);
+      }
+      if (Number.isFinite(options.minValue)) minVal = Number(options.minValue);
+      if (Number.isFinite(options.maxValue)) maxVal = Number(options.maxValue);
+      if (Math.abs(maxVal - minVal) < 1e-9) {
+        const padding = Math.max(1, Math.abs(maxVal) * 0.1);
+        minVal -= padding;
+        maxVal += padding;
+      }
+      const span = maxVal - minVal;
+      const xStep = rows.length > 1 ? chartWidth / (rows.length - 1) : 0;
+
+      const x = idx => padLeft + idx * xStep;
+      const y = val => padTop + ((maxVal - val) / span) * chartHeight;
+
+      const gridLines = [];
+      const yLabels = [];
+      for (let i = 0; i <= yTickCount; i += 1) {
+        const ratio = i / yTickCount;
+        const val = maxVal - ratio * span;
+        const yy = y(val);
+        gridLines.push(
+          `<line x1="${padLeft}" y1="${yy.toFixed(2)}" x2="${width - padRight}" y2="${yy.toFixed(2)}" stroke="#e3e8d8" stroke-width="1" />`
+        );
+        yLabels.push(
+          `<text x="${padLeft - 8}" y="${(yy + 4).toFixed(2)}" font-size="11" text-anchor="end" fill="#6a767f">${yAxisFormatter(val)}</text>`
+        );
+      }
+
+      const refLineSvg = referenceLines
+        .filter(line => Number.isFinite(line.value))
+        .filter(line => line.value >= minVal && line.value <= maxVal)
+        .map(line => {
+          const yy = y(Number(line.value));
+          const color = line.color || "#d2d9c7";
+          return `
+            <line x1="${padLeft}" y1="${yy.toFixed(2)}" x2="${width - padRight}" y2="${yy.toFixed(2)}" stroke="${color}" stroke-width="1.2" stroke-dasharray="5 4" />
+            <text x="${padLeft + 4}" y="${(yy - 4).toFixed(2)}" font-size="11" fill="${color}">${line.label || ""}</text>
+          `;
+        }).join("");
+
+      const seriesPaths = seriesDefs.map(def => {
+        const segments = [];
+        let current = [];
+        rows.forEach((row, idx) => {
+          const val = Number(row[def.key]);
+          if (!Number.isFinite(val)) {
+            if (current.length > 1) {
+              segments.push(current);
+            }
+            current = [];
+            return;
+          }
+          current.push(`${x(idx).toFixed(2)},${y(val).toFixed(2)}`);
+        });
+        if (current.length > 1) segments.push(current);
+        return segments
+          .map(points => `<polyline fill="none" stroke="${def.color}" stroke-width="2.4" points="${points.join(" ")}" />`)
+          .join("");
+      }).join("");
+
+      const xStartLabel = rows[0].snapshot_date || "";
+      const xEndLabel = rows[rows.length - 1].snapshot_date || "";
+
+      host.innerHTML = `
+        <div class="chart-stage">
+          <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet" class="chart-svg">
+            ${gridLines.join("")}
+            ${yLabels.join("")}
+            ${refLineSvg}
+            <line x1="${padLeft}" y1="${height - padBottom}" x2="${width - padRight}" y2="${height - padBottom}" stroke="#cfd8c3" stroke-width="1.2" />
+            <line x1="${padLeft}" y1="${padTop}" x2="${padLeft}" y2="${height - padBottom}" stroke="#cfd8c3" stroke-width="1.2" />
+            ${seriesPaths}
+            <line data-role="hover-line" x1="${padLeft}" y1="${padTop}" x2="${padLeft}" y2="${height - padBottom}" stroke="#6f7f86" stroke-width="1.2" stroke-dasharray="4 4" visibility="hidden" />
+            ${seriesDefs.map((def, idx) => `
+              <circle data-role="hover-dot" data-series="${idx}" r="4.5" fill="#fff" stroke="${def.color}" stroke-width="2" visibility="hidden" />
+            `).join("")}
+            <text x="${padLeft}" y="${height - 8}" font-size="11" fill="#6a767f">${xStartLabel}</text>
+            <text x="${width - padRight - 90}" y="${height - 8}" font-size="11" fill="#6a767f">${xEndLabel}</text>
+            <rect data-role="overlay" x="${padLeft}" y="${padTop}" width="${chartWidth}" height="${chartHeight}" fill="transparent" />
+          </svg>
+          <div class="chart-tooltip hidden" data-role="tooltip"></div>
+        </div>
+      `;
+
+      legend.classList.remove("hidden");
+      legend.innerHTML = seriesDefs.map(def => `
+        <span class="legend-item"><i style="background:${def.color}"></i>${def.label}</span>
+      `).join("");
+
+      const stage = host.querySelector(".chart-stage");
+      const overlay = host.querySelector('[data-role="overlay"]');
+      const hoverLine = host.querySelector('[data-role="hover-line"]');
+      const dots = Array.from(host.querySelectorAll('[data-role="hover-dot"]'));
+      const tooltip = host.querySelector('[data-role="tooltip"]');
+      if (!stage || !overlay || !hoverLine || !tooltip) return;
+
+      function showAt(index, pointerX = null) {
+        if (index < 0 || index >= rows.length) return;
+        const row = rows[index];
+        const xCoord = x(index);
+        hoverLine.setAttribute("x1", xCoord.toFixed(2));
+        hoverLine.setAttribute("x2", xCoord.toFixed(2));
+        hoverLine.setAttribute("visibility", "visible");
+
+        const lines = [];
+        seriesDefs.forEach((def, idx) => {
+          const val = Number(row[def.key]);
+          const dot = dots[idx];
+          if (!dot) return;
+          if (Number.isFinite(val)) {
+            const yCoord = y(val);
+            dot.setAttribute("cx", xCoord.toFixed(2));
+            dot.setAttribute("cy", yCoord.toFixed(2));
+            dot.setAttribute("visibility", "visible");
+            const valueText = typeof def.formatValue === "function" ? def.formatValue(val, row) : `${val}`;
+            lines.push(`<div class="t-row"><i style="background:${def.color}"></i><span>${def.label}: ${valueText}</span></div>`);
+          } else {
+            dot.setAttribute("visibility", "hidden");
+          }
+        });
+
+        const title = typeof options.tooltipTitle === "function"
+          ? options.tooltipTitle(row, index)
+          : (row.snapshot_date || "");
+        tooltip.innerHTML = `<div class="t-title">${title}</div>${lines.join("")}`;
+        tooltip.classList.remove("hidden");
+
+        const stageRect = stage.getBoundingClientRect();
+        const targetX = pointerX !== null ? pointerX : (xCoord / width) * stageRect.width;
+        const tooltipWidth = tooltip.offsetWidth || 140;
+        let left = targetX + 12;
+        if (left + tooltipWidth > stageRect.width - 6) left = targetX - tooltipWidth - 12;
+        if (left < 6) left = 6;
+        tooltip.style.left = `${left}px`;
+        tooltip.style.top = "8px";
+      }
+
+      function hideHover() {
+        hoverLine.setAttribute("visibility", "hidden");
+        dots.forEach(dot => dot.setAttribute("visibility", "hidden"));
+        tooltip.classList.add("hidden");
+      }
+
+      overlay.addEventListener("mousemove", (event) => {
+        const rect = overlay.getBoundingClientRect();
+        if (rect.width <= 0) return;
+        const px = event.clientX - rect.left;
+        const localX = (px / rect.width) * chartWidth;
+        const idx = rows.length > 1 ? Math.round(localX / xStep) : 0;
+        const clampedIdx = Math.max(0, Math.min(rows.length - 1, idx));
+        showAt(clampedIdx, event.clientX - stage.getBoundingClientRect().left);
+      });
+
+      overlay.addEventListener("mouseenter", () => {
+        showAt(rows.length - 1);
+      });
+      overlay.addEventListener("mouseleave", hideHover);
+    }
+
+    async function refreshInvestmentAccounts() {
+      const data = await api("/api/meta/accounts?kind=investment");
+      state.investmentAccounts = data.investment_accounts || [];
+      const options = state.investmentAccounts
+        .map(item => `<option value="${item.account_id}">${item.account_name} (${item.account_id})</option>`)
+        .join("");
+
+      ["retAccountId"].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const prev = el.value;
+        el.innerHTML = options || `<option value="">暂无投资账户</option>`;
+        if (prev && Array.from(el.options).some(opt => opt.value === prev)) {
+          el.value = prev;
+        }
+      });
+
+      if (typeof state.refreshReturnAnalytics === "function") {
+        await state.refreshReturnAnalytics({ silent: true });
+      }
     }
 
     async function initImportActions() {
@@ -314,14 +759,15 @@
             true,
             `导入成功：记录 ${data.imported_count} 条，失败 ${data.error_count} 条，任务ID ${data.import_job_id}`
           );
+          await refreshInvestmentAccounts();
         } catch (err) {
           setStatus(yzxyStatus, false, err.message || String(err));
         }
       });
     }
 
-    function initManualInvestment() {
-      const status = document.getElementById("invStatus");
+    function initRecordActions() {
+      const invStatus = document.getElementById("invStatus");
       document.getElementById("invSaveBtn").addEventListener("click", async () => {
         try {
           const payload = {
@@ -331,9 +777,271 @@
             transfer_amount: document.getElementById("invTransferAmount").value.trim(),
           };
           const data = await api("/api/investments/manual", "POST", payload);
-          setStatus(status, true, `保存成功：${data.account_name} ${data.snapshot_date}`);
+          setStatus(invStatus, true, `投资记录已保存：${data.account_name} ${data.snapshot_date}`);
+          await refreshInvestmentAccounts();
         } catch (err) {
-          setStatus(status, false, err.message || String(err));
+          setStatus(invStatus, false, err.message || String(err));
+        }
+      });
+
+      const assetStatus = document.getElementById("assetStatus");
+      const assetClassEl = document.getElementById("assetClass");
+      const assetNameEl = document.getElementById("assetAccountName");
+      assetClassEl.addEventListener("change", () => {
+        if (!assetNameEl.value.trim()) {
+          assetNameEl.value = assetClassEl.value === "cash" ? "家庭现金账户" : "家庭不动产账户";
+        }
+      });
+
+      document.getElementById("assetSaveBtn").addEventListener("click", async () => {
+        try {
+          const payload = {
+            asset_class: document.getElementById("assetClass").value,
+            account_name: document.getElementById("assetAccountName").value.trim(),
+            snapshot_date: document.getElementById("assetSnapshotDate").value.trim(),
+            value: document.getElementById("assetValue").value.trim(),
+          };
+          const data = await api("/api/assets/manual", "POST", payload);
+          setStatus(assetStatus, true, `资产记录已保存：${data.account_name} ${data.snapshot_date}`);
+        } catch (err) {
+          setStatus(assetStatus, false, err.message || String(err));
+        }
+      });
+    }
+
+    function buildPresetParams(prefix) {
+      return {
+        preset: document.getElementById(`${prefix}Preset`).value,
+        from: document.getElementById(`${prefix}From`).value.trim(),
+        to: document.getElementById(`${prefix}To`).value.trim(),
+      };
+    }
+
+    function initReturnAnalytics() {
+      const retStatus = document.getElementById("retStatus");
+      const retMetrics = document.getElementById("retMetrics");
+      const retFlowWrap = document.getElementById("retFlowWrap");
+      const retFlowBody = document.getElementById("retFlowBody");
+      const retAccountId = document.getElementById("retAccountId");
+      const retPreset = document.getElementById("retPreset");
+      const retFrom = document.getElementById("retFrom");
+      const retTo = document.getElementById("retTo");
+      const retChartAssetView = document.getElementById("retChartAssetView");
+      const retChartReturnView = document.getElementById("retChartReturnView");
+      const retTabButtons = Array.from(document.querySelectorAll("#retChartTabs .pill-tab"));
+
+      let latestRequestId = 0;
+
+      function setReturnChartView(view) {
+        const isAsset = view === "asset";
+        retChartAssetView.classList.toggle("hidden", !isAsset);
+        retChartReturnView.classList.toggle("hidden", isAsset);
+        retTabButtons.forEach(btn => {
+          btn.classList.toggle("active", btn.getAttribute("data-view") === view);
+        });
+      }
+
+      function applyReturnPresetState() {
+        const isCustom = retPreset.value === "custom";
+        retFrom.disabled = !isCustom;
+        if (!isCustom) retFrom.value = "";
+      }
+
+      function clearReturnVisuals() {
+        hide(retMetrics);
+        hide(retFlowWrap);
+        renderLineChart("retCurveChart", "retCurveLegend", [], [
+          { key: "total_assets_cents", color: "#0f766e", label: "总资产" },
+        ]);
+        renderLineChart("retRateChart", "retRateLegend", [], [
+          { key: "cumulative_return_pct", color: "#b45309", label: "累计收益率(%)" },
+        ]);
+      }
+
+      async function refreshReturnAnalytics(options = {}) {
+        const { silent = false } = options;
+        const requestId = ++latestRequestId;
+        try {
+          const accountId = retAccountId.value;
+          if (!accountId) {
+            clearReturnVisuals();
+            if (!silent) setStatus(retStatus, false, "请先选择投资账户");
+            return;
+          }
+          if (retPreset.value === "custom" && !retFrom.value.trim()) {
+            clearReturnVisuals();
+            if (!silent) setStatus(retStatus, false, "自定义区间需要填写开始日期");
+            return;
+          }
+
+          const params = new URLSearchParams({ account_id: accountId, ...buildPresetParams("ret") });
+          const [retData, curveData] = await Promise.all([
+            api(`/api/analytics/investment-return?${params.toString()}`),
+            api(`/api/analytics/investment-curve?${params.toString()}`),
+          ]);
+          if (requestId !== latestRequestId) return;
+
+          showMetrics(retMetrics, [
+            { k: "区间收益率", v: retData.metrics.return_rate_pct || "-" },
+            { k: "年化收益率", v: retData.metrics.annualized_rate_pct || "-" },
+            { k: "收益额(元)", v: retData.metrics.profit_yuan },
+            { k: "终点累计收益率", v: curveData.summary.end_cumulative_return_pct_text || "-" },
+          ]);
+
+          const flows = retData.cash_flows || [];
+          if (flows.length > 0) {
+            retFlowWrap.classList.remove("hidden");
+            retFlowBody.innerHTML = flows.map(flow => `
+              <tr>
+                <td>${flow.snapshot_date}</td>
+                <td>${flow.transfer_amount_yuan}</td>
+                <td>${flow.weight.toFixed(4)}</td>
+              </tr>
+            `).join("");
+          } else {
+            hide(retFlowWrap);
+          }
+
+          renderLineChart("retCurveChart", "retCurveLegend", curveData.rows || [], [
+            {
+              key: "total_assets_cents",
+              color: "#0f766e",
+              label: "总资产",
+              formatValue: (val) => `${money(val)} 元`,
+            },
+          ], {
+            includeZero: false,
+            yTickCount: 4,
+            yAxisFormatter: (val) => `${formatYuanShortFromCents(val)}元`,
+            tooltipTitle: (row) =>
+              row.effective_snapshot_date && row.effective_snapshot_date !== row.snapshot_date
+                ? `${row.snapshot_date}（按${row.effective_snapshot_date}快照）`
+                : (row.snapshot_date || ""),
+          });
+          renderLineChart("retRateChart", "retRateLegend", curveData.rows || [], [
+            {
+              key: "cumulative_return_pct",
+              color: "#b45309",
+              label: "累计收益率(%)",
+              formatValue: (val) => `${Number(val).toFixed(2)}%`,
+            },
+          ], {
+            includeZero: true,
+            yTickCount: 4,
+            yAxisFormatter: (val) => `${Number(val).toFixed(1)}%`,
+            referenceLines: buildReturnReferenceLines(curveData.rows || []),
+            tooltipTitle: (row) =>
+              row.effective_snapshot_date && row.effective_snapshot_date !== row.snapshot_date
+                ? `${row.snapshot_date}（按${row.effective_snapshot_date}快照）`
+                : (row.snapshot_date || ""),
+          });
+
+          if (!silent) {
+            setStatus(
+              retStatus,
+              true,
+              `已自动更新：区间 ${retData.range.effective_from} ~ ${retData.range.effective_to}`
+            );
+          }
+        } catch (err) {
+          if (requestId !== latestRequestId) return;
+          clearReturnVisuals();
+          setStatus(retStatus, false, err.message || String(err));
+        }
+      }
+
+      state.refreshReturnAnalytics = refreshReturnAnalytics;
+
+      retTabButtons.forEach(btn => {
+        btn.addEventListener("click", () => {
+          setReturnChartView(btn.getAttribute("data-view") || "asset");
+        });
+      });
+      setReturnChartView("asset");
+
+      retAccountId.addEventListener("change", () => {
+        refreshReturnAnalytics({ silent: false });
+      });
+      retPreset.addEventListener("change", () => {
+        applyReturnPresetState();
+        refreshReturnAnalytics({ silent: false });
+      });
+      retFrom.addEventListener("change", () => {
+        refreshReturnAnalytics({ silent: false });
+      });
+      retTo.addEventListener("change", () => {
+        refreshReturnAnalytics({ silent: false });
+      });
+
+      document.getElementById("retRefreshAccountsBtn").addEventListener("click", async () => {
+        try {
+          await refreshInvestmentAccounts();
+          setStatus(retStatus, true, "投资账户列表已刷新并自动更新收益分析");
+        } catch (err) {
+          setStatus(retStatus, false, err.message || String(err));
+        }
+      });
+
+      applyReturnPresetState();
+    }
+
+    function initWealth() {
+      const wealthStatus = document.getElementById("wealthStatus");
+      const wealthMetrics = document.getElementById("wealthMetrics");
+      const wealthRowsWrap = document.getElementById("wealthRowsWrap");
+      const wealthRowsBody = document.getElementById("wealthRowsBody");
+      const wealthCurveMetrics = document.getElementById("wealthCurveMetrics");
+
+      document.getElementById("wealthOverviewBtn").addEventListener("click", async () => {
+        try {
+          const asOf = document.getElementById("wealthAsOf").value.trim();
+          const params = new URLSearchParams({ as_of: asOf });
+          const data = await api(`/api/analytics/wealth-overview?${params.toString()}`);
+          setStatus(wealthStatus, true, `财富总览已更新（as_of: ${data.as_of}）`);
+          showMetrics(wealthMetrics, [
+            { k: "总财富(元)", v: data.summary.wealth_total_yuan },
+            { k: "投资(元)", v: data.summary.investment_total_yuan },
+            { k: "现金(元)", v: data.summary.cash_total_yuan },
+            { k: "不动产(元)", v: data.summary.real_estate_total_yuan },
+          ]);
+
+          wealthRowsWrap.classList.remove("hidden");
+          wealthRowsBody.innerHTML = (data.rows || []).map(row => `
+            <tr>
+              <td>${row.asset_class}</td>
+              <td>${row.account_name || row.account_id}</td>
+              <td>${row.snapshot_date}</td>
+              <td>${row.value_yuan}</td>
+            </tr>
+          `).join("");
+        } catch (err) {
+          setStatus(wealthStatus, false, err.message || String(err));
+        }
+      });
+
+      document.getElementById("wealthCurveBtn").addEventListener("click", async () => {
+        try {
+          const params = new URLSearchParams(buildPresetParams("wealth"));
+          const data = await api(`/api/analytics/wealth-curve?${params.toString()}`);
+          showMetrics(wealthCurveMetrics, [
+            { k: "点位数", v: data.range.points },
+            { k: "起点总财富(元)", v: data.summary.start_wealth_yuan },
+            { k: "终点总财富(元)", v: data.summary.end_wealth_yuan },
+            { k: "区间涨跌", v: data.summary.change_pct_text || "-" },
+          ]);
+          renderLineChart("wealthCurveChart", "wealthCurveLegend", data.rows || [], [
+            { key: "wealth_total_cents", color: "#0f766e", label: "总财富", formatValue: (val) => `${money(val)} 元` },
+            { key: "investment_total_cents", color: "#e28b00", label: "投资", formatValue: (val) => `${money(val)} 元` },
+            { key: "cash_total_cents", color: "#2f6db4", label: "现金", formatValue: (val) => `${money(val)} 元` },
+            { key: "real_estate_total_cents", color: "#7d5a97", label: "不动产", formatValue: (val) => `${money(val)} 元` },
+          ], {
+            includeZero: true,
+            yTickCount: 4,
+            yAxisFormatter: (val) => `${formatYuanShortFromCents(val)}元`,
+            tooltipTitle: (row) => row.snapshot_date || "",
+          });
+        } catch (err) {
+          setStatus(wealthStatus, false, err.message || String(err));
         }
       });
     }
@@ -399,13 +1107,53 @@
           </tr>
         `).join("");
       });
+
+      const qAssetMetrics = document.getElementById("qAssetMetrics");
+      const qAssetWrap = document.getElementById("qAssetWrap");
+      const qAssetBody = document.getElementById("qAssetBody");
+      document.getElementById("qAssetBtn").addEventListener("click", async () => {
+        const params = new URLSearchParams({
+          from: document.getElementById("qAssetFrom").value.trim(),
+          to: document.getElementById("qAssetTo").value.trim(),
+          asset_class: document.getElementById("qAssetClass").value,
+          account_id: document.getElementById("qAssetAccountId").value.trim(),
+          limit: document.getElementById("qAssetLimit").value.trim() || "100",
+        });
+        const data = await api(`/api/query/assets?${params.toString()}`);
+        showMetrics(qAssetMetrics, [
+          { k: "记录数", v: data.summary.count },
+          { k: "金额合计(元)", v: data.summary.sum_value_yuan },
+          { k: "资产类型", v: data.summary.asset_class || "全部" },
+          { k: "返回条数", v: data.rows.length },
+        ]);
+        qAssetWrap.classList.remove("hidden");
+        qAssetBody.innerHTML = (data.rows || []).map(row => `
+          <tr>
+            <td>${row.snapshot_date}</td>
+            <td>${row.asset_class}</td>
+            <td>${row.account_name || row.account_id}</td>
+            <td>${money(row.value_cents)}</td>
+            <td>${row.source_type || ""}</td>
+          </tr>
+        `).join("");
+      });
     }
 
-    function init() {
+    async function init() {
       initTabs();
-      initImportActions();
-      initManualInvestment();
+
+      setTodayIfEmpty("invSnapshotDate");
+      setTodayIfEmpty("assetSnapshotDate");
+      setTodayIfEmpty("wealthAsOf");
+
+      syncCustomDateState("wealthPreset", "wealthFrom");
+
+      await initImportActions();
+      initRecordActions();
+      initReturnAnalytics();
+      initWealth();
       initQuery();
+      await refreshInvestmentAccounts();
     }
 
     init();
