@@ -43,6 +43,20 @@
 
 3. 打开报告：`data/output/reports/consumption_report.html`
 
+## M0 交互式工作台（新增）
+
+启动本地 Web（默认 `http://127.0.0.1:8081`）：
+
+```bash
+./run_m0_app.sh
+```
+
+M0 当前支持：
+- EML 文件交互式预览与确认导入（浏览器选文件）
+- 投资记录单条录入（手工）
+- 有知有行导出 CSV / XLSX 批量导入
+- 交易/投资记录基础查询与简单汇总
+
 ## Demo 示例（已脱敏）
 
 在线地址（推荐直接访问）：
@@ -110,6 +124,19 @@ python3 scripts/generate_demo_example.py
 - `data/work/processed/category/classified_transactions.csv`
 - `data/work/processed/category/needs_review.csv`
 
+本地账本数据库（M1 底座）：
+
+- `data/work/processed/ledger/keepwise.db`
+
+可选检查：
+
+```bash
+python3 scripts/migrate_ledger_db.py --db data/work/processed/ledger/keepwise.db
+python3 scripts/import_classified_to_ledger.py \
+  --db data/work/processed/ledger/keepwise.db \
+  --classified-csv data/work/processed/category/classified_transactions.csv
+```
+
 ## 隐私与安全
 
 - 数据默认仅在本地处理
@@ -120,3 +147,9 @@ python3 scripts/generate_demo_example.py
 
 后续将进入“本地财富管理主模块”开发（投资账户、资产总览、预算、AI 建议）。  
 详见：`DEVELOPMENT_PLAN.md`
+
+## M0 产物（流程与架构）
+
+- 产品流程定义：`docs/m0/PRODUCT_FLOW_M0.md`
+- 信息架构：`docs/m0/INFORMATION_ARCHITECTURE_M0.md`
+- 数据字典 v1：`docs/m0/DATA_DICTIONARY_V1.md`

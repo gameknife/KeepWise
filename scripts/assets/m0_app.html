@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>KeepWise M0 工作台</title>
+  <link rel="stylesheet" href="/assets/m0_app.css">
+</head>
+<body>
+  <div class="container">
+    <section class="hero">
+      <h1>KeepWise M0 工作台</h1>
+      <p>范围：EML 交互导入、投资记录单条录入、有知有行批量导入、基础查询展示。</p>
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="tab-import">导入中心</button>
+        <button class="tab-btn" data-tab="tab-invest-manual">投资单条录入</button>
+        <button class="tab-btn" data-tab="tab-query">基础查询</button>
+      </div>
+    </section>
+
+    <section id="tab-import" class="panel">
+      <h2>导入中心</h2>
+      <p class="hint">先预览再确认导入。EML 使用文件上传；有知有行支持 CSV / XLSX。</p>
+
+      <h3>EML 导入</h3>
+      <div class="row">
+        <div>
+          <label>选择 EML 文件（可多选）</label>
+          <input id="emlFiles" type="file" multiple accept=".eml">
+        </div>
+        <div>
+          <label>review_threshold</label>
+          <input id="emlThreshold" type="number" step="0.01" min="0" max="1" value="0.70">
+        </div>
+      </div>
+      <div class="actions">
+        <button id="emlPreviewBtn" class="btn secondary">预览 EML</button>
+        <button id="emlImportBtn" class="btn primary">确认导入 EML</button>
+      </div>
+      <div id="emlStatus" class="status hidden"></div>
+      <div id="emlMetrics" class="grid-metrics hidden"></div>
+      <div class="table-wrap hidden" id="emlErrorsWrap">
+        <table>
+          <thead><tr><th>错误文件</th><th>错误内容</th></tr></thead>
+          <tbody id="emlErrorsBody"></tbody>
+        </table>
+      </div>
+
+      <h3 style="margin-top:16px">有知有行导出表（CSV / XLSX）</h3>
+      <div class="row">
+        <div>
+          <label>选择导出文件</label>
+          <input id="yzxyCsvFile" type="file" accept=".csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv">
+        </div>
+        <div></div>
+      </div>
+      <div class="actions">
+        <button id="yzxyPreviewBtn" class="btn secondary">预览文件</button>
+        <button id="yzxyImportBtn" class="btn primary">确认导入文件</button>
+      </div>
+      <div id="yzxyStatus" class="status hidden"></div>
+      <div id="yzxyMetrics" class="grid-metrics hidden"></div>
+      <div class="table-wrap hidden" id="yzxyErrorsWrap">
+        <table>
+          <thead><tr><th>错误信息</th></tr></thead>
+          <tbody id="yzxyErrorsBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="tab-invest-manual" class="panel hidden">
+      <h2>投资记录单条录入</h2>
+      <p class="hint">金额单位为元，系统入库时自动转为分。</p>
+      <div class="row-3">
+        <div>
+          <label>账户名称</label>
+          <input id="invAccountName" type="text" value="有知有行投资账户">
+        </div>
+        <div>
+          <label>快照日期</label>
+          <input id="invSnapshotDate" type="date">
+        </div>
+        <div>
+          <label>总资产（元）</label>
+          <input id="invTotalAssets" type="number" step="0.01">
+        </div>
+        <div>
+          <label>转入转出金额（元）</label>
+          <input id="invTransferAmount" type="number" step="0.01" value="0">
+        </div>
+      </div>
+      <div class="actions">
+        <button id="invSaveBtn" class="btn primary">保存记录</button>
+      </div>
+      <div id="invStatus" class="status hidden"></div>
+    </section>
+
+    <section id="tab-query" class="panel hidden">
+      <h2>基础查询</h2>
+      <p class="hint">仅提供筛选、列表与简单汇总。</p>
+
+      <h3>交易查询</h3>
+      <div class="row-3">
+        <div><label>月份（YYYY-MM）</label><input id="qMonthKey" type="text" placeholder="2025-01"></div>
+        <div><label>来源</label><input id="qTxSourceType" type="text" placeholder="cmb_eml"></div>
+        <div><label>账户 ID</label><input id="qTxAccountId" type="text"></div>
+        <div><label>关键词</label><input id="qTxKeyword" type="text"></div>
+        <div><label>limit</label><input id="qTxLimit" type="number" value="100"></div>
+      </div>
+      <div class="actions">
+        <button id="qTxBtn" class="btn secondary">查询交易</button>
+      </div>
+      <div id="qTxMetrics" class="grid-metrics hidden"></div>
+      <div class="table-wrap hidden" id="qTxWrap">
+        <table>
+          <thead>
+            <tr><th>日期</th><th>商户</th><th>摘要</th><th>金额(元)</th><th>分类</th><th>来源</th></tr>
+          </thead>
+          <tbody id="qTxBody"></tbody>
+        </table>
+      </div>
+
+      <h3 style="margin-top:16px">投资记录查询</h3>
+      <div class="row-3">
+        <div><label>开始日期</label><input id="qInvFrom" type="date"></div>
+        <div><label>结束日期</label><input id="qInvTo" type="date"></div>
+        <div><label>来源</label><input id="qInvSourceType" type="text" placeholder="manual"></div>
+        <div><label>账户 ID</label><input id="qInvAccountId" type="text"></div>
+        <div><label>limit</label><input id="qInvLimit" type="number" value="100"></div>
+      </div>
+      <div class="actions">
+        <button id="qInvBtn" class="btn secondary">查询投资记录</button>
+      </div>
+      <div id="qInvMetrics" class="grid-metrics hidden"></div>
+      <div class="table-wrap hidden" id="qInvWrap">
+        <table>
+          <thead>
+            <tr><th>日期</th><th>账户</th><th>总资产(元)</th><th>转入转出(元)</th><th>来源</th></tr>
+          </thead>
+          <tbody id="qInvBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const state = {
+      emlPreviewToken: "",
+      yzxyPreviewToken: "",
+    };
+
+    function money(cents) {
+      return (Number(cents || 0) / 100).toFixed(2);
+    }
+
+    function setStatus(el, ok, text) {
+      el.classList.remove("hidden", "ok", "err");
+      el.classList.add(ok ? "ok" : "err");
+      el.textContent = text;
+    }
+
+    function hide(el) {
+      el.classList.add("hidden");
+    }
+
+    function showMetrics(holder, items) {
+      holder.classList.remove("hidden");
+      holder.innerHTML = items.map(item => `
+        <div class="metric">
+          <div class="k">${item.k}</div>
+          <div class="v">${item.v}</div>
+        </div>
+      `).join("");
+    }
+
+    async function api(path, method = "GET", body = null) {
+      const res = await fetch(path, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: body ? JSON.stringify(body) : null,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "请求失败");
+      return data;
+    }
+
+    function readFileAsBase64(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = String(reader.result || "");
+          const base64 = result.split(",")[1] || "";
+          resolve({ name: file.name, content_base64: base64 });
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+
+    async function collectFiles(inputEl) {
+      const files = Array.from(inputEl.files || []);
+      const payload = [];
+      for (const file of files) {
+        payload.push(await readFileAsBase64(file));
+      }
+      return payload;
+    }
+
+    function initTabs() {
+      document.querySelectorAll(".tab-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const target = btn.getAttribute("data-tab");
+          document.querySelectorAll(".tab-btn").forEach(x => x.classList.remove("active"));
+          btn.classList.add("active");
+          document.querySelectorAll("section.panel").forEach(panel => {
+            panel.classList.toggle("hidden", panel.id !== target);
+          });
+        });
+      });
+    }
+
+    async function initImportActions() {
+      const emlFiles = document.getElementById("emlFiles");
+      const emlThreshold = document.getElementById("emlThreshold");
+      const emlStatus = document.getElementById("emlStatus");
+      const emlMetrics = document.getElementById("emlMetrics");
+      const emlErrorsWrap = document.getElementById("emlErrorsWrap");
+      const emlErrorsBody = document.getElementById("emlErrorsBody");
+
+      document.getElementById("emlPreviewBtn").addEventListener("click", async () => {
+        try {
+          const files = await collectFiles(emlFiles);
+          if (files.length === 0) throw new Error("请至少选择一个 .eml 文件");
+          const data = await api("/api/eml/preview", "POST", {
+            files,
+            review_threshold: Number(emlThreshold.value || 0.7),
+          });
+          state.emlPreviewToken = data.preview_token;
+          setStatus(emlStatus, true, "EML 预览完成，可确认导入。");
+          showMetrics(emlMetrics, [
+            { k: "文件数", v: data.summary.input_files_count },
+            { k: "交易数", v: data.summary.records_count },
+            { k: "消费笔数", v: data.summary.consume_count },
+            { k: "待确认", v: data.summary.needs_review_count },
+          ]);
+          const errors = data.summary.failed_files || [];
+          if (errors.length > 0) {
+            emlErrorsWrap.classList.remove("hidden");
+            emlErrorsBody.innerHTML = errors.map(e => `<tr><td>${e.file}</td><td>${e.error}</td></tr>`).join("");
+          } else {
+            hide(emlErrorsWrap);
+          }
+        } catch (err) {
+          setStatus(emlStatus, false, err.message || String(err));
+          hide(emlMetrics);
+        }
+      });
+
+      document.getElementById("emlImportBtn").addEventListener("click", async () => {
+        try {
+          if (!state.emlPreviewToken) throw new Error("请先做 EML 预览。");
+          const data = await api("/api/eml/import", "POST", {
+            preview_token: state.emlPreviewToken,
+            review_threshold: Number(emlThreshold.value || 0.7),
+          });
+          setStatus(
+            emlStatus,
+            true,
+            `EML 导入成功：交易 ${data.imported_count} 条，失败 ${data.import_error_count} 条，任务ID ${data.import_job_id}`
+          );
+        } catch (err) {
+          setStatus(emlStatus, false, err.message || String(err));
+        }
+      });
+
+      const yzxyCsvFile = document.getElementById("yzxyCsvFile");
+      const yzxyStatus = document.getElementById("yzxyStatus");
+      const yzxyMetrics = document.getElementById("yzxyMetrics");
+      const yzxyErrorsWrap = document.getElementById("yzxyErrorsWrap");
+      const yzxyErrorsBody = document.getElementById("yzxyErrorsBody");
+
+      document.getElementById("yzxyPreviewBtn").addEventListener("click", async () => {
+        try {
+          const files = await collectFiles(yzxyCsvFile);
+          if (files.length !== 1) throw new Error("请只选择一个 CSV 或 XLSX 文件");
+          const data = await api("/api/yzxy/preview", "POST", { file: files[0] });
+          state.yzxyPreviewToken = data.preview_token;
+          setStatus(yzxyStatus, true, "文件预览完成，可确认导入。");
+          showMetrics(yzxyMetrics, [
+            { k: "解析成功", v: data.preview.parsed_count },
+            { k: "错误数", v: data.preview.error_count },
+            { k: "映射列数", v: Object.keys(data.preview.mapping || {}).length },
+            { k: "预览行", v: (data.preview.preview_rows || []).length },
+          ]);
+          const errors = data.preview.errors || [];
+          if (errors.length > 0) {
+            yzxyErrorsWrap.classList.remove("hidden");
+            yzxyErrorsBody.innerHTML = errors.map(e => `<tr><td>${e}</td></tr>`).join("");
+          } else {
+            hide(yzxyErrorsWrap);
+          }
+        } catch (err) {
+          setStatus(yzxyStatus, false, err.message || String(err));
+          hide(yzxyMetrics);
+        }
+      });
+
+      document.getElementById("yzxyImportBtn").addEventListener("click", async () => {
+        try {
+          if (!state.yzxyPreviewToken) throw new Error("请先做文件预览。");
+          const data = await api("/api/yzxy/import", "POST", { preview_token: state.yzxyPreviewToken });
+          setStatus(
+            yzxyStatus,
+            true,
+            `导入成功：记录 ${data.imported_count} 条，失败 ${data.error_count} 条，任务ID ${data.import_job_id}`
+          );
+        } catch (err) {
+          setStatus(yzxyStatus, false, err.message || String(err));
+        }
+      });
+    }
+
+    function initManualInvestment() {
+      const status = document.getElementById("invStatus");
+      document.getElementById("invSaveBtn").addEventListener("click", async () => {
+        try {
+          const payload = {
+            account_name: document.getElementById("invAccountName").value.trim(),
+            snapshot_date: document.getElementById("invSnapshotDate").value.trim(),
+            total_assets: document.getElementById("invTotalAssets").value.trim(),
+            transfer_amount: document.getElementById("invTransferAmount").value.trim(),
+          };
+          const data = await api("/api/investments/manual", "POST", payload);
+          setStatus(status, true, `保存成功：${data.account_name} ${data.snapshot_date}`);
+        } catch (err) {
+          setStatus(status, false, err.message || String(err));
+        }
+      });
+    }
+
+    function initQuery() {
+      const qTxMetrics = document.getElementById("qTxMetrics");
+      const qTxWrap = document.getElementById("qTxWrap");
+      const qTxBody = document.getElementById("qTxBody");
+      document.getElementById("qTxBtn").addEventListener("click", async () => {
+        const params = new URLSearchParams({
+          month_key: document.getElementById("qMonthKey").value.trim(),
+          source_type: document.getElementById("qTxSourceType").value.trim(),
+          account_id: document.getElementById("qTxAccountId").value.trim(),
+          keyword: document.getElementById("qTxKeyword").value.trim(),
+          limit: document.getElementById("qTxLimit").value.trim() || "100",
+        });
+        const data = await api(`/api/query/transactions?${params.toString()}`);
+        showMetrics(qTxMetrics, [
+          { k: "总笔数", v: data.summary.count },
+          { k: "总金额(元)", v: data.summary.total_amount_yuan },
+          { k: "返回条数", v: data.rows.length },
+          { k: "来源", v: data.summary.source_type || "-" },
+        ]);
+        qTxWrap.classList.remove("hidden");
+        qTxBody.innerHTML = data.rows.map(row => `
+          <tr>
+            <td>${row.posted_at || row.occurred_at || ""}</td>
+            <td>${row.merchant_normalized || ""}</td>
+            <td>${row.description || ""}</td>
+            <td>${money(row.amount_cents)}</td>
+            <td>${row.statement_category || ""}</td>
+            <td>${row.source_type || ""}</td>
+          </tr>
+        `).join("");
+      });
+
+      const qInvMetrics = document.getElementById("qInvMetrics");
+      const qInvWrap = document.getElementById("qInvWrap");
+      const qInvBody = document.getElementById("qInvBody");
+      document.getElementById("qInvBtn").addEventListener("click", async () => {
+        const params = new URLSearchParams({
+          from: document.getElementById("qInvFrom").value.trim(),
+          to: document.getElementById("qInvTo").value.trim(),
+          source_type: document.getElementById("qInvSourceType").value.trim(),
+          account_id: document.getElementById("qInvAccountId").value.trim(),
+          limit: document.getElementById("qInvLimit").value.trim() || "100",
+        });
+        const data = await api(`/api/query/investments?${params.toString()}`);
+        showMetrics(qInvMetrics, [
+          { k: "记录数", v: data.summary.count },
+          { k: "最新总资产(元)", v: data.summary.latest_total_assets_yuan },
+          { k: "区间转入转出(元)", v: data.summary.net_transfer_amount_yuan },
+          { k: "来源", v: data.summary.source_type || "-" },
+        ]);
+        qInvWrap.classList.remove("hidden");
+        qInvBody.innerHTML = data.rows.map(row => `
+          <tr>
+            <td>${row.snapshot_date || ""}</td>
+            <td>${row.account_name || row.account_id || ""}</td>
+            <td>${money(row.total_assets_cents)}</td>
+            <td>${money(row.transfer_amount_cents || 0)}</td>
+            <td>${row.source_type || ""}</td>
+          </tr>
+        `).join("");
+      });
+    }
+
+    function init() {
+      initTabs();
+      initImportActions();
+      initManualInvestment();
+      initQuery();
+    }
+
+    init();
+  </script>
+</body>
+</html>

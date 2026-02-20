@@ -22,6 +22,11 @@
   - 月度趋势图点位显示金额标签。
   - 隐私眼睛：一键隐藏/显示金额（显示 `***`）。
 - 一键执行脚本：`run_report.sh`。
+- SQLite 本地账本底座（M1 起步）：
+  - 迁移脚本：`scripts/migrate_ledger_db.py`
+  - 导入脚本：`scripts/import_classified_to_ledger.py`
+  - 迁移文件：`db/migrations/0001_init.sql`
+  - 默认数据库：`data/work/processed/ledger/keepwise.db`
 
 ## 2) 当前目录约定（非常重要）
 
@@ -48,6 +53,8 @@
    - `consumption_report.html`
    - `consumption_report.css`
    - `consumption_analysis.json`
+4. 初始化/迁移 SQLite 账本（`db/migrations/*.sql`）。
+5. 将 `classified_transactions.csv` 导入 SQLite 总账。
 
 ## 4) 无 MCC 场景下的分类经验
 
@@ -97,3 +104,23 @@
 
 - `run_report.sh` 会把报告文件从 `data/work/processed/reports/` 移到 `data/output/reports/`，这是设计行为。
 - 如果要做自动化/定时任务，建议固定只读输入目录、只写输出目录，避免覆盖规则文件。
+
+## 10) M0 文档入口
+
+- 产品流程定义：`docs/m0/PRODUCT_FLOW_M0.md`
+- 信息架构：`docs/m0/INFORMATION_ARCHITECTURE_M0.md`
+- 数据字典：`docs/m0/DATA_DICTIONARY_V1.md`
+- 当前收敛范围：仅做 EML 交互导入、投资记录单条录入、有知有行导出表批量导入、以及基础查询展示。
+
+## 11) M0 开发进展（已开始落地）
+
+- 新增本地工作台启动脚本：`run_m0_app.sh`。
+- 新增 M0 Web 应用：`scripts/m0_web_app.py`。
+  - EML 文件交互预览与确认导入。
+  - 投资记录单条录入。
+  - 有知有行 CSV / XLSX 预览与批量导入。
+  - 交易/投资记录基础查询 API。
+- 新增有知有行导入脚本：`scripts/import_youzhiyouxing_investments.py`。
+- 新增数据库迁移：`db/migrations/0002_m0_investment_import_support.sql`。
+  - `investment_records` 增加来源追溯字段：`source_type/source_file/import_job_id`。
+  - 增加基础查询索引（交易与投资记录）。
