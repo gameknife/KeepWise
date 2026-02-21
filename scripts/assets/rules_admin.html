@@ -14,6 +14,10 @@
       <div class="hero-actions">
         <a class="btn ghost" href="/" rel="noopener">返回主工作台</a>
         <button id="refreshAllBtn" class="btn primary">刷新全部数据</button>
+        <label class="privacy-toggle" for="privacyToggle">
+          <input id="privacyToggle" type="checkbox">
+          隐私截图模式（隐藏金额）
+        </label>
       </div>
     </header>
 
@@ -149,11 +153,14 @@
   </div>
 
   <script>
+    const PRIVACY_MASK_STORAGE_KEY = "keepwise:privacy-mask-amounts";
+
     const state = {
       activeView: "suggestions",
       suggestionRows: [],
       merchantRows: [],
       keywordRows: [],
+      privacyMaskAmounts: false,
     };
 
     function escapeHtml(text) {
@@ -163,6 +170,55 @@
         .replaceAll(">", "&gt;")
         .replaceAll('"', "&quot;")
         .replaceAll("'", "&#39;");
+    }
+
+    function shouldMaskAmounts() {
+      return !!state.privacyMaskAmounts;
+    }
+
+    function formatAmountRaw(value) {
+      if (value === null || value === undefined) return "-";
+      const text = String(value);
+      return text === "" ? "-" : text;
+    }
+
+    function renderAmountValue(value) {
+      const raw = formatAmountRaw(value);
+      const safe = escapeHtml(raw);
+      const shown = shouldMaskAmounts() && raw !== "-" ? "****" : safe;
+      return `<span class="amount-sensitive" data-amount-raw="${safe}">${shown}</span>`;
+    }
+
+    function applyAmountMaskInDom(root = document) {
+      const nodes = root.querySelectorAll(".amount-sensitive[data-amount-raw]");
+      nodes.forEach(node => {
+        const raw = node.getAttribute("data-amount-raw") || "";
+        if (shouldMaskAmounts() && raw && raw !== "-") {
+          node.textContent = "****";
+        } else {
+          node.textContent = raw;
+        }
+      });
+      document.body.classList.toggle("privacy-masked", shouldMaskAmounts());
+    }
+
+    function initPrivacyToggle() {
+      const toggle = document.getElementById("privacyToggle");
+      if (!toggle) return;
+      let enabled = false;
+      try {
+        enabled = window.localStorage.getItem(PRIVACY_MASK_STORAGE_KEY) === "1";
+      } catch {}
+      state.privacyMaskAmounts = enabled;
+      toggle.checked = enabled;
+      applyAmountMaskInDom(document);
+      toggle.addEventListener("change", () => {
+        state.privacyMaskAmounts = !!toggle.checked;
+        try {
+          window.localStorage.setItem(PRIVACY_MASK_STORAGE_KEY, state.privacyMaskAmounts ? "1" : "0");
+        } catch {}
+        applyAmountMaskInDom(document);
+      });
     }
 
     function setStatus(ok, text) {
@@ -234,7 +290,7 @@
           <tr>
             <td>${escapeHtml(merchant)}</td>
             <td>${row.txn_count || 0}</td>
-            <td>${escapeHtml(row.total_amount_yuan || "0.00")}</td>
+            <td>${renderAmountValue(row.total_amount_yuan || "0.00")}</td>
             <td>${row.review_count || 0}</td>
             <td>${escapeHtml(row.suggested_expense_category || "-")}</td>
             <td>${escapeHtml(row.mapped_expense_category || "-")}</td>
@@ -245,6 +301,7 @@
           </tr>
         `;
       }).join("");
+      applyAmountMaskInDom(tbody);
     }
 
     function renderMerchantRows(rows) {
@@ -512,6 +569,7 @@
     }
 
     async function init() {
+      initPrivacyToggle();
       bindEvents();
       setView("suggestions");
       await Promise.all([

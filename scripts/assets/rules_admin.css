@@ -54,6 +54,19 @@ body {
   flex-wrap: wrap;
 }
 
+.privacy-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #2a3b45;
+  font-size: 13px;
+}
+
+.privacy-toggle input {
+  width: auto;
+  margin: 0;
+}
+
 .layout {
   margin-top: 14px;
   display: grid;
@@ -252,6 +265,14 @@ th {
 .status.err {
   background: #fde9e8;
   color: #a13026;
+}
+
+.amount-sensitive {
+  font-variant-numeric: tabular-nums;
+}
+
+body.privacy-masked .amount-sensitive {
+  letter-spacing: 0.4px;
 }
 
 .grid-metrics {

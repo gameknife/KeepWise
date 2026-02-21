@@ -11,6 +11,12 @@
     <section class="hero">
       <h1>KeepWise M1 工作台</h1>
       <p>主线：投资记录维护、区间收益率（现金加权）、财富总览、增长曲线。</p>
+      <div class="hero-actions">
+        <label class="privacy-toggle" for="privacyToggle">
+          <input id="privacyToggle" type="checkbox">
+          隐私截图模式（隐藏金额）
+        </label>
+      </div>
       <div class="tabs">
         <button class="tab-btn active" data-tab="tab-import">导入中心</button>
         <button class="tab-btn" data-tab="tab-records">记录录入</button>
@@ -403,6 +409,8 @@
   </div>
 
   <script>
+    const PRIVACY_MASK_STORAGE_KEY = "keepwise:privacy-mask-amounts";
+
     const state = {
       emlPreviewToken: "",
       yzxyPreviewToken: "",
@@ -410,7 +418,47 @@
       refreshReturnAnalytics: null,
       refreshReturnBatchAnalytics: null,
       refreshWealthAnalytics: null,
+      privacyMaskAmounts: false,
     };
+
+    function escapeHtml(text) {
+      return String(text ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
+    function shouldMaskAmounts() {
+      return !!state.privacyMaskAmounts;
+    }
+
+    function formatAmountRaw(value) {
+      if (value === null || value === undefined) return "-";
+      const text = String(value);
+      return text === "" ? "-" : text;
+    }
+
+    function renderAmountValue(value) {
+      const raw = formatAmountRaw(value);
+      const safe = escapeHtml(raw);
+      const shown = shouldMaskAmounts() && raw !== "-" ? "****" : safe;
+      return `<span class="amount-sensitive" data-amount-raw="${safe}">${shown}</span>`;
+    }
+
+    function applyAmountMaskInDom(root = document) {
+      const nodes = root.querySelectorAll(".amount-sensitive[data-amount-raw]");
+      nodes.forEach(node => {
+        const raw = node.getAttribute("data-amount-raw") || "";
+        if (shouldMaskAmounts() && raw && raw !== "-") {
+          node.textContent = "****";
+        } else {
+          node.textContent = raw;
+        }
+      });
+      document.body.classList.toggle("privacy-masked", shouldMaskAmounts());
+    }
 
     function money(cents) {
       return (Number(cents || 0) / 100).toFixed(2);
@@ -455,14 +503,65 @@
       el.classList.add("hidden");
     }
 
+    function isAmountMetricKey(key) {
+      return /(\(元\)|金额|总资产|总财富|净流入|净增长|收益额)/.test(String(key || ""));
+    }
+
     function showMetrics(holder, items) {
       holder.classList.remove("hidden");
       holder.innerHTML = items.map(item => `
         <div class="metric">
-          <div class="k">${item.k}</div>
-          <div class="v">${item.v}</div>
+          <div class="k">${escapeHtml(item.k)}</div>
+          <div class="v">${
+            (item.amount === true || (item.amount !== false && isAmountMetricKey(item.k)))
+              ? renderAmountValue(item.v)
+              : escapeHtml(item.v)
+          }</div>
         </div>
       `).join("");
+      applyAmountMaskInDom(holder);
+    }
+
+    async function applyPrivacyMode(enabled, options = {}) {
+      const { refreshAnalytics = true } = options;
+      state.privacyMaskAmounts = !!enabled;
+      try {
+        window.localStorage.setItem(PRIVACY_MASK_STORAGE_KEY, state.privacyMaskAmounts ? "1" : "0");
+      } catch {}
+      const toggle = document.getElementById("privacyToggle");
+      if (toggle && toggle.checked !== state.privacyMaskAmounts) {
+        toggle.checked = state.privacyMaskAmounts;
+      }
+      applyAmountMaskInDom(document);
+
+      if (!refreshAnalytics) return;
+      const tasks = [];
+      if (typeof state.refreshReturnAnalytics === "function") {
+        tasks.push(state.refreshReturnAnalytics({ silent: true }));
+      }
+      if (typeof state.refreshReturnBatchAnalytics === "function") {
+        tasks.push(state.refreshReturnBatchAnalytics({ silent: true }));
+      }
+      if (typeof state.refreshWealthAnalytics === "function") {
+        tasks.push(state.refreshWealthAnalytics({ silent: true }));
+      }
+      if (tasks.length > 0) {
+        await Promise.allSettled(tasks);
+      }
+    }
+
+    function initPrivacyToggle() {
+      const toggle = document.getElementById("privacyToggle");
+      if (!toggle) return;
+      let enabled = false;
+      try {
+        enabled = window.localStorage.getItem(PRIVACY_MASK_STORAGE_KEY) === "1";
+      } catch {}
+      toggle.checked = enabled;
+      applyPrivacyMode(enabled, { refreshAnalytics: false }).catch(() => {});
+      toggle.addEventListener("change", () => {
+        applyPrivacyMode(toggle.checked).catch(() => {});
+      });
     }
 
     async function api(path, method = "GET", body = null) {
@@ -1031,10 +1130,11 @@
             retFlowBody.innerHTML = flows.map(flow => `
               <tr>
                 <td>${flow.snapshot_date}</td>
-                <td>${flow.transfer_amount_yuan}</td>
+                <td>${renderAmountValue(flow.transfer_amount_yuan)}</td>
                 <td>${flow.weight.toFixed(4)}</td>
               </tr>
             `).join("");
+            applyAmountMaskInDom(retFlowWrap);
           } else {
             hide(retFlowWrap);
           }
@@ -1044,12 +1144,12 @@
               key: "total_assets_cents",
               color: "#0f766e",
               label: "总资产",
-              formatValue: (val) => `${money(val)} 元`,
+              formatValue: (val) => renderAmountValue(`${money(val)} 元`),
             },
           ], {
             includeZero: false,
             yTickCount: 4,
-            yAxisFormatter: (val) => `${formatYuanShortFromCents(val)}元`,
+            yAxisFormatter: (val) => (shouldMaskAmounts() ? "****" : `${formatYuanShortFromCents(val)}元`),
             tooltipTitle: (row) =>
               row.effective_snapshot_date && row.effective_snapshot_date !== row.snapshot_date
                 ? `${row.snapshot_date}（按${row.effective_snapshot_date}快照）`
@@ -1077,13 +1177,13 @@
               key: "cumulative_net_growth_cents",
               color: "#2f6db4",
               label: "净增长资金",
-              formatValue: (val) => `${money(val)} 元`,
+              formatValue: (val) => renderAmountValue(`${money(val)} 元`),
             },
           ], {
             includeZero: true,
             yTickCount: 4,
-            yAxisFormatter: (val) => `${formatYuanShortFromCents(val)}元`,
-            referenceLines: [{ value: 0, label: "0元", color: "#9ca3af" }],
+            yAxisFormatter: (val) => (shouldMaskAmounts() ? "****" : `${formatYuanShortFromCents(val)}元`),
+            referenceLines: [{ value: 0, label: shouldMaskAmounts() ? "****" : "0元", color: "#9ca3af" }],
             tooltipTitle: (row) =>
               row.effective_snapshot_date && row.effective_snapshot_date !== row.snapshot_date
                 ? `${row.snapshot_date}（按${row.effective_snapshot_date}快照）`
@@ -1135,13 +1235,14 @@
                 <td>${row.account_name || row.account_id}</td>
                 <td>${row.return_rate_pct || "-"}</td>
                 <td>${row.annualized_rate_pct || "-"}</td>
-                <td>${row.profit_yuan}</td>
-                <td>${row.net_flow_yuan}</td>
+                <td>${renderAmountValue(row.profit_yuan)}</td>
+                <td>${renderAmountValue(row.net_flow_yuan)}</td>
                 <td>${row.effective_from} ~ ${row.effective_to}</td>
                 <td>${row.interval_days}</td>
               </tr>
             `).join("");
           }
+          applyAmountMaskInDom(retBatchWrap);
 
           if (!silent) {
             if (data.summary.error_count > 0) {
@@ -1299,9 +1400,10 @@
               <td>${row.asset_class}</td>
               <td>${row.account_name || row.account_id}</td>
               <td>${row.snapshot_date}</td>
-              <td>${row.value_yuan}</td>
+              <td>${renderAmountValue(row.value_yuan)}</td>
             </tr>
           `).join("");
+          applyAmountMaskInDom(wealthRowsWrap);
 
           if (!silent) {
             setStatus(wealthStatus, true, `财富总览已更新（as_of: ${data.as_of}）`);
@@ -1346,14 +1448,14 @@
           ]);
 
           const seriesDefs = [
-            { key: "wealth_total_cents", color: "#0f766e", label: "总财富", formatValue: (val) => `${money(val)} 元` },
+            { key: "wealth_total_cents", color: "#0f766e", label: "总财富", formatValue: (val) => renderAmountValue(`${money(val)} 元`) },
           ];
           if (filters.include_investment) {
             seriesDefs.push({
               key: "investment_total_cents",
               color: "#e28b00",
               label: "投资",
-              formatValue: (val) => `${money(val)} 元`,
+              formatValue: (val) => renderAmountValue(`${money(val)} 元`),
             });
           }
           if (filters.include_cash) {
@@ -1361,7 +1463,7 @@
               key: "cash_total_cents",
               color: "#2f6db4",
               label: "现金",
-              formatValue: (val) => `${money(val)} 元`,
+              formatValue: (val) => renderAmountValue(`${money(val)} 元`),
             });
           }
           if (filters.include_real_estate) {
@@ -1369,14 +1471,14 @@
               key: "real_estate_total_cents",
               color: "#7d5a97",
               label: "不动产",
-              formatValue: (val) => `${money(val)} 元`,
+              formatValue: (val) => renderAmountValue(`${money(val)} 元`),
             });
           }
 
           renderLineChart("wealthCurveChart", "wealthCurveLegend", data.rows || [], seriesDefs, {
             includeZero: true,
             yTickCount: 4,
-            yAxisFormatter: (val) => `${formatYuanShortFromCents(val)}元`,
+            yAxisFormatter: (val) => (shouldMaskAmounts() ? "****" : `${formatYuanShortFromCents(val)}元`),
             tooltipTitle: (row) => row.snapshot_date || "",
           });
 
@@ -1385,7 +1487,7 @@
               key: "wealth_net_growth_cents",
               color: "#0f766e",
               label: "总财富净增长",
-              formatValue: (val) => `${money(val)} 元`,
+              formatValue: (val) => renderAmountValue(`${money(val)} 元`),
             },
           ];
           if (filters.include_investment) {
@@ -1393,7 +1495,7 @@
               key: "investment_net_growth_cents",
               color: "#e28b00",
               label: "投资净增长",
-              formatValue: (val) => `${money(val)} 元`,
+              formatValue: (val) => renderAmountValue(`${money(val)} 元`),
             });
           }
           if (filters.include_cash) {
@@ -1401,7 +1503,7 @@
               key: "cash_net_growth_cents",
               color: "#2f6db4",
               label: "现金净增长",
-              formatValue: (val) => `${money(val)} 元`,
+              formatValue: (val) => renderAmountValue(`${money(val)} 元`),
             });
           }
           if (filters.include_real_estate) {
@@ -1409,15 +1511,15 @@
               key: "real_estate_net_growth_cents",
               color: "#7d5a97",
               label: "不动产净增长",
-              formatValue: (val) => `${money(val)} 元`,
+              formatValue: (val) => renderAmountValue(`${money(val)} 元`),
             });
           }
 
           renderLineChart("wealthGrowthChart", "wealthGrowthLegend", data.rows || [], growthSeriesDefs, {
             includeZero: true,
             yTickCount: 4,
-            yAxisFormatter: (val) => `${formatYuanShortFromCents(val)}元`,
-            referenceLines: [{ value: 0, label: "0元", color: "#9ca3af" }],
+            yAxisFormatter: (val) => (shouldMaskAmounts() ? "****" : `${formatYuanShortFromCents(val)}元`),
+            referenceLines: [{ value: 0, label: shouldMaskAmounts() ? "****" : "0元", color: "#9ca3af" }],
             tooltipTitle: (row) => row.snapshot_date || "",
           });
 
@@ -1513,11 +1615,12 @@
             <td>${row.posted_at || row.occurred_at || ""}</td>
             <td>${row.merchant_normalized || ""}</td>
             <td>${row.description || ""}</td>
-            <td>${money(row.amount_cents)}</td>
+            <td>${renderAmountValue(money(row.amount_cents))}</td>
             <td>${row.expense_category || row.statement_category || ""}</td>
             <td>${row.source_type || ""}</td>
           </tr>
         `).join("");
+        applyAmountMaskInDom(qTxWrap);
       });
 
       const qInvMetrics = document.getElementById("qInvMetrics");
@@ -1543,11 +1646,12 @@
           <tr>
             <td>${row.snapshot_date || ""}</td>
             <td>${row.account_name || row.account_id || ""}</td>
-            <td>${money(row.total_assets_cents)}</td>
-            <td>${money(row.transfer_amount_cents || 0)}</td>
+            <td>${renderAmountValue(money(row.total_assets_cents))}</td>
+            <td>${renderAmountValue(money(row.transfer_amount_cents || 0))}</td>
             <td>${row.source_type || ""}</td>
           </tr>
         `).join("");
+        applyAmountMaskInDom(qInvWrap);
       });
 
       const qAssetMetrics = document.getElementById("qAssetMetrics");
@@ -1574,10 +1678,11 @@
             <td>${row.snapshot_date}</td>
             <td>${row.asset_class}</td>
             <td>${row.account_name || row.account_id}</td>
-            <td>${money(row.value_cents)}</td>
+            <td>${renderAmountValue(money(row.value_cents))}</td>
             <td>${row.source_type || ""}</td>
           </tr>
         `).join("");
+        applyAmountMaskInDom(qAssetWrap);
       });
     }
 
@@ -1663,6 +1768,7 @@
 
     async function init() {
       initTabs();
+      initPrivacyToggle();
 
       setTodayIfEmpty("invSnapshotDate");
       setTodayIfEmpty("assetSnapshotDate");

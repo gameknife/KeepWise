@@ -48,6 +48,13 @@ body {
   color: var(--muted);
 }
 
+.hero-actions {
+  margin-top: 12px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .tabs {
   margin-top: 16px;
   display: flex;
@@ -286,6 +293,27 @@ th {
   background: #fff1f0;
   color: #8a2c24;
   font-size: 13px;
+}
+
+.privacy-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #2f3d46;
+  font-size: 13px;
+}
+
+.privacy-toggle input {
+  width: auto;
+  margin: 0;
+}
+
+.amount-sensitive {
+  font-variant-numeric: tabular-nums;
+}
+
+body.privacy-masked .amount-sensitive {
+  letter-spacing: 0.4px;
 }
 
 .hidden {
