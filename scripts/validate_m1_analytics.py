@@ -285,6 +285,39 @@ def run_regression(root: Path) -> dict[str, Any]:
                 f"Investment returns batch return mismatch: expected={got_return}, got={batch_row['return_rate']}"
             )
 
+        portfolio_ret = app_mod.query_investment_return(
+            cfg,
+            {
+                "account_id": [app_mod.PORTFOLIO_ACCOUNT_ID],
+                "preset": ["custom"],
+                "from": [range_from],
+                "to": [range_to],
+            },
+        )
+        portfolio_curve = app_mod.query_investment_curve(
+            cfg,
+            {
+                "account_id": [app_mod.PORTFOLIO_ACCOUNT_ID],
+                "preset": ["custom"],
+                "from": [range_from],
+                "to": [range_to],
+            },
+        )
+        portfolio_rate = portfolio_ret["metrics"]["return_rate"]
+        portfolio_curve_end = portfolio_curve["summary"]["end_cumulative_return_rate"]
+        if int(portfolio_ret.get("account_count") or 0) != 1:
+            raise AssertionError(
+                f"Portfolio account_count mismatch: expected=1, got={portfolio_ret.get('account_count')}"
+            )
+        if not approx_equal(portfolio_rate, got_return, tol=1e-8):
+            raise AssertionError(
+                f"Portfolio return mismatch: expected={got_return}, got={portfolio_rate}"
+            )
+        if not approx_equal(portfolio_curve_end, got_return, tol=1e-8):
+            raise AssertionError(
+                f"Portfolio curve end mismatch: expected={got_return}, got={portfolio_curve_end}"
+            )
+
         curve_start = curve["range"]["effective_from"]
         per_point_checked = 0
         for row in curve["rows"]:
@@ -430,6 +463,7 @@ def run_regression(root: Path) -> dict[str, Any]:
             "expected_return_rate": round(expected_return, 10),
             "api_return_rate": got_return,
             "batch_return_rate": batch_row["return_rate"],
+            "portfolio_return_rate": portfolio_rate,
             "curve_end_return_rate": curve_end,
             "per_point_checked": per_point_checked,
             "wealth_total_cents": expected_wealth_cents,
@@ -462,6 +496,7 @@ def main() -> None:
     print(f"  expected_return_rate: {result['expected_return_rate']}")
     print(f"  api_return_rate: {result['api_return_rate']}")
     print(f"  batch_return_rate: {result['batch_return_rate']}")
+    print(f"  portfolio_return_rate: {result['portfolio_return_rate']}")
     print(f"  curve_end_return_rate: {result['curve_end_return_rate']}")
     print(f"  per_point_checked: {result['per_point_checked']}")
     print(f"  wealth_total_cents: {result['wealth_total_cents']}")

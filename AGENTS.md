@@ -147,10 +147,12 @@
   - 账户元数据：`GET /api/meta/accounts`
   - 投资区间收益率（现金加权/Modified Dietz）：
     - `GET /api/analytics/investment-return`
+    - 支持 `account_id=__portfolio__` 查看全部投资账户组合收益率
   - 投资区间收益率（全部账户对比）：
     - `GET /api/analytics/investment-returns`
   - 投资资产曲线：
     - `GET /api/analytics/investment-curve`
+    - 支持 `account_id=__portfolio__` 查看组合总资产与累计收益率曲线
   - 财富总览：
     - `GET /api/analytics/wealth-overview`
   - 财富增长曲线：
@@ -188,6 +190,7 @@
 - 用临时数据库构造固定样本，自动校验：
   - 区间收益率（Modified Dietz）数值稳定。
   - 批量账户收益率接口与单账户收益率口径一致。
+  - 组合账户收益率与单账户样本口径一致（单账户样本场景）。
   - 曲线终点累计收益率 = 同区间收益率。
   - 曲线每个点累计收益率 = 区间起点到该点的收益率。
   - 财富总览与财富曲线聚合口径一致。

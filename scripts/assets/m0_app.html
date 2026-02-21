@@ -712,9 +712,12 @@
     async function refreshInvestmentAccounts() {
       const data = await api("/api/meta/accounts?kind=investment");
       state.investmentAccounts = data.investment_accounts || [];
-      const options = state.investmentAccounts
+      const accountOptions = state.investmentAccounts
         .map(item => `<option value="${item.account_id}">${item.account_name} (${item.account_id})</option>`)
         .join("");
+      const options = state.investmentAccounts.length > 0
+        ? `<option value="__portfolio__">全部投资账户（组合）</option>${accountOptions}`
+        : "";
 
       ["retAccountId"].forEach(id => {
         const el = document.getElementById(id);
@@ -986,7 +989,9 @@
           ]);
           if (requestId !== latestRequestId) return;
 
+          const targetLabel = retData.account_count ? `组合（${retData.account_count}个账户）` : (retData.account_name || "-");
           showMetrics(retMetrics, [
+            { k: "分析对象", v: targetLabel },
             { k: "区间收益率", v: retData.metrics.return_rate_pct || "-" },
             { k: "年化收益率", v: retData.metrics.annualized_rate_pct || "-" },
             { k: "收益额(元)", v: retData.metrics.profit_yuan },
@@ -1045,7 +1050,7 @@
             setStatus(
               retStatus,
               true,
-              `已自动更新：区间 ${retData.range.effective_from} ~ ${retData.range.effective_to}`
+              `已自动更新：${targetLabel}，区间 ${retData.range.effective_from} ~ ${retData.range.effective_to}`
             );
           }
         } catch (err) {

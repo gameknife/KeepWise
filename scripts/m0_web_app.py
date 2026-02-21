@@ -136,6 +136,8 @@ def ensure_db(config: AppConfig) -> None:
 
 SUPPORTED_PRESETS = {"ytd", "1y", "3y", "since_inception", "custom"}
 SUPPORTED_ASSET_CLASSES = {"cash", "real_estate"}
+PORTFOLIO_ACCOUNT_ID = "__portfolio__"
+PORTFOLIO_ACCOUNT_NAME = "全部投资账户（组合）"
 ADMIN_RESET_CONFIRM_PHRASE = "RESET KEEPWISE"
 ADMIN_DATA_TABLES = [
     "transactions",
@@ -1002,6 +1004,26 @@ def load_investment_account_bounds(
     return account_name, earliest, latest
 
 
+def load_investment_portfolio_bounds(conn: sqlite3.Connection) -> tuple[date, date, int]:
+    row = conn.execute(
+        """
+        SELECT
+            MIN(snapshot_date) AS earliest_date,
+            MAX(snapshot_date) AS latest_date,
+            COUNT(DISTINCT account_id) AS account_count
+        FROM investment_records
+        """
+    ).fetchone()
+    if not row or not row["latest_date"]:
+        raise ValueError("未找到可用的投资记录")
+    earliest = parse_iso_date(str(row["earliest_date"]), "earliest_date")
+    latest = parse_iso_date(str(row["latest_date"]), "latest_date")
+    account_count = int(row["account_count"] or 0)
+    if account_count <= 0:
+        raise ValueError("未找到可用的投资账户")
+    return earliest, latest, account_count
+
+
 def select_begin_snapshot(
     conn: sqlite3.Connection,
     account_id: str,
@@ -1172,6 +1194,279 @@ def calculate_modified_dietz(
     }
 
 
+def build_investment_portfolio_return_payload(
+    conn: sqlite3.Connection,
+    *,
+    preset: str,
+    from_raw: str,
+    to_raw: str,
+) -> dict[str, Any]:
+    earliest, latest, account_count = load_investment_portfolio_bounds(conn)
+    requested_from, effective_from, effective_to = resolve_window(
+        preset=preset,
+        from_raw=from_raw,
+        to_raw=to_raw,
+        earliest=earliest,
+        latest=latest,
+    )
+    if effective_from >= effective_to:
+        raise ValueError("区间内有效快照不足，无法计算收益率")
+
+    date_rows = conn.execute(
+        """
+        SELECT DISTINCT snapshot_date
+        FROM investment_records
+        WHERE snapshot_date >= ? AND snapshot_date <= ?
+        ORDER BY snapshot_date ASC
+        """,
+        (effective_from.isoformat(), effective_to.isoformat()),
+    ).fetchall()
+    candidate_dates = {str(row["snapshot_date"]) for row in date_rows}
+    candidate_dates.add(effective_from.isoformat())
+    candidate_dates.add(effective_to.isoformat())
+    ordered_dates = sorted(candidate_dates)
+
+    history_rows = conn.execute(
+        """
+        SELECT
+            account_id,
+            snapshot_date,
+            total_assets_cents AS value_cents,
+            transfer_amount_cents AS flow_cents
+        FROM investment_records
+        WHERE snapshot_date <= ?
+        ORDER BY account_id, snapshot_date
+        """,
+        (effective_to.isoformat(),),
+    ).fetchall()
+    if not history_rows:
+        raise ValueError("区间内没有可用的投资记录")
+    totals = build_asof_totals(dates=ordered_dates, history_rows=history_rows)
+    begin_assets = int(totals[effective_from.isoformat()])
+    end_assets = int(totals[effective_to.isoformat()])
+
+    flow_rows = conn.execute(
+        """
+        SELECT snapshot_date, COALESCE(SUM(transfer_amount_cents), 0) AS transfer_amount_cents
+        FROM investment_records
+        WHERE snapshot_date > ? AND snapshot_date <= ?
+        GROUP BY snapshot_date
+        ORDER BY snapshot_date ASC
+        """,
+        (effective_from.isoformat(), effective_to.isoformat()),
+    ).fetchall()
+    calc = calculate_modified_dietz(
+        begin_date=effective_from,
+        end_date=effective_to,
+        begin_assets_cents=begin_assets,
+        end_assets_cents=end_assets,
+        flow_rows=flow_rows,
+        allow_zero_interval=False,
+    )
+
+    requested_to_text = parse_iso_date(to_raw, "to").isoformat() if to_raw else latest.isoformat()
+    return_rate = calc["return_rate"]
+    annualized_rate = calc["annualized_rate"]
+
+    return {
+        "account_id": PORTFOLIO_ACCOUNT_ID,
+        "account_name": PORTFOLIO_ACCOUNT_NAME,
+        "account_count": account_count,
+        "range": {
+            "preset": preset,
+            "requested_from": requested_from.isoformat(),
+            "requested_to": requested_to_text,
+            "effective_from": effective_from.isoformat(),
+            "effective_to": effective_to.isoformat(),
+            "interval_days": calc["interval_days"],
+        },
+        "metrics": {
+            "begin_assets_cents": begin_assets,
+            "begin_assets_yuan": cents_to_yuan_text(begin_assets),
+            "end_assets_cents": end_assets,
+            "end_assets_yuan": cents_to_yuan_text(end_assets),
+            "net_flow_cents": calc["net_flow_cents"],
+            "net_flow_yuan": cents_to_yuan_text(calc["net_flow_cents"]),
+            "profit_cents": calc["profit_cents"],
+            "profit_yuan": cents_to_yuan_text(calc["profit_cents"]),
+            "weighted_capital_cents": calc["weighted_capital_cents"],
+            "weighted_capital_yuan": cents_to_yuan_text(calc["weighted_capital_cents"]),
+            "return_rate": round(return_rate, 8) if return_rate is not None else None,
+            "return_rate_pct": f"{return_rate * 100:.2f}%" if return_rate is not None else None,
+            "annualized_rate": round(annualized_rate, 8) if annualized_rate is not None else None,
+            "annualized_rate_pct": f"{annualized_rate * 100:.2f}%" if annualized_rate is not None else None,
+            "note": calc["note"],
+        },
+        "cash_flows": calc["cash_flows"],
+    }
+
+
+def build_investment_portfolio_curve_payload(
+    conn: sqlite3.Connection,
+    *,
+    preset: str,
+    from_raw: str,
+    to_raw: str,
+) -> dict[str, Any]:
+    earliest, latest, account_count = load_investment_portfolio_bounds(conn)
+    requested_from, effective_from, effective_to = resolve_window(
+        preset=preset,
+        from_raw=from_raw,
+        to_raw=to_raw,
+        earliest=earliest,
+        latest=latest,
+    )
+    if effective_from > effective_to:
+        raise ValueError("区间内有效快照不足，无法生成曲线")
+
+    date_rows = conn.execute(
+        """
+        SELECT DISTINCT snapshot_date
+        FROM investment_records
+        WHERE snapshot_date >= ? AND snapshot_date <= ?
+        ORDER BY snapshot_date ASC
+        """,
+        (effective_from.isoformat(), effective_to.isoformat()),
+    ).fetchall()
+    candidate_dates = {str(row["snapshot_date"]) for row in date_rows}
+    candidate_dates.add(effective_from.isoformat())
+    candidate_dates.add(effective_to.isoformat())
+    ordered_dates = sorted(candidate_dates)
+
+    history_rows = conn.execute(
+        """
+        SELECT
+            account_id,
+            snapshot_date,
+            total_assets_cents AS value_cents,
+            transfer_amount_cents AS flow_cents
+        FROM investment_records
+        WHERE snapshot_date <= ?
+        ORDER BY account_id, snapshot_date
+        """,
+        (effective_to.isoformat(),),
+    ).fetchall()
+    if not history_rows:
+        raise ValueError("区间内没有可用的投资记录")
+    totals = build_asof_totals(dates=ordered_dates, history_rows=history_rows)
+    begin_assets = int(totals[effective_from.isoformat()])
+
+    flow_rows = conn.execute(
+        """
+        SELECT snapshot_date, COALESCE(SUM(transfer_amount_cents), 0) AS transfer_amount_cents
+        FROM investment_records
+        WHERE snapshot_date > ? AND snapshot_date <= ?
+        GROUP BY snapshot_date
+        ORDER BY snapshot_date ASC
+        """,
+        (effective_from.isoformat(), effective_to.isoformat()),
+    ).fetchall()
+    flow_points = [(str(row["snapshot_date"]), int(row["transfer_amount_cents"])) for row in flow_rows]
+    transfer_by_date = {flow_date: flow_amount for flow_date, flow_amount in flow_points}
+
+    rows: list[dict[str, Any]] = []
+    for point_date_text in ordered_dates:
+        if point_date_text < effective_from.isoformat():
+            continue
+        point_date = parse_iso_date(point_date_text, "point_date")
+        point_assets = int(totals[point_date_text])
+
+        point_flows: list[dict[str, Any]] = []
+        for flow_date, flow_amount in flow_points:
+            if flow_date > point_date_text:
+                break
+            point_flows.append(
+                {
+                    "snapshot_date": flow_date,
+                    "transfer_amount_cents": flow_amount,
+                }
+            )
+
+        point_calc = calculate_modified_dietz(
+            begin_date=effective_from,
+            end_date=point_date,
+            begin_assets_cents=begin_assets,
+            end_assets_cents=point_assets,
+            flow_rows=point_flows,
+            allow_zero_interval=True,
+        )
+        cumulative_return = point_calc["return_rate"]
+        rows.append(
+            {
+                "snapshot_date": point_date_text,
+                "effective_snapshot_date": point_date_text,
+                "total_assets_cents": point_assets,
+                "total_assets_yuan": cents_to_yuan_text(point_assets),
+                "transfer_amount_cents": transfer_by_date.get(point_date_text, 0),
+                "transfer_amount_yuan": cents_to_yuan_text(transfer_by_date.get(point_date_text, 0)),
+                "cumulative_return_rate": round(cumulative_return, 8) if cumulative_return is not None else None,
+                "cumulative_return_pct": round(cumulative_return * 100, 4) if cumulative_return is not None else None,
+                "cumulative_return_pct_text": (
+                    f"{cumulative_return * 100:.2f}%" if cumulative_return is not None else None
+                ),
+            }
+        )
+
+    if not rows:
+        return {
+            "account_id": PORTFOLIO_ACCOUNT_ID,
+            "account_name": PORTFOLIO_ACCOUNT_NAME,
+            "account_count": account_count,
+            "range": {
+                "preset": preset,
+                "requested_from": requested_from.isoformat(),
+                "requested_to": parse_iso_date(to_raw, "to").isoformat() if to_raw else latest.isoformat(),
+                "effective_from": effective_from.isoformat(),
+                "effective_to": effective_to.isoformat(),
+            },
+            "summary": {
+                "count": 0,
+                "change_cents": 0,
+                "change_pct": None,
+                "end_cumulative_return_rate": None,
+                "end_cumulative_return_pct_text": None,
+            },
+            "rows": [],
+        }
+
+    first_value = int(rows[0]["total_assets_cents"])
+    last_value = int(rows[-1]["total_assets_cents"])
+    change_cents = last_value - first_value
+    change_pct = (change_cents / first_value) if first_value > 0 else None
+    end_cumulative_return_rate = rows[-1]["cumulative_return_rate"]
+
+    return {
+        "account_id": PORTFOLIO_ACCOUNT_ID,
+        "account_name": PORTFOLIO_ACCOUNT_NAME,
+        "account_count": account_count,
+        "range": {
+            "preset": preset,
+            "requested_from": requested_from.isoformat(),
+            "requested_to": parse_iso_date(to_raw, "to").isoformat() if to_raw else latest.isoformat(),
+            "effective_from": effective_from.isoformat(),
+            "effective_to": rows[-1]["effective_snapshot_date"],
+        },
+        "summary": {
+            "count": len(rows),
+            "start_assets_cents": first_value,
+            "start_assets_yuan": cents_to_yuan_text(first_value),
+            "end_assets_cents": last_value,
+            "end_assets_yuan": cents_to_yuan_text(last_value),
+            "change_cents": change_cents,
+            "change_yuan": cents_to_yuan_text(change_cents),
+            "change_pct": round(change_pct, 8) if change_pct is not None else None,
+            "change_pct_text": f"{change_pct * 100:.2f}%" if change_pct is not None else None,
+            "end_cumulative_return_rate": end_cumulative_return_rate,
+            "end_cumulative_return_pct_text": (
+                f"{end_cumulative_return_rate * 100:.2f}%"
+                if end_cumulative_return_rate is not None
+                else None
+            ),
+        },
+        "rows": rows,
+    }
+
+
 def build_investment_return_payload(
     conn: sqlite3.Connection,
     *,
@@ -1278,6 +1573,13 @@ def query_investment_return(config: AppConfig, qs: dict[str, list[str]]) -> dict
     conn = sqlite3.connect(config.db_path)
     conn.row_factory = sqlite3.Row
     try:
+        if account_id == PORTFOLIO_ACCOUNT_ID:
+            return build_investment_portfolio_return_payload(
+                conn,
+                preset=preset,
+                from_raw=from_raw,
+                to_raw=to_raw,
+            )
         return build_investment_return_payload(
             conn,
             account_id=account_id,
@@ -1421,6 +1723,13 @@ def query_investment_curve(config: AppConfig, qs: dict[str, list[str]]) -> dict[
     conn = sqlite3.connect(config.db_path)
     conn.row_factory = sqlite3.Row
     try:
+        if account_id == PORTFOLIO_ACCOUNT_ID:
+            return build_investment_portfolio_curve_payload(
+                conn,
+                preset=preset,
+                from_raw=from_raw,
+                to_raw=to_raw,
+            )
         account_name, earliest, latest = load_investment_account_bounds(conn, account_id)
         requested_from, effective_from, effective_to = resolve_window(
             preset=preset,
