@@ -93,6 +93,43 @@ MANUAL_HEADER_ALIASES = {
 }
 
 
+def finalize_rows_with_inferred_assets(
+    buckets: dict[str, dict[str, Any]],
+    errors: list[str],
+) -> list[ParsedInvestmentRow]:
+    parsed: list[ParsedInvestmentRow] = []
+    last_known_assets_cents: int | None = None
+
+    for snapshot_date in sorted(buckets.keys()):
+        item = buckets[snapshot_date]
+        total_assets_cents = int(item["total_assets_cents"])
+        transfer_amount_cents = int(item["transfer_amount_cents"])
+        has_total_assets = bool(item["has_total_assets"])
+
+        if has_total_assets:
+            last_known_assets_cents = total_assets_cents
+        elif last_known_assets_cents is not None:
+            # 对仅有资金进出的日期，按上一条总资产 + 当日净转入推导总资产。
+            total_assets_cents = last_known_assets_cents + transfer_amount_cents
+            last_known_assets_cents = total_assets_cents
+        elif transfer_amount_cents != 0:
+            errors.append(f"{snapshot_date}: 缺少总资产金额且无可继承历史值，已跳过该日期")
+            continue
+
+        if total_assets_cents == 0 and transfer_amount_cents == 0:
+            continue
+        parsed.append(
+            ParsedInvestmentRow(
+                snapshot_date=snapshot_date,
+                account_name=str(item["account_name"]),
+                total_assets_cents=total_assets_cents,
+                transfer_amount_cents=transfer_amount_cents,
+            )
+        )
+
+    return parsed
+
+
 def row_get(row: list[str], idx: int | None) -> str:
     if idx is None:
         return ""
@@ -158,7 +195,7 @@ def parse_summary_rows(
     header = rows[header_idx]
     mapping = {field: header[idx] for field, idx in mapping_idx.items()}
 
-    parsed: list[ParsedInvestmentRow] = []
+    buckets: dict[str, dict[str, Any]] = {}
     errors: list[str] = []
     for i, row in enumerate(rows[header_idx + 1 :], start=header_idx + 2):
         if not any((c or "").strip() for c in row):
@@ -171,29 +208,36 @@ def parse_summary_rows(
             snapshot_date = normalize_date_flexible(snapshot_raw)
             account_name = row_get(row, mapping_idx.get("account_name")) or account_hint
 
-            total_assets_cents = parse_amount_to_cents(row_get(row, mapping_idx.get("total_assets")))
+            bucket = buckets.setdefault(
+                snapshot_date,
+                {
+                    "snapshot_date": snapshot_date,
+                    "account_name": account_name,
+                    "total_assets_cents": 0,
+                    "transfer_amount_cents": 0,
+                    "has_total_assets": False,
+                },
+            )
+            if account_name:
+                bucket["account_name"] = account_name
+
+            total_assets_text = row_get(row, mapping_idx.get("total_assets"))
+            if total_assets_text:
+                bucket["total_assets_cents"] = parse_amount_to_cents(total_assets_text)
+                bucket["has_total_assets"] = True
+
             transfer_text = row_get(row, mapping_idx.get("transfer_amount"))
             if transfer_text:
                 transfer_amount_cents = parse_amount_to_cents(transfer_text)
             else:
-                transfer_amount_cents = parse_amount_to_cents(row_get(row, mapping_idx.get("external_in"))) - parse_amount_to_cents(
-                    row_get(row, mapping_idx.get("external_out"))
-                )
-
-            if total_assets_cents == 0 and transfer_amount_cents == 0:
-                continue
-
-            parsed.append(
-                ParsedInvestmentRow(
-                    snapshot_date=snapshot_date,
-                    account_name=account_name,
-                    total_assets_cents=total_assets_cents,
-                    transfer_amount_cents=transfer_amount_cents,
-                )
-            )
+                transfer_amount_cents = parse_amount_to_cents(
+                    row_get(row, mapping_idx.get("external_in"))
+                ) - parse_amount_to_cents(row_get(row, mapping_idx.get("external_out")))
+            bucket["transfer_amount_cents"] += transfer_amount_cents
         except (ValueError, InvalidOperation) as exc:
             errors.append(f"第{i}行: {exc}")
 
+    parsed = finalize_rows_with_inferred_assets(buckets, errors)
     return parsed, errors, mapping
 
 
@@ -248,30 +292,7 @@ def parse_manual_rows(
         except (ValueError, InvalidOperation) as exc:
             errors.append(f"第{i}行: {exc}")
 
-    parsed: list[ParsedInvestmentRow] = []
-    last_known_assets_cents: int | None = None
-    for snapshot_date in sorted(buckets.keys()):
-        item = buckets[snapshot_date]
-        if item["has_total_assets"]:
-            last_known_assets_cents = item["total_assets_cents"]
-        elif last_known_assets_cents is not None:
-            # 手动流水里部分日期只有资金进出，没有总资产快照，沿用上一条总资产避免错误归零。
-            item["total_assets_cents"] = last_known_assets_cents
-        elif item["transfer_amount_cents"] != 0:
-            errors.append(f"{snapshot_date}: 缺少总资产金额且无可继承历史值，已跳过该日期")
-            continue
-
-        if item["total_assets_cents"] == 0 and item["transfer_amount_cents"] == 0:
-            continue
-        parsed.append(
-            ParsedInvestmentRow(
-                snapshot_date=item["snapshot_date"],
-                account_name=item["account_name"],
-                total_assets_cents=item["total_assets_cents"],
-                transfer_amount_cents=item["transfer_amount_cents"],
-            )
-        )
-
+    parsed = finalize_rows_with_inferred_assets(buckets, errors)
     return parsed, errors, mapping
 
 

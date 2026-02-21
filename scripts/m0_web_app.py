@@ -1145,6 +1145,8 @@ def calculate_modified_dietz(
     for row in flow_rows:
         flow_date = parse_iso_date(str(row["snapshot_date"]), "flow_date")
         flow_cents = int(row["transfer_amount_cents"])
+        if flow_cents == 0:
+            continue
         if interval_days > 0:
             weight = (end_date - flow_date).days / interval_days
         else:
@@ -1249,8 +1251,9 @@ def build_investment_portfolio_return_payload(
         """
         SELECT snapshot_date, COALESCE(SUM(transfer_amount_cents), 0) AS transfer_amount_cents
         FROM investment_records
-        WHERE snapshot_date > ? AND snapshot_date <= ?
+        WHERE snapshot_date > ? AND snapshot_date <= ? AND transfer_amount_cents != 0
         GROUP BY snapshot_date
+        HAVING COALESCE(SUM(transfer_amount_cents), 0) != 0
         ORDER BY snapshot_date ASC
         """,
         (effective_from.isoformat(), effective_to.isoformat()),
@@ -1289,6 +1292,8 @@ def build_investment_portfolio_return_payload(
             "net_flow_yuan": cents_to_yuan_text(calc["net_flow_cents"]),
             "profit_cents": calc["profit_cents"],
             "profit_yuan": cents_to_yuan_text(calc["profit_cents"]),
+            "net_growth_cents": calc["profit_cents"],
+            "net_growth_yuan": cents_to_yuan_text(calc["profit_cents"]),
             "weighted_capital_cents": calc["weighted_capital_cents"],
             "weighted_capital_yuan": cents_to_yuan_text(calc["weighted_capital_cents"]),
             "return_rate": round(return_rate, 8) if return_rate is not None else None,
@@ -1355,8 +1360,9 @@ def build_investment_portfolio_curve_payload(
         """
         SELECT snapshot_date, COALESCE(SUM(transfer_amount_cents), 0) AS transfer_amount_cents
         FROM investment_records
-        WHERE snapshot_date > ? AND snapshot_date <= ?
+        WHERE snapshot_date > ? AND snapshot_date <= ? AND transfer_amount_cents != 0
         GROUP BY snapshot_date
+        HAVING COALESCE(SUM(transfer_amount_cents), 0) != 0
         ORDER BY snapshot_date ASC
         """,
         (effective_from.isoformat(), effective_to.isoformat()),
@@ -1391,6 +1397,7 @@ def build_investment_portfolio_curve_payload(
             allow_zero_interval=True,
         )
         cumulative_return = point_calc["return_rate"]
+        cumulative_net_growth_cents = int(point_calc["profit_cents"])
         rows.append(
             {
                 "snapshot_date": point_date_text,
@@ -1399,6 +1406,8 @@ def build_investment_portfolio_curve_payload(
                 "total_assets_yuan": cents_to_yuan_text(point_assets),
                 "transfer_amount_cents": transfer_by_date.get(point_date_text, 0),
                 "transfer_amount_yuan": cents_to_yuan_text(transfer_by_date.get(point_date_text, 0)),
+                "cumulative_net_growth_cents": cumulative_net_growth_cents,
+                "cumulative_net_growth_yuan": cents_to_yuan_text(cumulative_net_growth_cents),
                 "cumulative_return_rate": round(cumulative_return, 8) if cumulative_return is not None else None,
                 "cumulative_return_pct": round(cumulative_return * 100, 4) if cumulative_return is not None else None,
                 "cumulative_return_pct_text": (
@@ -1423,6 +1432,8 @@ def build_investment_portfolio_curve_payload(
                 "count": 0,
                 "change_cents": 0,
                 "change_pct": None,
+                "end_net_growth_cents": 0,
+                "end_net_growth_yuan": cents_to_yuan_text(0),
                 "end_cumulative_return_rate": None,
                 "end_cumulative_return_pct_text": None,
             },
@@ -1433,6 +1444,7 @@ def build_investment_portfolio_curve_payload(
     last_value = int(rows[-1]["total_assets_cents"])
     change_cents = last_value - first_value
     change_pct = (change_cents / first_value) if first_value > 0 else None
+    end_net_growth_cents = int(rows[-1]["cumulative_net_growth_cents"])
     end_cumulative_return_rate = rows[-1]["cumulative_return_rate"]
 
     return {
@@ -1456,6 +1468,8 @@ def build_investment_portfolio_curve_payload(
             "change_yuan": cents_to_yuan_text(change_cents),
             "change_pct": round(change_pct, 8) if change_pct is not None else None,
             "change_pct_text": f"{change_pct * 100:.2f}%" if change_pct is not None else None,
+            "end_net_growth_cents": end_net_growth_cents,
+            "end_net_growth_yuan": cents_to_yuan_text(end_net_growth_cents),
             "end_cumulative_return_rate": end_cumulative_return_rate,
             "end_cumulative_return_pct_text": (
                 f"{end_cumulative_return_rate * 100:.2f}%"
@@ -1549,6 +1563,8 @@ def build_investment_return_payload(
             "net_flow_yuan": cents_to_yuan_text(calc["net_flow_cents"]),
             "profit_cents": calc["profit_cents"],
             "profit_yuan": cents_to_yuan_text(calc["profit_cents"]),
+            "net_growth_cents": calc["profit_cents"],
+            "net_growth_yuan": cents_to_yuan_text(calc["profit_cents"]),
             "weighted_capital_cents": calc["weighted_capital_cents"],
             "weighted_capital_yuan": cents_to_yuan_text(calc["weighted_capital_cents"]),
             "return_rate": round(return_rate, 8) if return_rate is not None else None,
@@ -1671,6 +1687,8 @@ def query_investment_returns(config: AppConfig, qs: dict[str, list[str]]) -> dic
                     "net_flow_yuan": metrics["net_flow_yuan"],
                     "profit_cents": int(metrics["profit_cents"]),
                     "profit_yuan": metrics["profit_yuan"],
+                    "net_growth_cents": int(metrics["net_growth_cents"]),
+                    "net_growth_yuan": metrics["net_growth_yuan"],
                     "return_rate": metrics["return_rate"],
                     "return_rate_pct": metrics["return_rate_pct"],
                     "annualized_rate": metrics["annualized_rate"],
@@ -1780,8 +1798,9 @@ def query_investment_curve(config: AppConfig, qs: dict[str, list[str]]) -> dict[
             """
             SELECT snapshot_date, COALESCE(SUM(transfer_amount_cents), 0) AS transfer_amount_cents
             FROM investment_records
-            WHERE account_id = ? AND snapshot_date >= ? AND snapshot_date <= ?
+            WHERE account_id = ? AND snapshot_date >= ? AND snapshot_date <= ? AND transfer_amount_cents != 0
             GROUP BY snapshot_date
+            HAVING COALESCE(SUM(transfer_amount_cents), 0) != 0
             """,
             (account_id, begin_date.isoformat(), final_end_date.isoformat()),
         ).fetchall()
@@ -1816,6 +1835,7 @@ def query_investment_curve(config: AppConfig, qs: dict[str, list[str]]) -> dict[
                 allow_zero_interval=True,
             )
             cumulative_return = point_calc["return_rate"]
+            cumulative_net_growth_cents = int(point_calc["profit_cents"])
             rows.append(
                 {
                     "snapshot_date": date_text,
@@ -1824,6 +1844,8 @@ def query_investment_curve(config: AppConfig, qs: dict[str, list[str]]) -> dict[
                     "total_assets_yuan": cents_to_yuan_text(point_end_assets),
                     "transfer_amount_cents": transfer_by_date.get(date_text, 0),
                     "transfer_amount_yuan": cents_to_yuan_text(transfer_by_date.get(date_text, 0)),
+                    "cumulative_net_growth_cents": cumulative_net_growth_cents,
+                    "cumulative_net_growth_yuan": cents_to_yuan_text(cumulative_net_growth_cents),
                     "cumulative_return_rate": round(cumulative_return, 8) if cumulative_return is not None else None,
                     "cumulative_return_pct": round(cumulative_return * 100, 4) if cumulative_return is not None else None,
                     "cumulative_return_pct_text": (
@@ -1849,6 +1871,8 @@ def query_investment_curve(config: AppConfig, qs: dict[str, list[str]]) -> dict[
                 "count": 0,
                 "change_cents": 0,
                 "change_pct": None,
+                "end_net_growth_cents": 0,
+                "end_net_growth_yuan": cents_to_yuan_text(0),
                 "end_cumulative_return_rate": None,
                 "end_cumulative_return_pct_text": None,
             },
@@ -1859,6 +1883,7 @@ def query_investment_curve(config: AppConfig, qs: dict[str, list[str]]) -> dict[
     last_value = int(rows[-1]["total_assets_cents"])
     change_cents = last_value - first_value
     change_pct = (change_cents / first_value) if first_value > 0 else None
+    end_net_growth_cents = int(rows[-1]["cumulative_net_growth_cents"])
     end_cumulative_return_rate = rows[-1]["cumulative_return_rate"]
 
     return {
@@ -1881,6 +1906,8 @@ def query_investment_curve(config: AppConfig, qs: dict[str, list[str]]) -> dict[
             "change_yuan": cents_to_yuan_text(change_cents),
             "change_pct": round(change_pct, 8) if change_pct is not None else None,
             "change_pct_text": f"{change_pct * 100:.2f}%" if change_pct is not None else None,
+            "end_net_growth_cents": end_net_growth_cents,
+            "end_net_growth_yuan": cents_to_yuan_text(end_net_growth_cents),
             "end_cumulative_return_rate": end_cumulative_return_rate,
             "end_cumulative_return_pct_text": (
                 f"{end_cumulative_return_rate * 100:.2f}%"
@@ -2159,6 +2186,10 @@ def query_wealth_curve(config: AppConfig, qs: dict[str, list[str]]) -> dict[str,
     real_estate_totals = build_asof_totals(dates=dates, history_rows=real_estate_history)
 
     rows: list[dict[str, Any]] = []
+    first_investment_total = 0
+    first_cash_total = 0
+    first_real_estate_total = 0
+    first_wealth_total = 0
     for d in dates:
         inv = investment_totals[d]
         cash = cash_totals[d]
@@ -2168,6 +2199,15 @@ def query_wealth_curve(config: AppConfig, qs: dict[str, list[str]]) -> dict[str,
             + (cash if include_cash else 0)
             + (re if include_real_estate else 0)
         )
+        if not rows:
+            first_investment_total = inv
+            first_cash_total = cash
+            first_real_estate_total = re
+            first_wealth_total = wealth
+        wealth_net_growth_cents = wealth - first_wealth_total
+        investment_net_growth_cents = inv - first_investment_total
+        cash_net_growth_cents = cash - first_cash_total
+        real_estate_net_growth_cents = re - first_real_estate_total
         rows.append(
             {
                 "snapshot_date": d,
@@ -2176,6 +2216,11 @@ def query_wealth_curve(config: AppConfig, qs: dict[str, list[str]]) -> dict[str,
                 "real_estate_total_cents": re,
                 "wealth_total_cents": wealth,
                 "wealth_total_yuan": cents_to_yuan_text(wealth),
+                "wealth_net_growth_cents": wealth_net_growth_cents,
+                "wealth_net_growth_yuan": cents_to_yuan_text(wealth_net_growth_cents),
+                "investment_net_growth_cents": investment_net_growth_cents,
+                "cash_net_growth_cents": cash_net_growth_cents,
+                "real_estate_net_growth_cents": real_estate_net_growth_cents,
             }
         )
 
@@ -2205,6 +2250,8 @@ def query_wealth_curve(config: AppConfig, qs: dict[str, list[str]]) -> dict[str,
             "end_wealth_yuan": cents_to_yuan_text(last_total),
             "change_cents": change_cents,
             "change_yuan": cents_to_yuan_text(change_cents),
+            "net_growth_cents": change_cents,
+            "net_growth_yuan": cents_to_yuan_text(change_cents),
             "change_pct": round(change_pct, 8) if change_pct is not None else None,
             "change_pct_text": f"{change_pct * 100:.2f}%" if change_pct is not None else None,
         },

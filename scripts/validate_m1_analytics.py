@@ -19,6 +19,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+import import_youzhiyouxing_investments as yzxy_mod
 import m0_web_app as app_mod
 import migrate_ledger_db as migrate_mod
 
@@ -214,6 +215,40 @@ def build_config(root: Path, db_path: Path) -> app_mod.AppConfig:
 
 
 def run_regression(root: Path) -> dict[str, Any]:
+    manual_rows, manual_errors, _ = yzxy_mod.parse_manual_rows(
+        [
+            ["记录类型", "记账时间", "转入转出金额", "总资产金额", "账户名称"],
+            ["资产快照", "2026-01-01", "", "100.00", "回归投资账户"],
+            ["资金转入", "2026-01-02", "10.00", "", "回归投资账户"],
+            ["资金转出", "2026-01-03", "-30.00", "", "回归投资账户"],
+        ],
+        "回归投资账户",
+    )
+    if manual_errors:
+        raise AssertionError(f"Manual parser errors unexpected: {manual_errors}")
+    if [int(row.total_assets_cents) for row in manual_rows] != [10_000, 11_000, 8_000]:
+        raise AssertionError(
+            "Manual parser inferred assets mismatch: "
+            f"got={[int(row.total_assets_cents) for row in manual_rows]}"
+        )
+
+    summary_rows, summary_errors, _ = yzxy_mod.parse_summary_rows(
+        [
+            ["日期", "账户名称", "总资产金额", "转入转出金额"],
+            ["2026-01-01", "回归投资账户", "100.00", "0.00"],
+            ["2026-01-02", "回归投资账户", "", "10.00"],
+            ["2026-01-03", "回归投资账户", "", "-30.00"],
+        ],
+        "回归投资账户",
+    )
+    if summary_errors:
+        raise AssertionError(f"Summary parser errors unexpected: {summary_errors}")
+    if [int(row.total_assets_cents) for row in summary_rows] != [10_000, 11_000, 8_000]:
+        raise AssertionError(
+            "Summary parser inferred assets mismatch: "
+            f"got={[int(row.total_assets_cents) for row in summary_rows]}"
+        )
+
     with tempfile.TemporaryDirectory(prefix="keepwise-m1-regression-") as tmp_dir:
         db_path = Path(tmp_dir) / "ledger_regression.db"
         migrate_mod.apply_migrations(db_path, root / "db" / "migrations")
@@ -256,11 +291,28 @@ def run_regression(root: Path) -> dict[str, Any]:
             raise AssertionError(
                 f"Modified Dietz mismatch: expected={expected_return:.10f}, got={got_return}"
             )
+        if int(ret["metrics"]["net_growth_cents"]) != int(ret["metrics"]["profit_cents"]):
+            raise AssertionError(
+                "Investment return net growth mismatch: "
+                f"net_growth={ret['metrics']['net_growth_cents']}, profit={ret['metrics']['profit_cents']}"
+            )
 
         curve_end = curve["summary"]["end_cumulative_return_rate"]
         if not approx_equal(got_return, curve_end, tol=1e-8):
             raise AssertionError(
                 f"Curve end return mismatch: return={got_return}, curve_end={curve_end}"
+            )
+        if int(curve["summary"]["end_net_growth_cents"]) != int(ret["metrics"]["net_growth_cents"]):
+            raise AssertionError(
+                "Curve end net growth mismatch: "
+                f"curve={curve['summary']['end_net_growth_cents']}, "
+                f"return={ret['metrics']['net_growth_cents']}"
+            )
+        if int(curve["rows"][-1]["cumulative_net_growth_cents"]) != int(curve["summary"]["end_net_growth_cents"]):
+            raise AssertionError(
+                "Curve end net growth row mismatch: "
+                f"row={curve['rows'][-1]['cumulative_net_growth_cents']}, "
+                f"summary={curve['summary']['end_net_growth_cents']}"
             )
 
         returns_batch = app_mod.query_investment_returns(
@@ -309,6 +361,8 @@ def run_regression(root: Path) -> dict[str, Any]:
             raise AssertionError(
                 f"Portfolio account_count mismatch: expected=1, got={portfolio_ret.get('account_count')}"
             )
+        if any(int(flow["transfer_amount_cents"]) == 0 for flow in portfolio_ret.get("cash_flows", [])):
+            raise AssertionError("Portfolio cash flows should exclude zero-value entries")
         if not approx_equal(portfolio_rate, got_return, tol=1e-8):
             raise AssertionError(
                 f"Portfolio return mismatch: expected={got_return}, got={portfolio_rate}"
@@ -317,6 +371,18 @@ def run_regression(root: Path) -> dict[str, Any]:
             raise AssertionError(
                 f"Portfolio curve end mismatch: expected={got_return}, got={portfolio_curve_end}"
             )
+        if int(portfolio_ret["metrics"]["net_growth_cents"]) != int(portfolio_ret["metrics"]["profit_cents"]):
+            raise AssertionError(
+                "Portfolio return net growth mismatch: "
+                f"net_growth={portfolio_ret['metrics']['net_growth_cents']}, "
+                f"profit={portfolio_ret['metrics']['profit_cents']}"
+            )
+        if int(portfolio_curve["summary"]["end_net_growth_cents"]) != int(portfolio_ret["metrics"]["net_growth_cents"]):
+            raise AssertionError(
+                "Portfolio curve end net growth mismatch: "
+                f"curve={portfolio_curve['summary']['end_net_growth_cents']}, "
+                f"return={portfolio_ret['metrics']['net_growth_cents']}"
+            )
 
         curve_start = curve["range"]["effective_from"]
         per_point_checked = 0
@@ -324,7 +390,7 @@ def run_regression(root: Path) -> dict[str, Any]:
             point_date = str(row["snapshot_date"])
             if point_date <= curve_start:
                 continue
-            point_ret = app_mod.query_investment_return(
+            point_ret_payload = app_mod.query_investment_return(
                 cfg,
                 {
                     "account_id": [account_id],
@@ -332,11 +398,18 @@ def run_regression(root: Path) -> dict[str, Any]:
                     "from": [curve_start],
                     "to": [point_date],
                 },
-            )["metrics"]["return_rate"]
+            )
+            point_ret = point_ret_payload["metrics"]["return_rate"]
             point_curve = row["cumulative_return_rate"]
             if not approx_equal(point_ret, point_curve, tol=1e-8):
                 raise AssertionError(
                     f"Per-point mismatch at {point_date}: return={point_ret}, curve={point_curve}"
+                )
+            if int(point_ret_payload["metrics"]["net_growth_cents"]) != int(row["cumulative_net_growth_cents"]):
+                raise AssertionError(
+                    f"Per-point net growth mismatch at {point_date}: "
+                    f"return={point_ret_payload['metrics']['net_growth_cents']}, "
+                    f"curve={row['cumulative_net_growth_cents']}"
                 )
             per_point_checked += 1
 
@@ -356,6 +429,18 @@ def run_regression(root: Path) -> dict[str, Any]:
             raise AssertionError(
                 f"Wealth curve end mismatch: expected={expected_wealth_cents}, "
                 f"got={wealth_curve['summary']['end_wealth_cents']}"
+            )
+        if int(wealth_curve["summary"]["net_growth_cents"]) != int(wealth_curve["summary"]["change_cents"]):
+            raise AssertionError(
+                "Wealth curve net growth mismatch: "
+                f"net_growth={wealth_curve['summary']['net_growth_cents']}, "
+                f"change={wealth_curve['summary']['change_cents']}"
+            )
+        if int(wealth_curve["rows"][-1]["wealth_net_growth_cents"]) != int(wealth_curve["summary"]["net_growth_cents"]):
+            raise AssertionError(
+                "Wealth curve end row net growth mismatch: "
+                f"row={wealth_curve['rows'][-1]['wealth_net_growth_cents']}, "
+                f"summary={wealth_curve['summary']['net_growth_cents']}"
             )
 
         # Wealth include filters should affect only wealth total and rows selection.
@@ -392,6 +477,14 @@ def run_regression(root: Path) -> dict[str, Any]:
                 "Wealth curve filter mismatch: "
                 f"expected={expected_wealth_without_investment}, "
                 f"got={wealth_curve_without_investment['summary']['end_wealth_cents']}"
+            )
+        if int(wealth_curve_without_investment["summary"]["net_growth_cents"]) != int(
+            wealth_curve_without_investment["rows"][-1]["wealth_net_growth_cents"]
+        ):
+            raise AssertionError(
+                "Wealth curve filtered net growth mismatch: "
+                f"summary={wealth_curve_without_investment['summary']['net_growth_cents']}, "
+                f"row={wealth_curve_without_investment['rows'][-1]['wealth_net_growth_cents']}"
             )
 
         # All filters disabled should fail fast.
@@ -465,8 +558,11 @@ def run_regression(root: Path) -> dict[str, Any]:
             "batch_return_rate": batch_row["return_rate"],
             "portfolio_return_rate": portfolio_rate,
             "curve_end_return_rate": curve_end,
+            "curve_end_net_growth_cents": curve["summary"]["end_net_growth_cents"],
             "per_point_checked": per_point_checked,
+            "import_inferred_assets_ok": True,
             "wealth_total_cents": expected_wealth_cents,
+            "wealth_curve_net_growth_cents": wealth_curve["summary"]["net_growth_cents"],
             "wealth_total_without_investment_cents": expected_wealth_without_investment,
             "wealth_curve_points": wealth_curve["range"]["points"],
             "admin_reset_deleted_rows": reset_result["summary"]["deleted_rows"],
@@ -498,8 +594,11 @@ def main() -> None:
     print(f"  batch_return_rate: {result['batch_return_rate']}")
     print(f"  portfolio_return_rate: {result['portfolio_return_rate']}")
     print(f"  curve_end_return_rate: {result['curve_end_return_rate']}")
+    print(f"  curve_end_net_growth_cents: {result['curve_end_net_growth_cents']}")
     print(f"  per_point_checked: {result['per_point_checked']}")
+    print(f"  import_inferred_assets_ok: {result['import_inferred_assets_ok']}")
     print(f"  wealth_total_cents: {result['wealth_total_cents']}")
+    print(f"  wealth_curve_net_growth_cents: {result['wealth_curve_net_growth_cents']}")
     print(f"  wealth_curve_points: {result['wealth_curve_points']}")
     print(f"  admin_reset_deleted_rows: {result['admin_reset_deleted_rows']}")
 
