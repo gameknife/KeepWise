@@ -734,69 +734,63 @@ def calculate_modified_dietz(
     }
 
 
-def query_investment_return(config: AppConfig, qs: dict[str, list[str]]) -> dict[str, Any]:
-    account_id = (qs.get("account_id") or [""])[0].strip()
-    if not account_id:
-        raise ValueError("account_id 必填")
+def build_investment_return_payload(
+    conn: sqlite3.Connection,
+    *,
+    account_id: str,
+    preset: str,
+    from_raw: str,
+    to_raw: str,
+) -> dict[str, Any]:
+    account_name, earliest, latest = load_investment_account_bounds(conn, account_id)
+    requested_from, effective_from, effective_to = resolve_window(
+        preset=preset,
+        from_raw=from_raw,
+        to_raw=to_raw,
+        earliest=earliest,
+        latest=latest,
+    )
 
-    preset = parse_preset((qs.get("preset") or ["ytd"])[0])
-    from_raw = (qs.get("from") or [""])[0].strip()
-    to_raw = (qs.get("to") or [""])[0].strip()
+    begin_row = select_begin_snapshot(
+        conn,
+        account_id,
+        window_from=effective_from,
+        window_to=effective_to,
+    )
+    if not begin_row:
+        raise ValueError("区间内没有可用的期初资产记录")
 
-    conn = sqlite3.connect(config.db_path)
-    conn.row_factory = sqlite3.Row
-    try:
-        account_name, earliest, latest = load_investment_account_bounds(conn, account_id)
-        requested_from, effective_from, effective_to = resolve_window(
-            preset=preset,
-            from_raw=from_raw,
-            to_raw=to_raw,
-            earliest=earliest,
-            latest=latest,
-        )
+    begin_date = parse_iso_date(str(begin_row["snapshot_date"]), "begin_date")
+    begin_assets = int(begin_row["total_assets_cents"])
 
-        begin_row = select_begin_snapshot(
-            conn,
-            account_id,
-            window_from=effective_from,
-            window_to=effective_to,
-        )
-        if not begin_row:
-            raise ValueError("区间内没有可用的期初资产记录")
+    end_row = select_end_snapshot(
+        conn,
+        account_id,
+        begin_date=begin_date,
+        window_to=effective_to,
+    )
+    if not end_row:
+        raise ValueError("区间内没有可用的期末资产记录")
 
-        begin_date = parse_iso_date(str(begin_row["snapshot_date"]), "begin_date")
-        begin_assets = int(begin_row["total_assets_cents"])
+    end_date = parse_iso_date(str(end_row["snapshot_date"]), "end_date")
+    if begin_date >= end_date:
+        raise ValueError("区间内有效快照不足，无法计算收益率")
+    end_assets = int(end_row["total_assets_cents"])
 
-        end_row = select_end_snapshot(
-            conn,
-            account_id,
-            begin_date=begin_date,
-            window_to=effective_to,
-        )
-        if not end_row:
-            raise ValueError("区间内没有可用的期末资产记录")
-
-        end_date = parse_iso_date(str(end_row["snapshot_date"]), "end_date")
-        if begin_date >= end_date:
-            raise ValueError("区间内有效快照不足，无法计算收益率")
-        end_assets = int(end_row["total_assets_cents"])
-
-        flow_rows = load_transfer_rows(
-            conn,
-            account_id,
-            begin_date=begin_date,
-            end_date=end_date,
-        )
-        calc = calculate_modified_dietz(
-            begin_date=begin_date,
-            end_date=end_date,
-            begin_assets_cents=begin_assets,
-            end_assets_cents=end_assets,
-            flow_rows=flow_rows,
-            allow_zero_interval=False,
-        )
-    finally:
-        conn.close()
+    flow_rows = load_transfer_rows(
+        conn,
+        account_id,
+        begin_date=begin_date,
+        end_date=end_date,
+    )
+    calc = calculate_modified_dietz(
+        begin_date=begin_date,
+        end_date=end_date,
+        begin_assets_cents=begin_assets,
+        end_assets_cents=end_assets,
+        flow_rows=flow_rows,
+        allow_zero_interval=False,
+    )
 
     requested_to_text = parse_iso_date(to_raw, "to").isoformat() if to_raw else latest.isoformat()
     return_rate = calc["return_rate"]
@@ -831,6 +825,149 @@ def query_investment_return(config: AppConfig, qs: dict[str, list[str]]) -> dict
             "note": calc["note"],
         },
         "cash_flows": calc["cash_flows"],
+    }
+
+
+def query_investment_return(config: AppConfig, qs: dict[str, list[str]]) -> dict[str, Any]:
+    account_id = (qs.get("account_id") or [""])[0].strip()
+    if not account_id:
+        raise ValueError("account_id 必填")
+
+    preset = parse_preset((qs.get("preset") or ["ytd"])[0])
+    from_raw = (qs.get("from") or [""])[0].strip()
+    to_raw = (qs.get("to") or [""])[0].strip()
+
+    conn = sqlite3.connect(config.db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        return build_investment_return_payload(
+            conn,
+            account_id=account_id,
+            preset=preset,
+            from_raw=from_raw,
+            to_raw=to_raw,
+        )
+    finally:
+        conn.close()
+
+
+def query_investment_returns(config: AppConfig, qs: dict[str, list[str]]) -> dict[str, Any]:
+    preset = parse_preset((qs.get("preset") or ["ytd"])[0])
+    from_raw = (qs.get("from") or [""])[0].strip()
+    to_raw = (qs.get("to") or [""])[0].strip()
+    keyword = (qs.get("keyword") or [""])[0].strip().lower()
+    limit = min(max(int((qs.get("limit") or ["200"])[0] or "200"), 1), 500)
+
+    if preset == "custom":
+        parse_iso_date(from_raw, "from")
+    requested_to_text = parse_iso_date(to_raw, "to").isoformat() if to_raw else ""
+
+    conn = sqlite3.connect(config.db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        account_rows = conn.execute(
+            """
+            SELECT
+                r.account_id,
+                COALESCE(a.name, r.account_id) AS account_name,
+                COUNT(*) AS record_count,
+                MIN(r.snapshot_date) AS first_snapshot_date,
+                MAX(r.snapshot_date) AS latest_snapshot_date
+            FROM investment_records r
+            LEFT JOIN accounts a ON a.id = r.account_id
+            GROUP BY r.account_id
+            ORDER BY latest_snapshot_date DESC, account_name
+            """
+        ).fetchall()
+
+        if keyword:
+            account_rows = [
+                row
+                for row in account_rows
+                if keyword in str(row["account_id"]).lower() or keyword in str(row["account_name"]).lower()
+            ]
+        account_rows = account_rows[:limit]
+
+        rows: list[dict[str, Any]] = []
+        errors: list[dict[str, str]] = []
+        for row in account_rows:
+            account_id = str(row["account_id"])
+            account_name = str(row["account_name"])
+            try:
+                payload = build_investment_return_payload(
+                    conn,
+                    account_id=account_id,
+                    preset=preset,
+                    from_raw=from_raw,
+                    to_raw=to_raw,
+                )
+            except ValueError as exc:
+                errors.append(
+                    {
+                        "account_id": account_id,
+                        "account_name": account_name,
+                        "error": str(exc),
+                    }
+                )
+                continue
+
+            metrics = payload["metrics"]
+            rng = payload["range"]
+            rows.append(
+                {
+                    "account_id": account_id,
+                    "account_name": account_name,
+                    "record_count": int(row["record_count"]),
+                    "first_snapshot_date": str(row["first_snapshot_date"]),
+                    "latest_snapshot_date": str(row["latest_snapshot_date"]),
+                    "effective_from": rng["effective_from"],
+                    "effective_to": rng["effective_to"],
+                    "interval_days": int(rng["interval_days"]),
+                    "begin_assets_cents": int(metrics["begin_assets_cents"]),
+                    "begin_assets_yuan": metrics["begin_assets_yuan"],
+                    "end_assets_cents": int(metrics["end_assets_cents"]),
+                    "end_assets_yuan": metrics["end_assets_yuan"],
+                    "net_flow_cents": int(metrics["net_flow_cents"]),
+                    "net_flow_yuan": metrics["net_flow_yuan"],
+                    "profit_cents": int(metrics["profit_cents"]),
+                    "profit_yuan": metrics["profit_yuan"],
+                    "return_rate": metrics["return_rate"],
+                    "return_rate_pct": metrics["return_rate_pct"],
+                    "annualized_rate": metrics["annualized_rate"],
+                    "annualized_rate_pct": metrics["annualized_rate_pct"],
+                    "note": metrics["note"] or "",
+                }
+            )
+    finally:
+        conn.close()
+
+    rows.sort(
+        key=lambda item: (
+            item["return_rate"] is None,
+            -(item["return_rate"] if item["return_rate"] is not None else 0.0),
+            item["account_name"],
+        )
+    )
+    valid_rates = [float(row["return_rate"]) for row in rows if row["return_rate"] is not None]
+    avg_rate = sum(valid_rates) / len(valid_rates) if valid_rates else None
+
+    return {
+        "range": {
+            "preset": preset,
+            "requested_from": from_raw if from_raw else "",
+            "requested_to": requested_to_text,
+            "input_limit": limit,
+            "keyword": keyword,
+        },
+        "summary": {
+            "account_count": len(account_rows),
+            "computed_count": len(rows),
+            "error_count": len(errors),
+            "avg_return_rate": round(avg_rate, 8) if avg_rate is not None else None,
+            "avg_return_pct": f"{avg_rate * 100:.2f}%" if avg_rate is not None else None,
+        },
+        "rows": rows,
+        "errors": errors,
     }
 
 
@@ -1520,6 +1657,10 @@ class M0Handler(BaseHTTPRequestHandler):
                 return
             if parsed.path == "/api/analytics/investment-return":
                 payload = query_investment_return(self.config, parse_qs(parsed.query))
+                self._json(HTTPStatus.OK, payload)
+                return
+            if parsed.path == "/api/analytics/investment-returns":
+                payload = query_investment_returns(self.config, parse_qs(parsed.query))
                 self._json(HTTPStatus.OK, payload)
                 return
             if parsed.path == "/api/analytics/investment-curve":

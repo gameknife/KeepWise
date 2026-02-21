@@ -147,6 +147,8 @@
   - 账户元数据：`GET /api/meta/accounts`
   - 投资区间收益率（现金加权/Modified Dietz）：
     - `GET /api/analytics/investment-return`
+  - 投资区间收益率（全部账户对比）：
+    - `GET /api/analytics/investment-returns`
   - 投资资产曲线：
     - `GET /api/analytics/investment-curve`
   - 财富总览：
@@ -160,7 +162,7 @@
 - `scripts/assets/m0_app.html` 与 `scripts/assets/m0_app.css` 已扩展为 M1 工作台：
   - 导入中心（保留）
   - 记录录入（投资 + 现金/不动产）
-  - 收益分析（区间收益率 + 投资总资产曲线 + 区间累计收益率曲线）
+  - 收益分析（区间收益率 + 全部账户收益率对比 + 投资总资产曲线 + 区间累计收益率曲线）
   - 财富总览（聚合 + 财富曲线 + 资产类型胶囊筛选）
   - 财富总览与曲线在区间/日期/筛选变化时自动刷新
   - 基础查询（交易/投资/非投资资产）
@@ -170,6 +172,7 @@
 - 新增回归脚本：`scripts/validate_m1_analytics.py`。
 - 用临时数据库构造固定样本，自动校验：
   - 区间收益率（Modified Dietz）数值稳定。
+  - 批量账户收益率接口与单账户收益率口径一致。
   - 曲线终点累计收益率 = 同区间收益率。
   - 曲线每个点累计收益率 = 区间起点到该点的收益率。
   - 财富总览与财富曲线聚合口径一致。

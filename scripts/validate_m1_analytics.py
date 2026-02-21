@@ -233,6 +233,28 @@ def run_regression(root: Path) -> dict[str, Any]:
                 f"Curve end return mismatch: return={got_return}, curve_end={curve_end}"
             )
 
+        returns_batch = app_mod.query_investment_returns(
+            cfg,
+            {
+                "preset": ["custom"],
+                "from": [range_from],
+                "to": [range_to],
+            },
+        )
+        if int(returns_batch["summary"]["computed_count"]) != 1:
+            raise AssertionError(
+                f"Investment returns batch computed_count mismatch: got={returns_batch['summary']['computed_count']}"
+            )
+        batch_row = returns_batch["rows"][0]
+        if str(batch_row["account_id"]) != account_id:
+            raise AssertionError(
+                f"Investment returns batch account mismatch: expected={account_id}, got={batch_row['account_id']}"
+            )
+        if not approx_equal(batch_row["return_rate"], got_return, tol=1e-8):
+            raise AssertionError(
+                f"Investment returns batch return mismatch: expected={got_return}, got={batch_row['return_rate']}"
+            )
+
         curve_start = curve["range"]["effective_from"]
         per_point_checked = 0
         for row in curve["rows"]:
@@ -343,6 +365,7 @@ def run_regression(root: Path) -> dict[str, Any]:
             "db_path": str(db_path),
             "expected_return_rate": round(expected_return, 10),
             "api_return_rate": got_return,
+            "batch_return_rate": batch_row["return_rate"],
             "curve_end_return_rate": curve_end,
             "per_point_checked": per_point_checked,
             "wealth_total_cents": expected_wealth_cents,
@@ -373,6 +396,7 @@ def main() -> None:
     print("M1 回归校验通过。")
     print(f"  expected_return_rate: {result['expected_return_rate']}")
     print(f"  api_return_rate: {result['api_return_rate']}")
+    print(f"  batch_return_rate: {result['batch_return_rate']}")
     print(f"  curve_end_return_rate: {result['curve_end_return_rate']}")
     print(f"  per_point_checked: {result['per_point_checked']}")
     print(f"  wealth_total_cents: {result['wealth_total_cents']}")
