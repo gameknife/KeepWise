@@ -144,6 +144,17 @@ def parse_preset(raw: str) -> str:
     return preset
 
 
+def parse_bool_param(raw: str, *, default: bool) -> bool:
+    text = (raw or "").strip().lower()
+    if not text:
+        return default
+    if text in {"1", "true", "yes", "y", "on"}:
+        return True
+    if text in {"0", "false", "no", "n", "off"}:
+        return False
+    raise ValueError(f"布尔参数不合法: {raw}")
+
+
 def resolve_window(
     *,
     preset: str,
@@ -1035,6 +1046,11 @@ def build_asof_totals(
 
 def query_wealth_overview(config: AppConfig, qs: dict[str, list[str]]) -> dict[str, Any]:
     as_of_raw = (qs.get("as_of") or [""])[0].strip()
+    include_investment = parse_bool_param((qs.get("include_investment") or [""])[0], default=True)
+    include_cash = parse_bool_param((qs.get("include_cash") or [""])[0], default=True)
+    include_real_estate = parse_bool_param((qs.get("include_real_estate") or [""])[0], default=True)
+    if not (include_investment or include_cash or include_real_estate):
+        raise ValueError("至少需要选择一个资产类型")
 
     conn = sqlite3.connect(config.db_path)
     conn.row_factory = sqlite3.Row
@@ -1109,7 +1125,11 @@ def query_wealth_overview(config: AppConfig, qs: dict[str, list[str]]) -> dict[s
     real_estate_rows = [row for row in asset_rows if row["asset_class"] == "real_estate"]
     cash_total = sum(int(row["value_cents"]) for row in cash_rows)
     real_estate_total = sum(int(row["value_cents"]) for row in real_estate_rows)
-    wealth_total = investment_total + cash_total + real_estate_total
+    wealth_total = (
+        (investment_total if include_investment else 0)
+        + (cash_total if include_cash else 0)
+        + (real_estate_total if include_real_estate else 0)
+    )
 
     def fmt_rows(rows: list[sqlite3.Row], cls: str) -> list[dict[str, Any]]:
         result = []
@@ -1130,6 +1150,11 @@ def query_wealth_overview(config: AppConfig, qs: dict[str, list[str]]) -> dict[s
     return {
         "as_of": as_of,
         "requested_as_of": requested_as_of.isoformat(),
+        "filters": {
+            "include_investment": include_investment,
+            "include_cash": include_cash,
+            "include_real_estate": include_real_estate,
+        },
         "summary": {
             "investment_total_cents": investment_total,
             "investment_total_yuan": cents_to_yuan_text(investment_total),
@@ -1140,7 +1165,11 @@ def query_wealth_overview(config: AppConfig, qs: dict[str, list[str]]) -> dict[s
             "wealth_total_cents": wealth_total,
             "wealth_total_yuan": cents_to_yuan_text(wealth_total),
         },
-        "rows": fmt_rows(investment_rows, "investment") + fmt_rows(cash_rows, "cash") + fmt_rows(real_estate_rows, "real_estate"),
+        "rows": (
+            (fmt_rows(investment_rows, "investment") if include_investment else [])
+            + (fmt_rows(cash_rows, "cash") if include_cash else [])
+            + (fmt_rows(real_estate_rows, "real_estate") if include_real_estate else [])
+        ),
     }
 
 
@@ -1148,6 +1177,11 @@ def query_wealth_curve(config: AppConfig, qs: dict[str, list[str]]) -> dict[str,
     preset = parse_preset((qs.get("preset") or ["1y"])[0])
     from_raw = (qs.get("from") or [""])[0].strip()
     to_raw = (qs.get("to") or [""])[0].strip()
+    include_investment = parse_bool_param((qs.get("include_investment") or [""])[0], default=True)
+    include_cash = parse_bool_param((qs.get("include_cash") or [""])[0], default=True)
+    include_real_estate = parse_bool_param((qs.get("include_real_estate") or [""])[0], default=True)
+    if not (include_investment or include_cash or include_real_estate):
+        raise ValueError("至少需要选择一个资产类型")
 
     conn = sqlite3.connect(config.db_path)
     conn.row_factory = sqlite3.Row
@@ -1245,7 +1279,11 @@ def query_wealth_curve(config: AppConfig, qs: dict[str, list[str]]) -> dict[str,
         inv = investment_totals[d]
         cash = cash_totals[d]
         re = real_estate_totals[d]
-        wealth = inv + cash + re
+        wealth = (
+            (inv if include_investment else 0)
+            + (cash if include_cash else 0)
+            + (re if include_real_estate else 0)
+        )
         rows.append(
             {
                 "snapshot_date": d,
@@ -1270,6 +1308,11 @@ def query_wealth_curve(config: AppConfig, qs: dict[str, list[str]]) -> dict[str,
             "effective_from": rows[0]["snapshot_date"] if rows else effective_from.isoformat(),
             "effective_to": rows[-1]["snapshot_date"] if rows else effective_to.isoformat(),
             "points": len(rows),
+        },
+        "filters": {
+            "include_investment": include_investment,
+            "include_cash": include_cash,
+            "include_real_estate": include_real_estate,
         },
         "summary": {
             "start_wealth_cents": first_total,

@@ -273,6 +273,72 @@ def run_regression(root: Path) -> dict[str, Any]:
                 f"got={wealth_curve['summary']['end_wealth_cents']}"
             )
 
+        # Wealth include filters should affect only wealth total and rows selection.
+        expected_wealth_without_investment = 5_500_000 + 80_000_000
+        overview_without_investment = app_mod.query_wealth_overview(
+            cfg,
+            {
+                "as_of": [range_to],
+                "include_investment": ["false"],
+                "include_cash": ["true"],
+                "include_real_estate": ["true"],
+            },
+        )
+        if int(overview_without_investment["summary"]["wealth_total_cents"]) != expected_wealth_without_investment:
+            raise AssertionError(
+                "Wealth overview filter mismatch: "
+                f"expected={expected_wealth_without_investment}, "
+                f"got={overview_without_investment['summary']['wealth_total_cents']}"
+            )
+
+        wealth_curve_without_investment = app_mod.query_wealth_curve(
+            cfg,
+            {
+                "preset": ["custom"],
+                "from": [range_from],
+                "to": [range_to],
+                "include_investment": ["false"],
+                "include_cash": ["true"],
+                "include_real_estate": ["true"],
+            },
+        )
+        if int(wealth_curve_without_investment["summary"]["end_wealth_cents"]) != expected_wealth_without_investment:
+            raise AssertionError(
+                "Wealth curve filter mismatch: "
+                f"expected={expected_wealth_without_investment}, "
+                f"got={wealth_curve_without_investment['summary']['end_wealth_cents']}"
+            )
+
+        # All filters disabled should fail fast.
+        for query_func, payload in (
+            (
+                app_mod.query_wealth_overview,
+                {
+                    "as_of": [range_to],
+                    "include_investment": ["false"],
+                    "include_cash": ["false"],
+                    "include_real_estate": ["false"],
+                },
+            ),
+            (
+                app_mod.query_wealth_curve,
+                {
+                    "preset": ["custom"],
+                    "from": [range_from],
+                    "to": [range_to],
+                    "include_investment": ["false"],
+                    "include_cash": ["false"],
+                    "include_real_estate": ["false"],
+                },
+            ),
+        ):
+            try:
+                query_func(cfg, payload)
+            except ValueError:
+                pass
+            else:
+                raise AssertionError("All wealth filters disabled should raise ValueError")
+
         return {
             "db_path": str(db_path),
             "expected_return_rate": round(expected_return, 10),
@@ -280,6 +346,7 @@ def run_regression(root: Path) -> dict[str, Any]:
             "curve_end_return_rate": curve_end,
             "per_point_checked": per_point_checked,
             "wealth_total_cents": expected_wealth_cents,
+            "wealth_total_without_investment_cents": expected_wealth_without_investment,
             "wealth_curve_points": wealth_curve["range"]["points"],
         }
 

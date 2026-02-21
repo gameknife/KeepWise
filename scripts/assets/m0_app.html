@@ -205,6 +205,11 @@
         </div>
         <div></div>
       </div>
+      <div class="pill-tabs" id="wealthAssetFilters">
+        <button type="button" class="pill-tab active" data-key="include_investment" aria-pressed="true">投资</button>
+        <button type="button" class="pill-tab active" data-key="include_cash" aria-pressed="true">现金</button>
+        <button type="button" class="pill-tab active" data-key="include_real_estate" aria-pressed="true">不动产</button>
+      </div>
       <div class="actions">
         <button id="wealthOverviewBtn" class="btn primary">查询总览</button>
       </div>
@@ -327,6 +332,8 @@
       emlPreviewToken: "",
       yzxyPreviewToken: "",
       investmentAccounts: [],
+      refreshReturnAnalytics: null,
+      refreshWealthAnalytics: null,
     };
 
     function money(cents) {
@@ -662,6 +669,9 @@
       if (typeof state.refreshReturnAnalytics === "function") {
         await state.refreshReturnAnalytics({ silent: true });
       }
+      if (typeof state.refreshWealthAnalytics === "function") {
+        await state.refreshWealthAnalytics({ silent: true });
+      }
     }
 
     async function initImportActions() {
@@ -803,6 +813,9 @@
           };
           const data = await api("/api/assets/manual", "POST", payload);
           setStatus(assetStatus, true, `资产记录已保存：${data.account_name} ${data.snapshot_date}`);
+          if (typeof state.refreshWealthAnalytics === "function") {
+            await state.refreshWealthAnalytics({ silent: true });
+          }
         } catch (err) {
           setStatus(assetStatus, false, err.message || String(err));
         }
@@ -815,6 +828,25 @@
         from: document.getElementById(`${prefix}From`).value.trim(),
         to: document.getElementById(`${prefix}To`).value.trim(),
       };
+    }
+
+    function readWealthFilters() {
+      const buttons = Array.from(document.querySelectorAll("#wealthAssetFilters .pill-tab"));
+      const filters = {
+        include_investment: true,
+        include_cash: true,
+        include_real_estate: true,
+      };
+      buttons.forEach(btn => {
+        const key = btn.getAttribute("data-key");
+        if (!key || !(key in filters)) return;
+        filters[key] = btn.classList.contains("active");
+      });
+      return filters;
+    }
+
+    function toQueryBool(raw) {
+      return raw ? "true" : "false";
     }
 
     function initReturnAnalytics() {
@@ -991,18 +1023,68 @@
       const wealthRowsWrap = document.getElementById("wealthRowsWrap");
       const wealthRowsBody = document.getElementById("wealthRowsBody");
       const wealthCurveMetrics = document.getElementById("wealthCurveMetrics");
+      const wealthAsOf = document.getElementById("wealthAsOf");
+      const wealthPreset = document.getElementById("wealthPreset");
+      const wealthFrom = document.getElementById("wealthFrom");
+      const wealthTo = document.getElementById("wealthTo");
+      const wealthFilterButtons = Array.from(document.querySelectorAll("#wealthAssetFilters .pill-tab"));
 
-      document.getElementById("wealthOverviewBtn").addEventListener("click", async () => {
+      let latestOverviewRequestId = 0;
+      let latestCurveRequestId = 0;
+
+      function setFilterButtonState(btn, enabled) {
+        btn.classList.toggle("active", enabled);
+        btn.setAttribute("aria-pressed", enabled ? "true" : "false");
+      }
+
+      function hasAnyFilterEnabled(filters) {
+        return filters.include_investment || filters.include_cash || filters.include_real_estate;
+      }
+
+      function serializeFilterParams(filters) {
+        return {
+          include_investment: toQueryBool(filters.include_investment),
+          include_cash: toQueryBool(filters.include_cash),
+          include_real_estate: toQueryBool(filters.include_real_estate),
+        };
+      }
+
+      function clearWealthOverviewVisuals() {
+        hide(wealthMetrics);
+        hide(wealthRowsWrap);
+        wealthRowsBody.innerHTML = "";
+      }
+
+      function clearWealthCurveVisuals() {
+        hide(wealthCurveMetrics);
+        renderLineChart("wealthCurveChart", "wealthCurveLegend", [], [
+          { key: "wealth_total_cents", color: "#0f766e", label: "总财富" },
+        ]);
+      }
+
+      async function refreshWealthOverview(options = {}) {
+        const { silent = false } = options;
+        const requestId = ++latestOverviewRequestId;
         try {
-          const asOf = document.getElementById("wealthAsOf").value.trim();
-          const params = new URLSearchParams({ as_of: asOf });
+          const filters = readWealthFilters();
+          if (!hasAnyFilterEnabled(filters)) {
+            clearWealthOverviewVisuals();
+            if (!silent) setStatus(wealthStatus, false, "至少需要选择一个资产类型");
+            return;
+          }
+
+          const params = new URLSearchParams({
+            as_of: wealthAsOf.value.trim(),
+            ...serializeFilterParams(filters),
+          });
           const data = await api(`/api/analytics/wealth-overview?${params.toString()}`);
-          setStatus(wealthStatus, true, `财富总览已更新（as_of: ${data.as_of}）`);
+          if (requestId !== latestOverviewRequestId) return;
+
           showMetrics(wealthMetrics, [
             { k: "总财富(元)", v: data.summary.wealth_total_yuan },
-            { k: "投资(元)", v: data.summary.investment_total_yuan },
-            { k: "现金(元)", v: data.summary.cash_total_yuan },
-            { k: "不动产(元)", v: data.summary.real_estate_total_yuan },
+            { k: "投资(元)", v: filters.include_investment ? data.summary.investment_total_yuan : "-" },
+            { k: "现金(元)", v: filters.include_cash ? data.summary.cash_total_yuan : "-" },
+            { k: "不动产(元)", v: filters.include_real_estate ? data.summary.real_estate_total_yuan : "-" },
           ]);
 
           wealthRowsWrap.classList.remove("hidden");
@@ -1014,36 +1096,142 @@
               <td>${row.value_yuan}</td>
             </tr>
           `).join("");
+
+          if (!silent) {
+            setStatus(wealthStatus, true, `财富总览已更新（as_of: ${data.as_of}）`);
+          }
         } catch (err) {
+          if (requestId !== latestOverviewRequestId) return;
+          clearWealthOverviewVisuals();
           setStatus(wealthStatus, false, err.message || String(err));
         }
-      });
+      }
 
-      document.getElementById("wealthCurveBtn").addEventListener("click", async () => {
+      async function refreshWealthCurve(options = {}) {
+        const { silent = false } = options;
+        const requestId = ++latestCurveRequestId;
         try {
-          const params = new URLSearchParams(buildPresetParams("wealth"));
+          if (wealthPreset.value === "custom" && !wealthFrom.value.trim()) {
+            clearWealthCurveVisuals();
+            if (!silent) setStatus(wealthStatus, false, "自定义区间需要填写开始日期");
+            return;
+          }
+
+          const filters = readWealthFilters();
+          if (!hasAnyFilterEnabled(filters)) {
+            clearWealthCurveVisuals();
+            if (!silent) setStatus(wealthStatus, false, "至少需要选择一个资产类型");
+            return;
+          }
+
+          const params = new URLSearchParams({
+            ...buildPresetParams("wealth"),
+            ...serializeFilterParams(filters),
+          });
           const data = await api(`/api/analytics/wealth-curve?${params.toString()}`);
+          if (requestId !== latestCurveRequestId) return;
+
           showMetrics(wealthCurveMetrics, [
             { k: "点位数", v: data.range.points },
             { k: "起点总财富(元)", v: data.summary.start_wealth_yuan },
             { k: "终点总财富(元)", v: data.summary.end_wealth_yuan },
             { k: "区间涨跌", v: data.summary.change_pct_text || "-" },
           ]);
-          renderLineChart("wealthCurveChart", "wealthCurveLegend", data.rows || [], [
+
+          const seriesDefs = [
             { key: "wealth_total_cents", color: "#0f766e", label: "总财富", formatValue: (val) => `${money(val)} 元` },
-            { key: "investment_total_cents", color: "#e28b00", label: "投资", formatValue: (val) => `${money(val)} 元` },
-            { key: "cash_total_cents", color: "#2f6db4", label: "现金", formatValue: (val) => `${money(val)} 元` },
-            { key: "real_estate_total_cents", color: "#7d5a97", label: "不动产", formatValue: (val) => `${money(val)} 元` },
-          ], {
+          ];
+          if (filters.include_investment) {
+            seriesDefs.push({
+              key: "investment_total_cents",
+              color: "#e28b00",
+              label: "投资",
+              formatValue: (val) => `${money(val)} 元`,
+            });
+          }
+          if (filters.include_cash) {
+            seriesDefs.push({
+              key: "cash_total_cents",
+              color: "#2f6db4",
+              label: "现金",
+              formatValue: (val) => `${money(val)} 元`,
+            });
+          }
+          if (filters.include_real_estate) {
+            seriesDefs.push({
+              key: "real_estate_total_cents",
+              color: "#7d5a97",
+              label: "不动产",
+              formatValue: (val) => `${money(val)} 元`,
+            });
+          }
+
+          renderLineChart("wealthCurveChart", "wealthCurveLegend", data.rows || [], seriesDefs, {
             includeZero: true,
             yTickCount: 4,
             yAxisFormatter: (val) => `${formatYuanShortFromCents(val)}元`,
             tooltipTitle: (row) => row.snapshot_date || "",
           });
+
+          if (!silent) {
+            setStatus(
+              wealthStatus,
+              true,
+              `财富曲线已更新：区间 ${data.range.effective_from} ~ ${data.range.effective_to}`
+            );
+          }
         } catch (err) {
+          if (requestId !== latestCurveRequestId) return;
+          clearWealthCurveVisuals();
           setStatus(wealthStatus, false, err.message || String(err));
         }
+      }
+
+      async function refreshWealthAnalytics(options = {}) {
+        const { silent = true } = options;
+        await Promise.all([
+          refreshWealthOverview({ silent }),
+          refreshWealthCurve({ silent }),
+        ]);
+      }
+
+      state.refreshWealthAnalytics = refreshWealthAnalytics;
+
+      wealthFilterButtons.forEach(btn => {
+        btn.addEventListener("click", () => {
+          const isEnabled = btn.classList.contains("active");
+          const activeCount = wealthFilterButtons.filter(item => item.classList.contains("active")).length;
+          if (isEnabled && activeCount <= 1) {
+            setStatus(wealthStatus, false, "至少需要选择一个资产类型");
+            return;
+          }
+          setFilterButtonState(btn, !isEnabled);
+          refreshWealthAnalytics({ silent: true });
+        });
       });
+
+      wealthAsOf.addEventListener("change", () => {
+        refreshWealthOverview({ silent: true });
+      });
+      wealthPreset.addEventListener("change", () => {
+        refreshWealthCurve({ silent: true });
+      });
+      wealthFrom.addEventListener("change", () => {
+        refreshWealthCurve({ silent: true });
+      });
+      wealthTo.addEventListener("change", () => {
+        refreshWealthCurve({ silent: true });
+      });
+
+      document.getElementById("wealthOverviewBtn").addEventListener("click", async () => {
+        await refreshWealthOverview({ silent: false });
+      });
+
+      document.getElementById("wealthCurveBtn").addEventListener("click", async () => {
+        await refreshWealthCurve({ silent: false });
+      });
+
+      refreshWealthAnalytics({ silent: true });
     }
 
     function initQuery() {

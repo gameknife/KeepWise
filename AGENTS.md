@@ -153,11 +153,16 @@
     - `GET /api/analytics/wealth-overview`
   - 财富增长曲线：
     - `GET /api/analytics/wealth-curve`
+  - 财富聚合筛选参数（投资/现金/不动产可选）：
+    - `include_investment`
+    - `include_cash`
+    - `include_real_estate`
 - `scripts/assets/m0_app.html` 与 `scripts/assets/m0_app.css` 已扩展为 M1 工作台：
   - 导入中心（保留）
   - 记录录入（投资 + 现金/不动产）
   - 收益分析（区间收益率 + 投资总资产曲线 + 区间累计收益率曲线）
-  - 财富总览（聚合 + 财富曲线）
+  - 财富总览（聚合 + 财富曲线 + 资产类型胶囊筛选）
+  - 财富总览与曲线在区间/日期/筛选变化时自动刷新
   - 基础查询（交易/投资/非投资资产）
 
 ## 14) 回归校验（新增）
@@ -168,5 +173,6 @@
   - 曲线终点累计收益率 = 同区间收益率。
   - 曲线每个点累计收益率 = 区间起点到该点的收益率。
   - 财富总览与财富曲线聚合口径一致。
+  - 财富筛选 `include_*` 参数口径一致（含全关时报错）。
 - 建议在每次调整收益算法后执行：
   - `python3 scripts/validate_m1_analytics.py`
