@@ -1,0 +1,528 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>KeepWise 交易规则管理</title>
+  <link rel="stylesheet" href="/assets/rules_admin.css">
+</head>
+<body>
+  <div class="container">
+    <header class="hero">
+      <h1>交易规则管理</h1>
+      <p>集中维护消费分类规则：商户映射、关键词规则，以及基于现有交易的规则建议。</p>
+      <div class="hero-actions">
+        <a class="btn ghost" href="/" rel="noopener">返回主工作台</a>
+        <button id="refreshAllBtn" class="btn primary">刷新全部数据</button>
+      </div>
+    </header>
+
+    <div id="globalStatus" class="status hidden"></div>
+    <div id="globalMetrics" class="grid-metrics hidden"></div>
+
+    <div class="pill-tabs" id="ruleTabs">
+      <button class="pill-tab active" data-view="suggestions">商户建议</button>
+      <button class="pill-tab" data-view="merchant_map">商户映射</button>
+      <button class="pill-tab" data-view="keyword_rules">关键词规则</button>
+    </div>
+
+    <main class="layout">
+      <section class="panel">
+        <div id="viewSuggestions" class="view-panel">
+          <div class="filters">
+            <div>
+              <label>关键字</label>
+              <input id="sugKeyword" type="text" placeholder="按商户筛选">
+            </div>
+            <div>
+              <label>返回条数</label>
+              <input id="sugLimit" type="number" value="200" min="1" max="500">
+            </div>
+            <div class="checkbox-wrap">
+              <input id="sugOnlyUnmapped" type="checkbox" checked>
+              <label for="sugOnlyUnmapped">仅未映射商户</label>
+            </div>
+            <div class="filter-actions">
+              <button id="sugLoadBtn" class="btn secondary">刷新建议</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>商户</th><th>交易数</th><th>金额(元)</th><th>待确认</th><th>推荐分类</th><th>已映射</th><th>操作</th></tr>
+              </thead>
+              <tbody id="sugBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="viewMerchantMap" class="view-panel hidden">
+          <div class="filters">
+            <div>
+              <label>关键字</label>
+              <input id="mapKeyword" type="text" placeholder="商户 / 分类 / 备注">
+            </div>
+            <div>
+              <label>返回条数</label>
+              <input id="mapLimit" type="number" value="200" min="1" max="500">
+            </div>
+            <div class="filter-actions">
+              <button id="mapLoadBtn" class="btn secondary">刷新规则</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>商户</th><th>分类</th><th>置信度</th><th>备注</th><th>操作</th></tr>
+              </thead>
+              <tbody id="mapBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="viewKeywordRules" class="view-panel hidden">
+          <div class="filters">
+            <div>
+              <label>关键字</label>
+              <input id="kwKeyword" type="text" placeholder="模式 / 分类 / 备注">
+            </div>
+            <div>
+              <label>返回条数</label>
+              <input id="kwLimit" type="number" value="200" min="1" max="500">
+            </div>
+            <div class="filter-actions">
+              <button id="kwLoadBtn" class="btn secondary">刷新规则</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>优先级</th><th>匹配</th><th>模式</th><th>分类</th><th>置信度</th><th>备注</th><th>操作</th></tr>
+              </thead>
+              <tbody id="kwBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <aside class="panel form-panel">
+        <div id="merchantFormCard">
+          <h3>商户映射编辑</h3>
+          <div class="form-grid">
+            <div><label>商户名</label><input id="mMerchant" type="text" placeholder="支付宝-XX"></div>
+            <div><label>消费分类</label><input id="mCategory" type="text" placeholder="餐饮"></div>
+            <div><label>置信度(0~1)</label><input id="mConfidence" type="number" step="0.01" value="0.95"></div>
+            <div class="full"><label>备注</label><input id="mNote" type="text" placeholder="manual"></div>
+          </div>
+          <div class="actions">
+            <button id="mSaveBtn" class="btn primary">保存商户规则</button>
+            <button id="mResetBtn" class="btn ghost">清空表单</button>
+          </div>
+          <p class="hint">建议页可“一键填入”，再微调后保存。</p>
+        </div>
+
+        <div id="keywordFormCard" class="hidden">
+          <h3>关键词规则编辑</h3>
+          <div class="form-grid">
+            <div><label>优先级</label><input id="kPriority" type="number" value="500"></div>
+            <div>
+              <label>匹配类型</label>
+              <select id="kMatchType">
+                <option value="contains" selected>contains</option>
+                <option value="prefix">prefix</option>
+                <option value="exact">exact</option>
+                <option value="regex">regex</option>
+              </select>
+            </div>
+            <div><label>关键词/模式</label><input id="kPattern" type="text" placeholder="滴滴"></div>
+            <div><label>消费分类</label><input id="kCategory" type="text" placeholder="交通出行"></div>
+            <div><label>置信度(0~1)</label><input id="kConfidence" type="number" step="0.01" value="0.70"></div>
+            <div><label>备注</label><input id="kNote" type="text" placeholder="manual"></div>
+          </div>
+          <div class="actions">
+            <button id="kSaveBtn" class="btn primary">保存关键词规则</button>
+            <button id="kResetBtn" class="btn ghost">清空表单</button>
+          </div>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <script>
+    const state = {
+      activeView: "suggestions",
+      suggestionRows: [],
+      merchantRows: [],
+      keywordRows: [],
+    };
+
+    function escapeHtml(text) {
+      return String(text || "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
+    function setStatus(ok, text) {
+      const el = document.getElementById("globalStatus");
+      el.classList.remove("hidden", "ok", "err");
+      el.classList.add(ok ? "ok" : "err");
+      el.textContent = text;
+    }
+
+    function showMetrics(items) {
+      const holder = document.getElementById("globalMetrics");
+      holder.classList.remove("hidden");
+      holder.innerHTML = items.map(item => `
+        <div class="metric">
+          <div class="k">${escapeHtml(item.k)}</div>
+          <div class="v">${escapeHtml(item.v)}</div>
+        </div>
+      `).join("");
+    }
+
+    async function api(path, method = "GET", body = null) {
+      const res = await fetch(path, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: body ? JSON.stringify(body) : null,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "请求失败");
+      return data;
+    }
+
+    function setView(view) {
+      state.activeView = view;
+      const tabs = Array.from(document.querySelectorAll("#ruleTabs .pill-tab"));
+      tabs.forEach(btn => btn.classList.toggle("active", btn.getAttribute("data-view") === view));
+      document.getElementById("viewSuggestions").classList.toggle("hidden", view !== "suggestions");
+      document.getElementById("viewMerchantMap").classList.toggle("hidden", view !== "merchant_map");
+      document.getElementById("viewKeywordRules").classList.toggle("hidden", view !== "keyword_rules");
+      document.getElementById("merchantFormCard").classList.toggle("hidden", view === "keyword_rules");
+      document.getElementById("keywordFormCard").classList.toggle("hidden", view !== "keyword_rules");
+    }
+
+    function fillMerchantForm(merchant, category = "") {
+      document.getElementById("mMerchant").value = merchant || "";
+      if (category) document.getElementById("mCategory").value = category;
+      setView("merchant_map");
+    }
+
+    function fillKeywordForm(row) {
+      document.getElementById("kPriority").value = row.priority || "500";
+      document.getElementById("kMatchType").value = row.match_type || "contains";
+      document.getElementById("kPattern").value = row.pattern || "";
+      document.getElementById("kCategory").value = row.expense_category || "";
+      document.getElementById("kConfidence").value = row.confidence || "0.70";
+      document.getElementById("kNote").value = row.note || "";
+      setView("keyword_rules");
+    }
+
+    function renderSuggestionRows(rows) {
+      const tbody = document.getElementById("sugBody");
+      if (!rows || rows.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7">暂无建议</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = rows.map(row => {
+        const merchant = String(row.merchant_normalized || "");
+        const preferred = String(row.mapped_expense_category || row.suggested_expense_category || "");
+        return `
+          <tr>
+            <td>${escapeHtml(merchant)}</td>
+            <td>${row.txn_count || 0}</td>
+            <td>${escapeHtml(row.total_amount_yuan || "0.00")}</td>
+            <td>${row.review_count || 0}</td>
+            <td>${escapeHtml(row.suggested_expense_category || "-")}</td>
+            <td>${escapeHtml(row.mapped_expense_category || "-")}</td>
+            <td class="actions-cell">
+              <button class="btn secondary small fill-merchant-btn" data-merchant="${encodeURIComponent(merchant)}" data-category="${encodeURIComponent(preferred)}">填入表单</button>
+              <button class="btn primary small quick-save-btn" data-merchant="${encodeURIComponent(merchant)}" data-category="${encodeURIComponent(preferred)}">一键保存</button>
+            </td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    function renderMerchantRows(rows) {
+      const tbody = document.getElementById("mapBody");
+      if (!rows || rows.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="5">暂无商户规则</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = rows.map(row => `
+        <tr>
+          <td>${escapeHtml(row.merchant_normalized)}</td>
+          <td>${escapeHtml(row.expense_category)}</td>
+          <td>${escapeHtml(row.confidence)}</td>
+          <td>${escapeHtml(row.note || "")}</td>
+          <td class="actions-cell">
+            <button class="btn secondary small edit-map-btn" data-merchant="${encodeURIComponent(row.merchant_normalized || "")}" data-category="${encodeURIComponent(row.expense_category || "")}" data-confidence="${escapeHtml(row.confidence || "")}" data-note="${encodeURIComponent(row.note || "")}">编辑</button>
+            <button class="btn danger small del-map-btn" data-merchant="${encodeURIComponent(row.merchant_normalized || "")}">删除</button>
+          </td>
+        </tr>
+      `).join("");
+    }
+
+    function renderKeywordRows(rows) {
+      const tbody = document.getElementById("kwBody");
+      if (!rows || rows.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7">暂无关键词规则</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = rows.map(row => `
+        <tr>
+          <td>${escapeHtml(row.priority)}</td>
+          <td>${escapeHtml(row.match_type)}</td>
+          <td>${escapeHtml(row.pattern)}</td>
+          <td>${escapeHtml(row.expense_category)}</td>
+          <td>${escapeHtml(row.confidence)}</td>
+          <td>${escapeHtml(row.note || "")}</td>
+          <td class="actions-cell">
+            <button class="btn secondary small edit-kw-btn" data-row="${encodeURIComponent(JSON.stringify(row))}">编辑</button>
+            <button class="btn danger small del-kw-btn" data-match-type="${escapeHtml(row.match_type || "")}" data-pattern="${encodeURIComponent(row.pattern || "")}">删除</button>
+          </td>
+        </tr>
+      `).join("");
+    }
+
+    async function loadSuggestions(options = {}) {
+      const { silent = false } = options;
+      const params = new URLSearchParams({
+        keyword: document.getElementById("sugKeyword").value.trim(),
+        limit: document.getElementById("sugLimit").value.trim() || "200",
+        only_unmapped: document.getElementById("sugOnlyUnmapped").checked ? "true" : "false",
+      });
+      const data = await api(`/api/rules/merchant-suggestions?${params.toString()}`);
+      state.suggestionRows = data.rows || [];
+      renderSuggestionRows(state.suggestionRows);
+      showMetrics([
+        { k: "商户建议", v: data.summary.count },
+        { k: "仅未映射", v: data.summary.only_unmapped ? "是" : "否" },
+        { k: "关键字", v: data.summary.keyword || "-" },
+        { k: "数据文件", v: "merchant_map.csv" },
+      ]);
+      if (!silent) setStatus(true, `商户建议已更新：${data.summary.count} 条`);
+    }
+
+    async function loadMerchantMap(options = {}) {
+      const { silent = false } = options;
+      const params = new URLSearchParams({
+        keyword: document.getElementById("mapKeyword").value.trim(),
+        limit: document.getElementById("mapLimit").value.trim() || "200",
+      });
+      const data = await api(`/api/rules/merchant-map?${params.toString()}`);
+      state.merchantRows = data.rows || [];
+      renderMerchantRows(state.merchantRows);
+      showMetrics([
+        { k: "商户规则", v: data.summary.count },
+        { k: "关键字", v: data.summary.keyword || "-" },
+        { k: "返回上限", v: data.summary.limit },
+        { k: "数据文件", v: "merchant_map.csv" },
+      ]);
+      if (!silent) setStatus(true, `商户规则已更新：${data.summary.count} 条`);
+    }
+
+    async function loadKeywordRules(options = {}) {
+      const { silent = false } = options;
+      const params = new URLSearchParams({
+        keyword: document.getElementById("kwKeyword").value.trim(),
+        limit: document.getElementById("kwLimit").value.trim() || "200",
+      });
+      const data = await api(`/api/rules/category-rules?${params.toString()}`);
+      state.keywordRows = data.rows || [];
+      renderKeywordRows(state.keywordRows);
+      showMetrics([
+        { k: "关键词规则", v: data.summary.count },
+        { k: "关键字", v: data.summary.keyword || "-" },
+        { k: "返回上限", v: data.summary.limit },
+        { k: "数据文件", v: "category_rules.csv" },
+      ]);
+      if (!silent) setStatus(true, `关键词规则已更新：${data.summary.count} 条`);
+    }
+
+    async function saveMerchantRule() {
+      const payload = {
+        merchant_normalized: document.getElementById("mMerchant").value.trim(),
+        expense_category: document.getElementById("mCategory").value.trim(),
+        confidence: document.getElementById("mConfidence").value.trim(),
+        note: document.getElementById("mNote").value.trim(),
+      };
+      const data = await api("/api/rules/merchant-map/upsert", "POST", payload);
+      await Promise.all([
+        loadMerchantMap({ silent: true }),
+        loadSuggestions({ silent: true }),
+      ]);
+      setStatus(true, `${data.updated ? "已更新" : "已新增"}商户规则：${data.row.merchant_normalized}`);
+    }
+
+    async function saveKeywordRule() {
+      const payload = {
+        priority: document.getElementById("kPriority").value.trim(),
+        match_type: document.getElementById("kMatchType").value,
+        pattern: document.getElementById("kPattern").value.trim(),
+        expense_category: document.getElementById("kCategory").value.trim(),
+        confidence: document.getElementById("kConfidence").value.trim(),
+        note: document.getElementById("kNote").value.trim(),
+      };
+      const data = await api("/api/rules/category-rules/upsert", "POST", payload);
+      await loadKeywordRules({ silent: true });
+      setStatus(true, `${data.updated ? "已更新" : "已新增"}关键词规则：${data.row.pattern}`);
+    }
+
+    function resetMerchantForm() {
+      document.getElementById("mMerchant").value = "";
+      document.getElementById("mCategory").value = "";
+      document.getElementById("mConfidence").value = "0.95";
+      document.getElementById("mNote").value = "";
+    }
+
+    function resetKeywordForm() {
+      document.getElementById("kPriority").value = "500";
+      document.getElementById("kMatchType").value = "contains";
+      document.getElementById("kPattern").value = "";
+      document.getElementById("kCategory").value = "";
+      document.getElementById("kConfidence").value = "0.70";
+      document.getElementById("kNote").value = "";
+    }
+
+    function bindEvents() {
+      Array.from(document.querySelectorAll("#ruleTabs .pill-tab")).forEach(btn => {
+        btn.addEventListener("click", () => {
+          setView(btn.getAttribute("data-view") || "suggestions");
+        });
+      });
+
+      document.getElementById("refreshAllBtn").addEventListener("click", async () => {
+        try {
+          await Promise.all([
+            loadSuggestions({ silent: true }),
+            loadMerchantMap({ silent: true }),
+            loadKeywordRules({ silent: true }),
+          ]);
+          setStatus(true, "规则数据已全部刷新");
+        } catch (err) {
+          setStatus(false, err.message || String(err));
+        }
+      });
+
+      document.getElementById("sugLoadBtn").addEventListener("click", () => loadSuggestions().catch(err => setStatus(false, err.message || String(err))));
+      document.getElementById("mapLoadBtn").addEventListener("click", () => loadMerchantMap().catch(err => setStatus(false, err.message || String(err))));
+      document.getElementById("kwLoadBtn").addEventListener("click", () => loadKeywordRules().catch(err => setStatus(false, err.message || String(err))));
+      document.getElementById("mSaveBtn").addEventListener("click", () => saveMerchantRule().catch(err => setStatus(false, err.message || String(err))));
+      document.getElementById("kSaveBtn").addEventListener("click", () => saveKeywordRule().catch(err => setStatus(false, err.message || String(err))));
+      document.getElementById("mResetBtn").addEventListener("click", resetMerchantForm);
+      document.getElementById("kResetBtn").addEventListener("click", resetKeywordForm);
+
+      document.getElementById("sugBody").addEventListener("click", async (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) return;
+
+        if (target.classList.contains("fill-merchant-btn")) {
+          const merchant = decodeURIComponent(target.getAttribute("data-merchant") || "");
+          const category = decodeURIComponent(target.getAttribute("data-category") || "");
+          fillMerchantForm(merchant, category);
+          return;
+        }
+
+        if (target.classList.contains("quick-save-btn")) {
+          const merchant = decodeURIComponent(target.getAttribute("data-merchant") || "");
+          const category = decodeURIComponent(target.getAttribute("data-category") || "");
+          if (!category) {
+            fillMerchantForm(merchant, "");
+            setStatus(false, `商户 ${merchant} 没有推荐分类，请手动填写后保存`);
+            return;
+          }
+          document.getElementById("mMerchant").value = merchant;
+          document.getElementById("mCategory").value = category;
+          try {
+            await saveMerchantRule();
+          } catch (err) {
+            setStatus(false, err.message || String(err));
+          }
+        }
+      });
+
+      document.getElementById("mapBody").addEventListener("click", async (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) return;
+
+        if (target.classList.contains("edit-map-btn")) {
+          const merchant = decodeURIComponent(target.getAttribute("data-merchant") || "");
+          const category = decodeURIComponent(target.getAttribute("data-category") || "");
+          const note = decodeURIComponent(target.getAttribute("data-note") || "");
+          document.getElementById("mMerchant").value = merchant;
+          document.getElementById("mCategory").value = category;
+          document.getElementById("mConfidence").value = target.getAttribute("data-confidence") || "0.95";
+          document.getElementById("mNote").value = note;
+          return;
+        }
+
+        if (target.classList.contains("del-map-btn")) {
+          const merchant = decodeURIComponent(target.getAttribute("data-merchant") || "");
+          if (!merchant) return;
+          if (!window.confirm(`确认删除商户规则：${merchant} ?`)) return;
+          try {
+            await api("/api/rules/merchant-map/delete", "POST", { merchant_normalized: merchant });
+            await Promise.all([
+              loadMerchantMap({ silent: true }),
+              loadSuggestions({ silent: true }),
+            ]);
+            setStatus(true, `已删除商户规则：${merchant}`);
+          } catch (err) {
+            setStatus(false, err.message || String(err));
+          }
+        }
+      });
+
+      document.getElementById("kwBody").addEventListener("click", async (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) return;
+
+        if (target.classList.contains("edit-kw-btn")) {
+          const raw = decodeURIComponent(target.getAttribute("data-row") || "{}");
+          try {
+            fillKeywordForm(JSON.parse(raw));
+          } catch {
+            setStatus(false, "规则数据解析失败");
+          }
+          return;
+        }
+
+        if (target.classList.contains("del-kw-btn")) {
+          const matchType = target.getAttribute("data-match-type") || "";
+          const pattern = decodeURIComponent(target.getAttribute("data-pattern") || "");
+          if (!pattern) return;
+          if (!window.confirm(`确认删除关键词规则：${matchType}:${pattern} ?`)) return;
+          try {
+            await api("/api/rules/category-rules/delete", "POST", {
+              match_type: matchType,
+              pattern,
+            });
+            await loadKeywordRules({ silent: true });
+            setStatus(true, `已删除关键词规则：${pattern}`);
+          } catch (err) {
+            setStatus(false, err.message || String(err));
+          }
+        }
+      });
+    }
+
+    async function init() {
+      bindEvents();
+      setView("suggestions");
+      await Promise.all([
+        loadSuggestions({ silent: true }),
+        loadMerchantMap({ silent: true }),
+        loadKeywordRules({ silent: true }),
+      ]);
+      setStatus(true, "规则数据已加载");
+    }
+
+    init().catch(err => setStatus(false, err.message || String(err)));
+  </script>
+</body>
+</html>

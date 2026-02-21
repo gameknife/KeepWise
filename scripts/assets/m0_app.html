@@ -17,6 +17,7 @@
         <button class="tab-btn" data-tab="tab-return">收益分析</button>
         <button class="tab-btn" data-tab="tab-wealth">财富总览</button>
         <button class="tab-btn" data-tab="tab-query">基础查询</button>
+        <button class="tab-btn" data-tab="tab-admin">高级管理</button>
       </div>
     </section>
 
@@ -343,6 +344,44 @@
           <thead><tr><th>日期</th><th>类型</th><th>账户</th><th>金额(元)</th><th>来源</th></tr></thead>
           <tbody id="qAssetBody"></tbody>
         </table>
+      </div>
+    </section>
+
+    <section id="tab-admin" class="panel hidden">
+      <h2>高级管理</h2>
+      <p class="hint">用于开发验证：清空数据库后重新导入，验证流程可重复执行。</p>
+      <div class="admin-warning">
+        <strong>危险操作：</strong>会删除数据库中的全部业务数据（交易、投资、资产、导入任务、账户等），结构和索引会保留。
+      </div>
+
+      <div class="row-3" style="margin-top:10px">
+        <div>
+          <label>确认口令</label>
+          <input id="adminConfirmText" type="text" placeholder="请输入确认口令">
+        </div>
+        <div>
+          <label>系统口令</label>
+          <div id="adminConfirmPhrase" class="metric" style="padding:9px 11px">-</div>
+        </div>
+        <div></div>
+      </div>
+
+      <div class="actions">
+        <button id="adminLoadStatsBtn" class="btn secondary">查看数据库数据量</button>
+        <button id="adminResetDbBtn" class="btn danger">清空全部数据库数据</button>
+      </div>
+      <div id="adminStatus" class="status hidden"></div>
+      <div id="adminMetrics" class="grid-metrics hidden"></div>
+      <div class="table-wrap hidden" id="adminRowsWrap">
+        <table>
+          <thead><tr><th>表名</th><th>清理前</th><th>清理后</th><th>删除行数</th></tr></thead>
+          <tbody id="adminRowsBody"></tbody>
+        </table>
+      </div>
+      <h3 style="margin-top:18px">交易规则管理</h3>
+      <p class="hint">规则编辑已拆分到独立页面，便于集中维护和查看。</p>
+      <div class="actions">
+        <a class="btn secondary" href="/rules" target="_blank" rel="noopener">打开交易规则管理页面</a>
       </div>
     </section>
   </div>
@@ -1364,7 +1403,7 @@
             <td>${row.merchant_normalized || ""}</td>
             <td>${row.description || ""}</td>
             <td>${money(row.amount_cents)}</td>
-            <td>${row.statement_category || ""}</td>
+            <td>${row.expense_category || row.statement_category || ""}</td>
             <td>${row.source_type || ""}</td>
           </tr>
         `).join("");
@@ -1431,6 +1470,86 @@
       });
     }
 
+    function initAdmin() {
+      const adminStatus = document.getElementById("adminStatus");
+      const adminMetrics = document.getElementById("adminMetrics");
+      const adminRowsWrap = document.getElementById("adminRowsWrap");
+      const adminRowsBody = document.getElementById("adminRowsBody");
+      const adminConfirmPhrase = document.getElementById("adminConfirmPhrase");
+      const adminConfirmText = document.getElementById("adminConfirmText");
+
+      function renderAdminRows(beforeRows, afterRows) {
+        const afterMap = new Map((afterRows || []).map(item => [item.table, Number(item.row_count || 0)]));
+        const base = beforeRows || [];
+        adminRowsWrap.classList.remove("hidden");
+        adminRowsBody.innerHTML = base.map(item => {
+          const before = Number(item.row_count || 0);
+          const after = Number(afterMap.has(item.table) ? afterMap.get(item.table) : 0);
+          return `
+            <tr>
+              <td>${item.table}</td>
+              <td>${before}</td>
+              <td>${after}</td>
+              <td>${before - after}</td>
+            </tr>
+          `;
+        }).join("");
+      }
+
+      async function loadAdminStats(options = {}) {
+        const { silent = false } = options;
+        const data = await api("/api/admin/db-stats");
+        adminConfirmPhrase.textContent = data.confirm_phrase || "-";
+        showMetrics(adminMetrics, [
+          { k: "数据表数量", v: data.summary.table_count },
+          { k: "当前总行数", v: data.summary.total_rows },
+          { k: "确认口令", v: data.confirm_phrase || "-" },
+          { k: "数据库", v: "keepwise.db" },
+        ]);
+        renderAdminRows(data.rows || [], data.rows || []);
+        if (!silent) {
+          setStatus(adminStatus, true, `数据库统计已更新，当前共 ${data.summary.total_rows} 行`);
+        }
+      }
+
+      document.getElementById("adminLoadStatsBtn").addEventListener("click", async () => {
+        try {
+          await loadAdminStats({ silent: false });
+        } catch (err) {
+          setStatus(adminStatus, false, err.message || String(err));
+        }
+      });
+
+      document.getElementById("adminResetDbBtn").addEventListener("click", async () => {
+        try {
+          const payload = await api("/api/admin/reset-db", "POST", {
+            confirm_text: adminConfirmText.value.trim(),
+            clear_import_sessions: true,
+          });
+          showMetrics(adminMetrics, [
+            { k: "数据表数量", v: payload.summary.table_count },
+            { k: "清理前总行数", v: payload.summary.total_rows_before },
+            { k: "清理后总行数", v: payload.summary.total_rows_after },
+            { k: "已删除行数", v: payload.summary.deleted_rows },
+          ]);
+          renderAdminRows(payload.before_rows || [], payload.after_rows || []);
+          setStatus(
+            adminStatus,
+            true,
+            `数据库已清空，可重新导入验证（清理会话目录 ${payload.cleared_preview_sessions || 0} 个）`
+          );
+          adminConfirmText.value = "";
+          await refreshInvestmentAccounts();
+        } catch (err) {
+          setStatus(adminStatus, false, err.message || String(err));
+        }
+      });
+
+      loadAdminStats({ silent: true }).catch(() => {
+        adminConfirmPhrase.textContent = "RESET KEEPWISE";
+      });
+    }
+
     async function init() {
       initTabs();
 
@@ -1445,6 +1564,7 @@
       initReturnAnalytics();
       initWealth();
       initQuery();
+      initAdmin();
       await refreshInvestmentAccounts();
     }
 

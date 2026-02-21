@@ -155,6 +155,17 @@
     - `GET /api/analytics/wealth-overview`
   - 财富增长曲线：
     - `GET /api/analytics/wealth-curve`
+  - 管理员数据校验能力：
+    - `GET /api/admin/db-stats`
+    - `POST /api/admin/reset-db`
+  - 规则管理能力：
+    - `GET /api/rules/merchant-map`
+    - `POST /api/rules/merchant-map/upsert`
+    - `POST /api/rules/merchant-map/delete`
+    - `GET /api/rules/category-rules`
+    - `POST /api/rules/category-rules/upsert`
+    - `POST /api/rules/category-rules/delete`
+    - `GET /api/rules/merchant-suggestions`
   - 财富聚合筛选参数（投资/现金/不动产可选）：
     - `include_investment`
     - `include_cash`
@@ -166,6 +177,10 @@
   - 财富总览（聚合 + 财富曲线 + 资产类型胶囊筛选）
   - 财富总览与曲线在区间/日期/筛选变化时自动刷新
   - 基础查询（交易/投资/非投资资产）
+  - 高级管理（全量清库 + 重新导入验证）
+  - 高级管理页仅保留数据库重置与验证入口
+  - 规则管理独立页面：`/rules`（建议回填 + 商户映射 + 关键词规则）
+  - 交易查询“分类”列展示真实消费分类（`expense_category`）
 
 ## 14) 回归校验（新增）
 
@@ -177,5 +192,6 @@
   - 曲线每个点累计收益率 = 区间起点到该点的收益率。
   - 财富总览与财富曲线聚合口径一致。
   - 财富筛选 `include_*` 参数口径一致（含全关时报错）。
+  - 管理员清库口令校验与全量清零结果。
 - 建议在每次调整收益算法后执行：
   - `python3 scripts/validate_m1_analytics.py`

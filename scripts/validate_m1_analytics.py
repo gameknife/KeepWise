@@ -102,10 +102,12 @@ def build_sample_dataset(conn: sqlite3.Connection) -> dict[str, str]:
     inv_account_id = "acct_inv_regression"
     cash_account_id = "acct_cash_regression"
     re_account_id = "acct_re_regression"
+    tx_account_id = "acct_tx_regression"
 
     insert_account(conn, inv_account_id, "回归测试投资账户", "investment")
     insert_account(conn, cash_account_id, "回归测试现金账户", "cash")
     insert_account(conn, re_account_id, "回归测试不动产账户", "other")
+    insert_account(conn, tx_account_id, "回归测试信用卡", "credit_card")
 
     # Fixed sample for Modified Dietz checks.
     insert_investment(
@@ -161,6 +163,34 @@ def build_sample_dataset(conn: sqlite3.Connection) -> dict[str, str]:
         asset_class="real_estate",
         snapshot_date="2026-01-05",
         value_cents=80_000_000,
+    )
+
+    conn.execute(
+        """
+        INSERT INTO categories(id, name, level, budget_enabled, is_active)
+        VALUES ('cat_reg_food', '餐饮', 1, 1, 1)
+        ON CONFLICT(id) DO UPDATE SET
+            name=excluded.name,
+            updated_at=datetime('now')
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO transactions(
+            id, external_ref, occurred_at, posted_at, month_key, amount_cents, currency, direction,
+            description, merchant, merchant_normalized, statement_category, category_id, account_id,
+            source_type, source_file, import_job_id, confidence, needs_review, excluded_in_analysis, exclude_reason
+        )
+        VALUES (
+            'tx_reg_1', 'cmb:tx_reg_1', '2026-01-10', '2026-01-10', '2026-01', 12345, 'CNY', 'expense',
+            '回归测试餐饮消费', '测试商户', '测试商户', '消费', 'cat_reg_food', ?, 'cmb_eml', 'sample.eml', NULL,
+            0.95, 0, 0, ''
+        )
+        ON CONFLICT(id) DO UPDATE SET
+            category_id=excluded.category_id,
+            updated_at=datetime('now')
+        """,
+        (tx_account_id,),
     )
 
     return {
@@ -361,6 +391,40 @@ def run_regression(root: Path) -> dict[str, Any]:
             else:
                 raise AssertionError("All wealth filters disabled should raise ValueError")
 
+        tx_result = app_mod.query_transactions(
+            cfg,
+            {"source_type": ["cmb_eml"], "limit": ["10"]},
+        )
+        if int(tx_result["summary"]["count"]) != 1:
+            raise AssertionError(f"Transactions regression count mismatch: got={tx_result['summary']['count']}")
+        tx_row = tx_result["rows"][0]
+        if tx_row.get("expense_category") != "餐饮":
+            raise AssertionError(
+                "Transactions expense category mismatch: "
+                f"expected=餐饮, got={tx_row.get('expense_category')}"
+            )
+
+        stats_before_reset = app_mod.query_admin_db_stats(cfg)
+        if int(stats_before_reset["summary"]["total_rows"]) <= 0:
+            raise AssertionError("Admin stats should report rows before reset")
+
+        try:
+            app_mod.reset_admin_db_data(cfg, confirm_text="WRONG")
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("Admin reset should reject wrong confirm text")
+
+        reset_result = app_mod.reset_admin_db_data(
+            cfg,
+            confirm_text=app_mod.ADMIN_RESET_CONFIRM_PHRASE,
+        )
+        if int(reset_result["summary"]["total_rows_after"]) != 0:
+            raise AssertionError(
+                "Admin reset failed: expected total_rows_after=0, "
+                f"got={reset_result['summary']['total_rows_after']}"
+            )
+
         return {
             "db_path": str(db_path),
             "expected_return_rate": round(expected_return, 10),
@@ -371,6 +435,7 @@ def run_regression(root: Path) -> dict[str, Any]:
             "wealth_total_cents": expected_wealth_cents,
             "wealth_total_without_investment_cents": expected_wealth_without_investment,
             "wealth_curve_points": wealth_curve["range"]["points"],
+            "admin_reset_deleted_rows": reset_result["summary"]["deleted_rows"],
         }
 
 
@@ -401,6 +466,7 @@ def main() -> None:
     print(f"  per_point_checked: {result['per_point_checked']}")
     print(f"  wealth_total_cents: {result['wealth_total_cents']}")
     print(f"  wealth_curve_points: {result['wealth_curve_points']}")
+    print(f"  admin_reset_deleted_rows: {result['admin_reset_deleted_rows']}")
 
 
 if __name__ == "__main__":
