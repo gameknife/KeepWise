@@ -136,6 +136,16 @@ def ensure_db(config: AppConfig) -> None:
 
 SUPPORTED_PRESETS = {"ytd", "1y", "3y", "since_inception", "custom"}
 SUPPORTED_ASSET_CLASSES = {"cash", "real_estate"}
+ACCOUNT_KIND_CHOICES = {
+    "investment",
+    "cash",
+    "real_estate",
+    "bank",
+    "credit_card",
+    "wallet",
+    "liability",
+    "other",
+}
 PORTFOLIO_ACCOUNT_ID = "__portfolio__"
 PORTFOLIO_ACCOUNT_NAME = "全部投资账户（组合）"
 ADMIN_RESET_CONFIRM_PHRASE = "RESET KEEPWISE"
@@ -638,6 +648,66 @@ def account_id_from_asset_name(asset_class: str, account_name: str) -> str:
     return f"acct_re_{suffix}"
 
 
+def account_id_from_manual_account(kind: str, account_name: str) -> str:
+    if kind == "investment":
+        return yzxy_import_mod.account_id_from_name(account_name)
+    if kind in {"cash", "real_estate"}:
+        return account_id_from_asset_name(kind, account_name)
+
+    digest = uuid.uuid5(uuid.NAMESPACE_URL, f"keepwise:{kind}:{account_name}")
+    suffix = str(digest).replace("-", "")[:12]
+    prefix_map = {
+        "bank": "acct_bank",
+        "credit_card": "acct_cc",
+        "wallet": "acct_wallet",
+        "liability": "acct_liab",
+        "other": "acct_other",
+    }
+    prefix = prefix_map.get(kind, "acct_other")
+    return f"{prefix}_{suffix}"
+
+
+def normalize_account_kind(raw: str) -> str:
+    kind = (raw or "").strip().lower()
+    if kind not in ACCOUNT_KIND_CHOICES:
+        raise ValueError(f"account_kind 不支持: {kind}")
+    return kind
+
+
+def account_kind_to_db_type(kind: str) -> str:
+    if kind == "real_estate":
+        return "other"
+    return kind
+
+
+def infer_account_kind(
+    *,
+    account_id: str,
+    account_type: str,
+    asset_cash_count: int,
+    asset_real_estate_count: int,
+) -> str:
+    if asset_real_estate_count > 0 or account_id.startswith("acct_re_"):
+        return "real_estate"
+    if asset_cash_count > 0 or account_id.startswith("acct_cash_"):
+        return "cash"
+    return account_type
+
+
+def load_account_row_by_id(conn: sqlite3.Connection, account_id: str) -> sqlite3.Row:
+    row = conn.execute(
+        """
+        SELECT id, name, account_type
+        FROM accounts
+        WHERE id = ?
+        """,
+        (account_id,),
+    ).fetchone()
+    if not row:
+        raise ValueError("未找到对应账户")
+    return row
+
+
 def ensure_asset_schema_ready(conn: sqlite3.Connection) -> None:
     table_exists = conn.execute(
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name='account_valuations' LIMIT 1"
@@ -672,6 +742,7 @@ def upsert_account(
         VALUES (?, ?, ?, 'CNY', 0)
         ON CONFLICT(id) DO UPDATE SET
             name=excluded.name,
+            account_type=excluded.account_type,
             updated_at=datetime('now')
         """,
         (account_id, account_name, account_type),
@@ -752,12 +823,12 @@ def run_eml_import(config: AppConfig, input_dir: Path, review_threshold: float) 
 def upsert_manual_investment(config: AppConfig, payload: dict[str, Any]) -> dict[str, Any]:
     ensure_db(config)
     snapshot_date = yzxy_import_mod.normalize_date(str(payload.get("snapshot_date", "")))
-    account_name = str(payload.get("account_name", "")).strip() or "手工投资账户"
-    account_id = yzxy_import_mod.account_id_from_name(account_name)
+    account_id_input = str(payload.get("account_id", "")).strip()
+    account_name_input = str(payload.get("account_name", "")).strip()
 
     row = yzxy_import_mod.ParsedInvestmentRow(
         snapshot_date=snapshot_date,
-        account_name=account_name,
+        account_name=account_name_input or "手工投资账户",
         total_assets_cents=yzxy_import_mod.parse_amount_to_cents(str(payload.get("total_assets", "0"))),
         transfer_amount_cents=yzxy_import_mod.parse_amount_to_cents(str(payload.get("transfer_amount", "0"))),
     )
@@ -765,9 +836,19 @@ def upsert_manual_investment(config: AppConfig, payload: dict[str, Any]) -> dict
         raise ValueError("总资产必须大于 0")
 
     conn = sqlite3.connect(config.db_path)
+    conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     try:
         yzxy_import_mod.ensure_schema_ready(conn)
+        if account_id_input:
+            account_row = load_account_row_by_id(conn, account_id_input)
+            if str(account_row["account_type"]) != "investment":
+                raise ValueError("所选账户不是投资账户")
+            account_id = str(account_row["id"])
+            account_name = str(account_row["name"])
+        else:
+            account_name = account_name_input or "手工投资账户"
+            account_id = yzxy_import_mod.account_id_from_name(account_name)
         with conn:
             yzxy_import_mod.ensure_account(conn, account_id, account_name)
             yzxy_import_mod.upsert_investment_record(
@@ -788,6 +869,114 @@ def upsert_manual_investment(config: AppConfig, payload: dict[str, Any]) -> dict
     }
 
 
+def update_investment_record(config: AppConfig, payload: dict[str, Any]) -> dict[str, Any]:
+    ensure_db(config)
+    record_id = str(payload.get("id", "")).strip()
+    if not record_id:
+        raise ValueError("id 必填")
+
+    snapshot_date = yzxy_import_mod.normalize_date(str(payload.get("snapshot_date", "")))
+    account_id_input = str(payload.get("account_id", "")).strip()
+    account_name_input = str(payload.get("account_name", "")).strip()
+    total_assets_cents = yzxy_import_mod.parse_amount_to_cents(str(payload.get("total_assets", "0")))
+    transfer_amount_cents = yzxy_import_mod.parse_amount_to_cents(str(payload.get("transfer_amount", "0")))
+    if total_assets_cents <= 0:
+        raise ValueError("总资产必须大于 0")
+
+    conn = sqlite3.connect(config.db_path)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    try:
+        yzxy_import_mod.ensure_schema_ready(conn)
+        existing = conn.execute(
+            """
+            SELECT id, source_type, source_file, import_job_id
+            FROM investment_records
+            WHERE id = ?
+            """,
+            (record_id,),
+        ).fetchone()
+        if not existing:
+            raise ValueError("未找到要修改的投资记录")
+        if account_id_input:
+            account_row = load_account_row_by_id(conn, account_id_input)
+            if str(account_row["account_type"]) != "investment":
+                raise ValueError("所选账户不是投资账户")
+            account_id = str(account_row["id"])
+            account_name = str(account_row["name"])
+        else:
+            account_name = account_name_input or "手工投资账户"
+            account_id = yzxy_import_mod.account_id_from_name(account_name)
+        with conn:
+            yzxy_import_mod.ensure_account(conn, account_id, account_name)
+            conn.execute(
+                """
+                UPDATE investment_records
+                SET account_id = ?,
+                    snapshot_date = ?,
+                    total_assets_cents = ?,
+                    transfer_amount_cents = ?,
+                    updated_at = datetime('now')
+                WHERE id = ?
+                """,
+                (
+                    account_id,
+                    snapshot_date,
+                    total_assets_cents,
+                    transfer_amount_cents,
+                    record_id,
+                ),
+            )
+    except sqlite3.IntegrityError as exc:
+        raise ValueError(f"修改失败（可能与现有记录冲突）: {exc}") from exc
+    finally:
+        conn.close()
+
+    return {
+        "id": record_id,
+        "account_id": account_id,
+        "account_name": account_name,
+        "snapshot_date": snapshot_date,
+        "total_assets_cents": total_assets_cents,
+        "transfer_amount_cents": transfer_amount_cents,
+    }
+
+
+def delete_investment_record(config: AppConfig, payload: dict[str, Any]) -> dict[str, Any]:
+    ensure_db(config)
+    record_id = str(payload.get("id", "")).strip()
+    if not record_id:
+        raise ValueError("id 必填")
+
+    conn = sqlite3.connect(config.db_path)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    try:
+        row = conn.execute(
+            """
+            SELECT r.id, r.account_id, COALESCE(a.name, r.account_id) AS account_name, r.snapshot_date
+            FROM investment_records r
+            LEFT JOIN accounts a ON a.id = r.account_id
+            WHERE r.id = ?
+            """,
+            (record_id,),
+        ).fetchone()
+        if not row:
+            raise ValueError("未找到要删除的投资记录")
+        with conn:
+            conn.execute("DELETE FROM investment_records WHERE id = ?", (record_id,))
+    finally:
+        conn.close()
+
+    return {
+        "id": str(row["id"]),
+        "account_id": str(row["account_id"]),
+        "account_name": str(row["account_name"]),
+        "snapshot_date": str(row["snapshot_date"]),
+        "deleted": True,
+    }
+
+
 def upsert_manual_asset_valuation(config: AppConfig, payload: dict[str, Any]) -> dict[str, Any]:
     ensure_db(config)
     asset_class = str(payload.get("asset_class", "")).strip().lower()
@@ -796,19 +985,31 @@ def upsert_manual_asset_valuation(config: AppConfig, payload: dict[str, Any]) ->
 
     snapshot_date = yzxy_import_mod.normalize_date(str(payload.get("snapshot_date", "")))
     default_name = "现金账户" if asset_class == "cash" else "不动产账户"
-    account_name = str(payload.get("account_name", "")).strip() or default_name
+    account_id_input = str(payload.get("account_id", "")).strip()
+    account_name_input = str(payload.get("account_name", "")).strip()
+    account_name = account_name_input or default_name
     value_cents = yzxy_import_mod.parse_amount_to_cents(str(payload.get("value", "0")))
     if value_cents <= 0:
         raise ValueError("资产金额必须大于 0")
 
-    account_id = account_id_from_asset_name(asset_class, account_name)
-    account_type = "cash" if asset_class == "cash" else "other"
-    record_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{account_id}:{asset_class}:{snapshot_date}"))
-
     conn = sqlite3.connect(config.db_path)
+    conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     try:
         ensure_asset_schema_ready(conn)
+        if account_id_input:
+            account_row = load_account_row_by_id(conn, account_id_input)
+            account_id = str(account_row["id"])
+            account_name = str(account_row["name"])
+            account_type = str(account_row["account_type"])
+            if asset_class == "cash" and account_type != "cash":
+                raise ValueError("所选账户不是现金账户")
+            if asset_class == "real_estate" and account_type not in {"other"} and not account_id.startswith("acct_re_"):
+                raise ValueError("所选账户不是不动产账户")
+        else:
+            account_id = account_id_from_asset_name(asset_class, account_name)
+            account_type = "cash" if asset_class == "cash" else "other"
+        record_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{account_id}:{asset_class}:{snapshot_date}"))
         with conn:
             upsert_account(
                 conn,
@@ -847,6 +1048,129 @@ def upsert_manual_asset_valuation(config: AppConfig, payload: dict[str, Any]) ->
         "snapshot_date": snapshot_date,
         "value_cents": value_cents,
         "value_yuan": cents_to_yuan_text(value_cents),
+    }
+
+
+def update_asset_valuation(config: AppConfig, payload: dict[str, Any]) -> dict[str, Any]:
+    ensure_db(config)
+    record_id = str(payload.get("id", "")).strip()
+    if not record_id:
+        raise ValueError("id 必填")
+
+    asset_class = str(payload.get("asset_class", "")).strip().lower()
+    if asset_class not in SUPPORTED_ASSET_CLASSES:
+        raise ValueError("asset_class 必须是 cash 或 real_estate")
+    snapshot_date = yzxy_import_mod.normalize_date(str(payload.get("snapshot_date", "")))
+    default_name = "现金账户" if asset_class == "cash" else "不动产账户"
+    account_id_input = str(payload.get("account_id", "")).strip()
+    account_name_input = str(payload.get("account_name", "")).strip()
+    account_name = account_name_input or default_name
+    value_cents = yzxy_import_mod.parse_amount_to_cents(str(payload.get("value", "0")))
+    if value_cents <= 0:
+        raise ValueError("资产金额必须大于 0")
+
+    conn = sqlite3.connect(config.db_path)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    try:
+        ensure_asset_schema_ready(conn)
+        existing = conn.execute(
+            """
+            SELECT id
+            FROM account_valuations
+            WHERE id = ?
+            """,
+            (record_id,),
+        ).fetchone()
+        if not existing:
+            raise ValueError("未找到要修改的资产记录")
+        if account_id_input:
+            account_row = load_account_row_by_id(conn, account_id_input)
+            account_id = str(account_row["id"])
+            account_name = str(account_row["name"])
+            account_type = str(account_row["account_type"])
+            if asset_class == "cash" and account_type != "cash":
+                raise ValueError("所选账户不是现金账户")
+            if asset_class == "real_estate" and account_type not in {"other"} and not account_id.startswith("acct_re_"):
+                raise ValueError("所选账户不是不动产账户")
+        else:
+            account_id = account_id_from_asset_name(asset_class, account_name)
+            account_type = "cash" if asset_class == "cash" else "other"
+        with conn:
+            upsert_account(
+                conn,
+                account_id=account_id,
+                account_name=account_name,
+                account_type=account_type,
+            )
+            conn.execute(
+                """
+                UPDATE account_valuations
+                SET account_id = ?,
+                    account_name = ?,
+                    asset_class = ?,
+                    snapshot_date = ?,
+                    value_cents = ?,
+                    updated_at = datetime('now')
+                WHERE id = ?
+                """,
+                (
+                    account_id,
+                    account_name,
+                    asset_class,
+                    snapshot_date,
+                    value_cents,
+                    record_id,
+                ),
+            )
+    except sqlite3.IntegrityError as exc:
+        raise ValueError(f"修改失败（可能与现有记录冲突）: {exc}") from exc
+    finally:
+        conn.close()
+
+    return {
+        "id": record_id,
+        "account_id": account_id,
+        "account_name": account_name,
+        "asset_class": asset_class,
+        "snapshot_date": snapshot_date,
+        "value_cents": value_cents,
+        "value_yuan": cents_to_yuan_text(value_cents),
+    }
+
+
+def delete_asset_valuation(config: AppConfig, payload: dict[str, Any]) -> dict[str, Any]:
+    ensure_db(config)
+    record_id = str(payload.get("id", "")).strip()
+    if not record_id:
+        raise ValueError("id 必填")
+
+    conn = sqlite3.connect(config.db_path)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    try:
+        row = conn.execute(
+            """
+            SELECT id, account_id, account_name, asset_class, snapshot_date
+            FROM account_valuations
+            WHERE id = ?
+            """,
+            (record_id,),
+        ).fetchone()
+        if not row:
+            raise ValueError("未找到要删除的资产记录")
+        with conn:
+            conn.execute("DELETE FROM account_valuations WHERE id = ?", (record_id,))
+    finally:
+        conn.close()
+
+    return {
+        "id": str(row["id"]),
+        "account_id": str(row["account_id"]),
+        "account_name": str(row["account_name"]),
+        "asset_class": str(row["asset_class"]),
+        "snapshot_date": str(row["snapshot_date"]),
+        "deleted": True,
     }
 
 
@@ -912,6 +1236,215 @@ def query_accounts(config: AppConfig, qs: dict[str, list[str]]) -> dict[str, Any
     }
 
 
+def query_account_catalog(config: AppConfig, qs: dict[str, list[str]]) -> dict[str, Any]:
+    ensure_db(config)
+    kind_filter = (qs.get("kind") or ["all"])[0].strip().lower() or "all"
+    keyword = (qs.get("keyword") or [""])[0].strip().lower()
+    limit = min(max(int((qs.get("limit") or ["500"])[0] or "500"), 1), 1000)
+
+    valid_kind_filters = {"all", *ACCOUNT_KIND_CHOICES}
+    if kind_filter not in valid_kind_filters:
+        raise ValueError(f"kind 仅支持: {', '.join(sorted(valid_kind_filters))}")
+
+    conn = sqlite3.connect(config.db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            """
+            SELECT
+                a.id,
+                a.name,
+                a.account_type,
+                a.currency,
+                a.initial_balance_cents,
+                a.created_at,
+                a.updated_at,
+                COALESCE(t.tx_count, 0) AS transaction_count,
+                COALESCE(inv.inv_count, 0) AS investment_record_count,
+                COALESCE(av.asset_val_count, 0) AS asset_valuation_count,
+                COALESCE(av.cash_count, 0) AS cash_valuation_count,
+                COALESCE(av.real_estate_count, 0) AS real_estate_valuation_count
+            FROM accounts a
+            LEFT JOIN (
+                SELECT account_id, COUNT(*) AS tx_count
+                FROM transactions
+                GROUP BY account_id
+            ) t ON t.account_id = a.id
+            LEFT JOIN (
+                SELECT account_id, COUNT(*) AS inv_count
+                FROM investment_records
+                GROUP BY account_id
+            ) inv ON inv.account_id = a.id
+            LEFT JOIN (
+                SELECT
+                    account_id,
+                    COUNT(*) AS asset_val_count,
+                    SUM(CASE WHEN asset_class = 'cash' THEN 1 ELSE 0 END) AS cash_count,
+                    SUM(CASE WHEN asset_class = 'real_estate' THEN 1 ELSE 0 END) AS real_estate_count
+                FROM account_valuations
+                GROUP BY account_id
+            ) av ON av.account_id = a.id
+            ORDER BY a.updated_at DESC, a.name ASC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    items: list[dict[str, Any]] = []
+    for row in rows:
+        account_id = str(row["id"])
+        account_type = str(row["account_type"])
+        inferred_kind = infer_account_kind(
+            account_id=account_id,
+            account_type=account_type,
+            asset_cash_count=int(row["cash_valuation_count"] or 0),
+            asset_real_estate_count=int(row["real_estate_valuation_count"] or 0),
+        )
+        item = {
+            "account_id": account_id,
+            "account_name": str(row["name"]),
+            "account_type": account_type,
+            "account_kind": inferred_kind,
+            "currency": str(row["currency"]),
+            "initial_balance_cents": int(row["initial_balance_cents"] or 0),
+            "initial_balance_yuan": cents_to_yuan_text(int(row["initial_balance_cents"] or 0)),
+            "transaction_count": int(row["transaction_count"] or 0),
+            "investment_record_count": int(row["investment_record_count"] or 0),
+            "asset_valuation_count": int(row["asset_valuation_count"] or 0),
+            "cash_valuation_count": int(row["cash_valuation_count"] or 0),
+            "real_estate_valuation_count": int(row["real_estate_valuation_count"] or 0),
+            "created_at": str(row["created_at"]),
+            "updated_at": str(row["updated_at"]),
+        }
+        if kind_filter != "all" and inferred_kind != kind_filter:
+            continue
+        if keyword:
+            hay = " ".join(
+                [
+                    item["account_id"],
+                    item["account_name"],
+                    item["account_kind"],
+                    item["account_type"],
+                ]
+            ).lower()
+            if keyword not in hay:
+                continue
+        items.append(item)
+
+    kind_groups: dict[str, list[dict[str, Any]]] = {k: [] for k in ACCOUNT_KIND_CHOICES}
+    for item in items:
+        kind_groups.setdefault(item["account_kind"], []).append(item)
+
+    return {
+        "summary": {
+            "count": len(items),
+            "kind": kind_filter,
+            "keyword": keyword,
+            "limit": limit,
+        },
+        "rows": items,
+        "groups": kind_groups,
+    }
+
+
+def upsert_account_catalog_entry(config: AppConfig, payload: dict[str, Any]) -> dict[str, Any]:
+    ensure_db(config)
+    account_name = str(payload.get("account_name", "")).strip()
+    if not account_name:
+        raise ValueError("account_name 必填")
+    account_kind = normalize_account_kind(str(payload.get("account_kind", "")).strip())
+    account_id_raw = str(payload.get("account_id", "")).strip()
+    account_id = account_id_raw or account_id_from_manual_account(account_kind, account_name)
+    account_type = account_kind_to_db_type(account_kind)
+
+    conn = sqlite3.connect(config.db_path)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    try:
+        with conn:
+            upsert_account(
+                conn,
+                account_id=account_id,
+                account_name=account_name,
+                account_type=account_type,
+            )
+            # Keep denormalized account_name in asset valuations in sync for edited account names.
+            conn.execute(
+                """
+                UPDATE account_valuations
+                SET account_name = ?, updated_at = datetime('now')
+                WHERE account_id = ?
+                """,
+                (account_name, account_id),
+            )
+
+        refreshed = query_account_catalog(
+            AppConfig(
+                root_dir=config.root_dir,
+                work_dir=config.work_dir,
+                rules_dir=config.rules_dir,
+                db_path=config.db_path,
+                migrations_dir=config.migrations_dir,
+                assets_dir=config.assets_dir,
+                session_dir=config.session_dir,
+            ),
+            {"keyword": [account_id], "limit": ["5"]},
+        )
+    finally:
+        conn.close()
+
+    row = next((item for item in refreshed["rows"] if item["account_id"] == account_id), None)
+    return {
+        "created": not bool(account_id_raw),
+        "updated": bool(account_id_raw),
+        "row": row
+        or {
+            "account_id": account_id,
+            "account_name": account_name,
+            "account_kind": account_kind,
+            "account_type": account_type,
+        },
+    }
+
+
+def delete_account_catalog_entry(config: AppConfig, payload: dict[str, Any]) -> dict[str, Any]:
+    ensure_db(config)
+    account_id = str(payload.get("account_id", "")).strip()
+    if not account_id:
+        raise ValueError("account_id 必填")
+
+    conn = sqlite3.connect(config.db_path)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    try:
+        row = load_account_row_by_id(conn, account_id)
+        tx_count = int(
+            conn.execute("SELECT COUNT(*) FROM transactions WHERE account_id = ?", (account_id,)).fetchone()[0]
+        )
+        inv_count = int(
+            conn.execute("SELECT COUNT(*) FROM investment_records WHERE account_id = ?", (account_id,)).fetchone()[0]
+        )
+        asset_count = int(
+            conn.execute("SELECT COUNT(*) FROM account_valuations WHERE account_id = ?", (account_id,)).fetchone()[0]
+        )
+        if tx_count > 0 or inv_count > 0 or asset_count > 0:
+            raise ValueError(
+                f"账户仍被引用，不能删除（transactions={tx_count}, investments={inv_count}, assets={asset_count}）"
+            )
+        with conn:
+            conn.execute("DELETE FROM accounts WHERE id = ?", (account_id,))
+    finally:
+        conn.close()
+
+    return {
+        "deleted": True,
+        "account_id": account_id,
+        "account_name": str(row["name"]),
+    }
+
+
 def query_asset_valuations(config: AppConfig, qs: dict[str, list[str]]) -> dict[str, Any]:
     limit = min(max(int((qs.get("limit") or ["100"])[0] or "100"), 1), 500)
     date_from = (qs.get("from") or [""])[0].strip()
@@ -944,7 +1477,7 @@ def query_asset_valuations(config: AppConfig, qs: dict[str, list[str]]) -> dict[
     try:
         rows = conn.execute(
             f"""
-            SELECT account_id, account_name, asset_class, snapshot_date, value_cents, source_type
+            SELECT id, account_id, account_name, asset_class, snapshot_date, value_cents, source_type
             FROM account_valuations
             {where}
             ORDER BY snapshot_date DESC, updated_at DESC
@@ -2046,17 +2579,32 @@ def query_wealth_overview(config: AppConfig, qs: dict[str, list[str]]) -> dict[s
         result = []
         for row in rows:
             value_cents = int(row["value_cents"])
+            snapshot_date = str(row["snapshot_date"])
+            stale_days = (effective_as_of - parse_iso_date(snapshot_date, "snapshot_date")).days
             result.append(
                 {
                     "asset_class": cls,
                     "account_id": row["account_id"],
                     "account_name": row["account_name"],
-                    "snapshot_date": row["snapshot_date"],
+                    "snapshot_date": snapshot_date,
                     "value_cents": value_cents,
                     "value_yuan": cents_to_yuan_text(value_cents),
+                    "stale_days": stale_days,
                 }
             )
         return result
+
+    investment_items = fmt_rows(investment_rows, "investment")
+    cash_items = fmt_rows(cash_rows, "cash")
+    real_estate_items = fmt_rows(real_estate_rows, "real_estate")
+    selected_rows = (
+        (investment_items if include_investment else [])
+        + (cash_items if include_cash else [])
+        + (real_estate_items if include_real_estate else [])
+    )
+    selected_rows_total_cents = sum(int(row["value_cents"]) for row in selected_rows)
+    reconciliation_delta_cents = selected_rows_total_cents - wealth_total
+    stale_account_count = sum(1 for row in selected_rows if int(row.get("stale_days") or 0) > 0)
 
     return {
         "as_of": as_of,
@@ -2075,12 +2623,14 @@ def query_wealth_overview(config: AppConfig, qs: dict[str, list[str]]) -> dict[s
             "real_estate_total_yuan": cents_to_yuan_text(real_estate_total),
             "wealth_total_cents": wealth_total,
             "wealth_total_yuan": cents_to_yuan_text(wealth_total),
+            "selected_rows_total_cents": selected_rows_total_cents,
+            "selected_rows_total_yuan": cents_to_yuan_text(selected_rows_total_cents),
+            "reconciliation_delta_cents": reconciliation_delta_cents,
+            "reconciliation_delta_yuan": cents_to_yuan_text(reconciliation_delta_cents),
+            "reconciliation_ok": reconciliation_delta_cents == 0,
+            "stale_account_count": stale_account_count,
         },
-        "rows": (
-            (fmt_rows(investment_rows, "investment") if include_investment else [])
-            + (fmt_rows(cash_rows, "cash") if include_cash else [])
-            + (fmt_rows(real_estate_rows, "real_estate") if include_real_estate else [])
-        ),
+        "rows": selected_rows,
     }
 
 
@@ -2357,7 +2907,7 @@ def query_investments(config: AppConfig, qs: dict[str, list[str]]) -> dict[str, 
     try:
         rows = conn.execute(
             f"""
-            SELECT r.snapshot_date, r.account_id, a.name AS account_name, r.total_assets_cents,
+            SELECT r.id, r.snapshot_date, r.account_id, a.name AS account_name, r.total_assets_cents,
                    r.transfer_amount_cents, r.source_type
             FROM investment_records r
             LEFT JOIN accounts a ON a.id = r.account_id
@@ -2488,6 +3038,10 @@ class M0Handler(BaseHTTPRequestHandler):
                 payload = query_accounts(self.config, parse_qs(parsed.query))
                 self._json(HTTPStatus.OK, payload)
                 return
+            if parsed.path == "/api/accounts/catalog":
+                payload = query_account_catalog(self.config, parse_qs(parsed.query))
+                self._json(HTTPStatus.OK, payload)
+                return
             if parsed.path == "/api/analytics/investment-return":
                 payload = query_investment_return(self.config, parse_qs(parsed.query))
                 self._json(HTTPStatus.OK, payload)
@@ -2574,9 +3128,45 @@ class M0Handler(BaseHTTPRequestHandler):
                 self._json(HTTPStatus.OK, payload)
                 return
 
+            if self.path == "/api/investments/update":
+                body = self._read_json()
+                payload = update_investment_record(self.config, body)
+                self._json(HTTPStatus.OK, payload)
+                return
+
+            if self.path == "/api/investments/delete":
+                body = self._read_json()
+                payload = delete_investment_record(self.config, body)
+                self._json(HTTPStatus.OK, payload)
+                return
+
             if self.path == "/api/assets/manual":
                 body = self._read_json()
                 payload = upsert_manual_asset_valuation(self.config, body)
+                self._json(HTTPStatus.OK, payload)
+                return
+
+            if self.path == "/api/assets/update":
+                body = self._read_json()
+                payload = update_asset_valuation(self.config, body)
+                self._json(HTTPStatus.OK, payload)
+                return
+
+            if self.path == "/api/assets/delete":
+                body = self._read_json()
+                payload = delete_asset_valuation(self.config, body)
+                self._json(HTTPStatus.OK, payload)
+                return
+
+            if self.path == "/api/accounts/upsert":
+                body = self._read_json()
+                payload = upsert_account_catalog_entry(self.config, body)
+                self._json(HTTPStatus.OK, payload)
+                return
+
+            if self.path == "/api/accounts/delete":
+                body = self._read_json()
+                payload = delete_account_catalog_entry(self.config, body)
                 self._json(HTTPStatus.OK, payload)
                 return
 

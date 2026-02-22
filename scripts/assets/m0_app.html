@@ -86,8 +86,10 @@
           <h3>投资记录单条录入</h3>
           <div class="row-3">
             <div>
-              <label>账户名称</label>
-              <input id="invAccountName" type="text" value="有知有行投资账户">
+              <label>投资账户</label>
+              <select id="invAccountId">
+                <option value="">请先创建投资账户</option>
+              </select>
             </div>
             <div>
               <label>快照日期</label>
@@ -104,7 +106,9 @@
           </div>
           <div class="actions">
             <button id="invSaveBtn" class="btn primary">保存投资记录</button>
+            <button id="invCancelEditBtn" class="btn secondary hidden" type="button">取消编辑</button>
           </div>
+          <div id="invEditHint" class="hint hidden" style="margin-top:8px">当前为编辑模式</div>
           <div id="invStatus" class="status hidden"></div>
         </div>
 
@@ -119,8 +123,10 @@
               </select>
             </div>
             <div>
-              <label>账户名称</label>
-              <input id="assetAccountName" type="text" value="家庭现金账户">
+              <label>账户</label>
+              <select id="assetAccountId">
+                <option value="">请先创建账户</option>
+              </select>
             </div>
             <div>
               <label>快照日期</label>
@@ -133,7 +139,9 @@
           </div>
           <div class="actions">
             <button id="assetSaveBtn" class="btn primary">保存资产记录</button>
+            <button id="assetCancelEditBtn" class="btn secondary hidden" type="button">取消编辑</button>
           </div>
+          <div id="assetEditHint" class="hint hidden" style="margin-top:8px">当前为编辑模式</div>
           <div id="assetStatus" class="status hidden"></div>
         </div>
       </div>
@@ -252,7 +260,7 @@
       <div class="table-wrap hidden" id="wealthRowsWrap">
         <table>
           <thead>
-            <tr><th>类型</th><th>账户</th><th>日期</th><th>金额(元)</th></tr>
+            <tr><th>类型</th><th>账户</th><th>日期</th><th>滞后天数</th><th>金额(元)</th></tr>
           </thead>
           <tbody id="wealthRowsBody"></tbody>
         </table>
@@ -304,11 +312,97 @@
       <h2>基础查询</h2>
       <p class="hint">提供交易、投资、非投资资产记录的筛选与列表。</p>
 
+      <h3>账户管理</h3>
+      <p class="hint">手动创建账户后，记录录入与查询会自动使用下拉菜单展示。</p>
+      <div class="sub-panel">
+        <div class="row-4">
+          <div>
+            <label>账户类型</label>
+            <select id="acctKind">
+              <option value="investment">投资</option>
+              <option value="cash">现金</option>
+              <option value="real_estate">不动产</option>
+              <option value="bank">银行卡</option>
+              <option value="credit_card">信用卡</option>
+              <option value="wallet">钱包</option>
+              <option value="liability">负债</option>
+              <option value="other">其他</option>
+            </select>
+          </div>
+          <div>
+            <label>账户名称</label>
+            <input id="acctName" type="text" placeholder="例如：富途主账户">
+          </div>
+          <div>
+            <label>编辑中的账户 ID</label>
+            <div id="acctEditingId" class="metric" style="padding:9px 11px">-</div>
+          </div>
+          <div></div>
+        </div>
+        <div class="actions">
+          <button id="acctSaveBtn" class="btn primary">创建账户</button>
+          <button id="acctCancelEditBtn" class="btn secondary hidden" type="button">取消编辑</button>
+          <button id="acctRefreshBtn" class="btn secondary" type="button">刷新账户列表</button>
+        </div>
+        <div id="acctEditHint" class="hint hidden" style="margin-top:8px">当前为账户编辑模式</div>
+        <div id="acctStatus" class="status hidden"></div>
+      </div>
+      <div class="row-3" style="margin-top:12px">
+        <div>
+          <label>筛选类型</label>
+          <select id="acctFilterKind">
+            <option value="all">全部</option>
+            <option value="investment">投资</option>
+            <option value="cash">现金</option>
+            <option value="real_estate">不动产</option>
+            <option value="bank">银行卡</option>
+            <option value="credit_card">信用卡</option>
+            <option value="wallet">钱包</option>
+            <option value="liability">负债</option>
+            <option value="other">其他</option>
+          </select>
+        </div>
+        <div>
+          <label>关键词（名称/ID）</label>
+          <input id="acctKeyword" type="text" placeholder="搜索账户">
+        </div>
+        <div>
+          <label>&nbsp;</label>
+          <div class="actions" style="margin-top:0">
+            <button id="acctFilterBtn" class="btn secondary" type="button">应用筛选</button>
+            <button id="acctClearFilterBtn" class="btn secondary" type="button">清空筛选</button>
+          </div>
+        </div>
+      </div>
+      <div id="acctMetrics" class="grid-metrics hidden"></div>
+      <div class="table-wrap hidden" id="acctWrap">
+        <table>
+          <thead>
+            <tr>
+              <th>类型</th>
+              <th>账户名称</th>
+              <th>账户 ID</th>
+              <th>交易</th>
+              <th>投资</th>
+              <th>资产</th>
+              <th>更新时间</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="acctBody"></tbody>
+        </table>
+      </div>
+
       <h3>交易查询</h3>
       <div class="row-3">
         <div><label>月份（YYYY-MM）</label><input id="qMonthKey" type="text" placeholder="2025-01"></div>
         <div><label>来源</label><input id="qTxSourceType" type="text" placeholder="cmb_eml"></div>
-        <div><label>账户 ID</label><input id="qTxAccountId" type="text"></div>
+        <div>
+          <label>账户</label>
+          <select id="qTxAccountId">
+            <option value="">全部账户</option>
+          </select>
+        </div>
         <div><label>关键词</label><input id="qTxKeyword" type="text"></div>
         <div><label>limit</label><input id="qTxLimit" type="number" value="100"></div>
       </div>
@@ -328,7 +422,12 @@
         <div><label>开始日期</label><input id="qInvFrom" type="date"></div>
         <div><label>结束日期</label><input id="qInvTo" type="date"></div>
         <div><label>来源</label><input id="qInvSourceType" type="text" placeholder="manual"></div>
-        <div><label>账户 ID</label><input id="qInvAccountId" type="text"></div>
+        <div>
+          <label>投资账户</label>
+          <select id="qInvAccountId">
+            <option value="">全部投资账户</option>
+          </select>
+        </div>
         <div><label>limit</label><input id="qInvLimit" type="number" value="100"></div>
       </div>
       <div class="actions">
@@ -337,7 +436,7 @@
       <div id="qInvMetrics" class="grid-metrics hidden"></div>
       <div class="table-wrap hidden" id="qInvWrap">
         <table>
-          <thead><tr><th>日期</th><th>账户</th><th>总资产(元)</th><th>转入转出(元)</th><th>来源</th></tr></thead>
+          <thead><tr><th>日期</th><th>账户</th><th>总资产(元)</th><th>转入转出(元)</th><th>来源</th><th>操作</th></tr></thead>
           <tbody id="qInvBody"></tbody>
         </table>
       </div>
@@ -354,7 +453,12 @@
             <option value="real_estate">不动产</option>
           </select>
         </div>
-        <div><label>账户 ID</label><input id="qAssetAccountId" type="text"></div>
+        <div>
+          <label>账户</label>
+          <select id="qAssetAccountId">
+            <option value="">全部资产账户</option>
+          </select>
+        </div>
         <div><label>limit</label><input id="qAssetLimit" type="number" value="100"></div>
       </div>
       <div class="actions">
@@ -363,7 +467,7 @@
       <div id="qAssetMetrics" class="grid-metrics hidden"></div>
       <div class="table-wrap hidden" id="qAssetWrap">
         <table>
-          <thead><tr><th>日期</th><th>类型</th><th>账户</th><th>金额(元)</th><th>来源</th></tr></thead>
+          <thead><tr><th>日期</th><th>类型</th><th>账户</th><th>金额(元)</th><th>来源</th><th>操作</th></tr></thead>
           <tbody id="qAssetBody"></tbody>
         </table>
       </div>
@@ -415,10 +519,28 @@
       emlPreviewToken: "",
       yzxyPreviewToken: "",
       investmentAccounts: [],
+      accountCatalogRows: [],
       refreshReturnAnalytics: null,
       refreshReturnBatchAnalytics: null,
       refreshWealthAnalytics: null,
+      refreshInvestmentQuery: null,
+      refreshAssetQuery: null,
+      renderAccountCatalog: null,
       privacyMaskAmounts: false,
+      editingAccountRecord: null,
+      editingInvestmentRecord: null,
+      editingAssetRecord: null,
+    };
+
+    const ACCOUNT_KIND_LABELS = {
+      investment: "投资",
+      cash: "现金",
+      real_estate: "不动产",
+      bank: "银行卡",
+      credit_card: "信用卡",
+      wallet: "钱包",
+      liability: "负债",
+      other: "其他",
     };
 
     function escapeHtml(text) {
@@ -597,15 +719,20 @@
       return payload;
     }
 
+    function openTab(targetTabId) {
+      if (!targetTabId) return;
+      document.querySelectorAll(".tab-btn").forEach(btn => {
+        btn.classList.toggle("active", btn.getAttribute("data-tab") === targetTabId);
+      });
+      document.querySelectorAll("section.panel").forEach(panel => {
+        panel.classList.toggle("hidden", panel.id !== targetTabId);
+      });
+    }
+
     function initTabs() {
       document.querySelectorAll(".tab-btn").forEach(btn => {
         btn.addEventListener("click", () => {
-          const target = btn.getAttribute("data-tab");
-          document.querySelectorAll(".tab-btn").forEach(x => x.classList.remove("active"));
-          btn.classList.add("active");
-          document.querySelectorAll("section.panel").forEach(panel => {
-            panel.classList.toggle("hidden", panel.id !== target);
-          });
+          openTab(btn.getAttribute("data-tab"));
         });
       });
     }
@@ -627,6 +754,135 @@
       };
       selectEl.addEventListener("change", apply);
       apply();
+    }
+
+    function accountKindLabel(kind) {
+      return ACCOUNT_KIND_LABELS[kind] || kind || "-";
+    }
+
+    function accountTypeLabel(type) {
+      if (type === "other") return "other(含不动产)";
+      return type || "-";
+    }
+
+    function getAccountCatalogRowsByKinds(kinds) {
+      const set = new Set(Array.isArray(kinds) ? kinds : [kinds]);
+      return (state.accountCatalogRows || []).filter(row => set.has(String(row.account_kind || "")));
+    }
+
+    function accountOptionText(row, options = {}) {
+      const { includeId = true, includeKind = false } = options;
+      const name = String(row.account_name || row.account_id || "");
+      const parts = [name];
+      if (includeKind) parts.push(accountKindLabel(row.account_kind));
+      if (includeId) parts.push(String(row.account_id || ""));
+      return parts.filter(Boolean).join(" | ");
+    }
+
+    function buildAccountOptionsMarkup(rows, options = {}) {
+      const {
+        selectedValue = "",
+        blankLabel = null,
+        includeId = true,
+        includeKind = false,
+      } = options;
+      const list = Array.isArray(rows) ? rows : [];
+      const html = [];
+      if (blankLabel !== null) {
+        html.push(`<option value="">${escapeHtml(blankLabel)}</option>`);
+      }
+      list.forEach(row => {
+        const id = String(row.account_id || "");
+        const selected = id === String(selectedValue || "") ? " selected" : "";
+        html.push(
+          `<option value="${escapeHtml(id)}"${selected}>${escapeHtml(accountOptionText(row, { includeId, includeKind }))}</option>`
+        );
+      });
+      if (selectedValue && !list.some(row => String(row.account_id || "") === String(selectedValue))) {
+        html.push(`<option value="${escapeHtml(String(selectedValue))}" selected>${escapeHtml(String(selectedValue))}</option>`);
+      }
+      return html.join("");
+    }
+
+    function setSelectAccountOptions(selectEl, rows, options = {}) {
+      if (!selectEl) return;
+      const {
+        blankLabel = "",
+        includeId = true,
+        includeKind = false,
+        emptyLabel = "暂无可选账户",
+      } = options;
+      const prev = selectEl.value;
+      const list = Array.isArray(rows) ? rows : [];
+      const html = [];
+      if (blankLabel !== null) {
+        html.push(`<option value="">${escapeHtml(blankLabel)}</option>`);
+      }
+      list.forEach(row => {
+        const id = String(row.account_id || "");
+        html.push(`<option value="${escapeHtml(id)}">${escapeHtml(accountOptionText(row, { includeId, includeKind }))}</option>`);
+      });
+      if (html.length === 0) {
+        html.push(`<option value="">${escapeHtml(emptyLabel)}</option>`);
+      }
+      selectEl.innerHTML = html.join("");
+      const exists = prev && Array.from(selectEl.options).some(opt => opt.value === prev);
+      if (exists) {
+        selectEl.value = prev;
+      } else if (prev && blankLabel === null) {
+        selectEl.innerHTML += `<option value="${escapeHtml(prev)}" selected>${escapeHtml(prev)}</option>`;
+      }
+    }
+
+    function refreshAccountSelectorsFromCatalog() {
+      const allRows = state.accountCatalogRows || [];
+      const investmentRows = getAccountCatalogRowsByKinds("investment");
+      const cashRows = getAccountCatalogRowsByKinds("cash");
+      const realEstateRows = getAccountCatalogRowsByKinds("real_estate");
+
+      setSelectAccountOptions(document.getElementById("invAccountId"), investmentRows, {
+        blankLabel: "请选择投资账户",
+        includeKind: false,
+      });
+      setSelectAccountOptions(document.getElementById("qInvAccountId"), investmentRows, {
+        blankLabel: "全部投资账户",
+        includeKind: false,
+      });
+      setSelectAccountOptions(document.getElementById("qTxAccountId"), allRows, {
+        blankLabel: "全部账户",
+        includeKind: true,
+      });
+
+      const assetClassEl = document.getElementById("assetClass");
+      const assetClass = assetClassEl ? assetClassEl.value : "cash";
+      const assetRows = assetClass === "real_estate" ? realEstateRows : cashRows;
+      const assetAccountLabel = assetClass === "real_estate" ? "请选择不动产账户" : "请选择现金账户";
+      setSelectAccountOptions(document.getElementById("assetAccountId"), assetRows, {
+        blankLabel: assetAccountLabel,
+        includeKind: false,
+      });
+
+      const qAssetClassEl = document.getElementById("qAssetClass");
+      const qAssetClass = qAssetClassEl ? qAssetClassEl.value : "";
+      const qAssetRows = qAssetClass === "cash"
+        ? cashRows
+        : (qAssetClass === "real_estate" ? realEstateRows : [...cashRows, ...realEstateRows]);
+      const qAssetLabel = qAssetClass
+        ? `全部${qAssetClass === "cash" ? "现金" : "不动产"}账户`
+        : "全部资产账户";
+      setSelectAccountOptions(document.getElementById("qAssetAccountId"), qAssetRows, {
+        blankLabel: qAssetLabel,
+        includeKind: qAssetClass === "",
+      });
+    }
+
+    async function refreshAccountCatalog() {
+      const data = await api("/api/accounts/catalog?kind=all&limit=1000");
+      state.accountCatalogRows = Array.isArray(data.rows) ? data.rows : [];
+      refreshAccountSelectorsFromCatalog();
+      if (typeof state.renderAccountCatalog === "function") {
+        state.renderAccountCatalog();
+      }
     }
 
     function renderLineChart(hostId, legendId, rows, seriesDefs, options = {}) {
@@ -844,6 +1100,8 @@
         }
       });
 
+      await refreshAccountCatalog();
+
       if (typeof state.refreshReturnAnalytics === "function") {
         await state.refreshReturnAnalytics({ silent: true });
       }
@@ -904,6 +1162,7 @@
             true,
             `EML 导入成功：交易 ${data.imported_count} 条，失败 ${data.import_error_count} 条，任务ID ${data.import_job_id}`
           );
+          await refreshAccountCatalog();
         } catch (err) {
           setStatus(emlStatus, false, err.message || String(err));
         }
@@ -959,43 +1218,149 @@
 
     function initRecordActions() {
       const invStatus = document.getElementById("invStatus");
-      document.getElementById("invSaveBtn").addEventListener("click", async () => {
+      const invSaveBtn = document.getElementById("invSaveBtn");
+      const invCancelEditBtn = document.getElementById("invCancelEditBtn");
+      const invEditHint = document.getElementById("invEditHint");
+      const invAccountIdEl = document.getElementById("invAccountId");
+      const invSnapshotDateEl = document.getElementById("invSnapshotDate");
+      const invTotalAssetsEl = document.getElementById("invTotalAssets");
+      const invTransferAmountEl = document.getElementById("invTransferAmount");
+
+      function setInvestmentEditMode(record) {
+        state.editingInvestmentRecord = record || null;
+        const editing = !!state.editingInvestmentRecord;
+        invSaveBtn.textContent = editing ? "更新投资记录" : "保存投资记录";
+        invCancelEditBtn.classList.toggle("hidden", !editing);
+        invEditHint.classList.toggle("hidden", !editing);
+      }
+
+      function clearInvestmentEditMode() {
+        setInvestmentEditMode(null);
+      }
+
+      function fillInvestmentFormFromRow(row) {
+        invAccountIdEl.value = row.account_id || "";
+        invSnapshotDateEl.value = row.snapshot_date || "";
+        invTotalAssetsEl.value = money(row.total_assets_cents || 0);
+        invTransferAmountEl.value = money(row.transfer_amount_cents || 0);
+      }
+
+      state.startEditInvestmentRecord = (row) => {
+        if (!row || !row.id) return;
+        fillInvestmentFormFromRow(row);
+        setInvestmentEditMode(row);
+        openTab("tab-records");
+        setStatus(invStatus, true, `已载入投资记录编辑：${row.account_name || row.account_id} ${row.snapshot_date}`);
+      };
+
+      invCancelEditBtn.addEventListener("click", () => {
+        clearInvestmentEditMode();
+        setStatus(invStatus, true, "已退出投资记录编辑模式");
+      });
+
+      invSaveBtn.addEventListener("click", async () => {
         try {
-          const payload = {
-            account_name: document.getElementById("invAccountName").value.trim(),
-            snapshot_date: document.getElementById("invSnapshotDate").value.trim(),
-            total_assets: document.getElementById("invTotalAssets").value.trim(),
-            transfer_amount: document.getElementById("invTransferAmount").value.trim(),
+          const accountId = invAccountIdEl.value.trim();
+          if (!accountId) throw new Error("请先在账户管理中创建并选择投资账户");
+          const basePayload = {
+            account_id: accountId,
+            snapshot_date: invSnapshotDateEl.value.trim(),
+            total_assets: invTotalAssetsEl.value.trim(),
+            transfer_amount: invTransferAmountEl.value.trim(),
           };
-          const data = await api("/api/investments/manual", "POST", payload);
-          setStatus(invStatus, true, `投资记录已保存：${data.account_name} ${data.snapshot_date}`);
+          let data;
+          if (state.editingInvestmentRecord && state.editingInvestmentRecord.id) {
+            data = await api("/api/investments/update", "POST", {
+              id: state.editingInvestmentRecord.id,
+              ...basePayload,
+            });
+            setStatus(invStatus, true, `投资记录已更新：${data.account_name} ${data.snapshot_date}`);
+            clearInvestmentEditMode();
+          } else {
+            data = await api("/api/investments/manual", "POST", basePayload);
+            setStatus(invStatus, true, `投资记录已保存：${data.account_name} ${data.snapshot_date}`);
+          }
           await refreshInvestmentAccounts();
+          if (typeof state.refreshInvestmentQuery === "function") {
+            await state.refreshInvestmentQuery({ silent: true });
+          }
         } catch (err) {
           setStatus(invStatus, false, err.message || String(err));
         }
       });
 
       const assetStatus = document.getElementById("assetStatus");
+      const assetSaveBtn = document.getElementById("assetSaveBtn");
+      const assetCancelEditBtn = document.getElementById("assetCancelEditBtn");
+      const assetEditHint = document.getElementById("assetEditHint");
       const assetClassEl = document.getElementById("assetClass");
-      const assetNameEl = document.getElementById("assetAccountName");
+      const assetAccountIdEl = document.getElementById("assetAccountId");
+      const assetSnapshotDateEl = document.getElementById("assetSnapshotDate");
+      const assetValueEl = document.getElementById("assetValue");
       assetClassEl.addEventListener("change", () => {
-        if (!assetNameEl.value.trim()) {
-          assetNameEl.value = assetClassEl.value === "cash" ? "家庭现金账户" : "家庭不动产账户";
-        }
+        refreshAccountSelectorsFromCatalog();
       });
 
-      document.getElementById("assetSaveBtn").addEventListener("click", async () => {
+      function setAssetEditMode(record) {
+        state.editingAssetRecord = record || null;
+        const editing = !!state.editingAssetRecord;
+        assetSaveBtn.textContent = editing ? "更新资产记录" : "保存资产记录";
+        assetCancelEditBtn.classList.toggle("hidden", !editing);
+        assetEditHint.classList.toggle("hidden", !editing);
+      }
+
+      function clearAssetEditMode() {
+        setAssetEditMode(null);
+      }
+
+      function fillAssetFormFromRow(row) {
+        assetClassEl.value = row.asset_class || "cash";
+        refreshAccountSelectorsFromCatalog();
+        assetAccountIdEl.value = row.account_id || "";
+        assetSnapshotDateEl.value = row.snapshot_date || "";
+        assetValueEl.value = money(row.value_cents || 0);
+      }
+
+      state.startEditAssetRecord = (row) => {
+        if (!row || !row.id) return;
+        fillAssetFormFromRow(row);
+        setAssetEditMode(row);
+        openTab("tab-records");
+        setStatus(assetStatus, true, `已载入资产记录编辑：${row.account_name || row.account_id} ${row.snapshot_date}`);
+      };
+
+      assetCancelEditBtn.addEventListener("click", () => {
+        clearAssetEditMode();
+        setStatus(assetStatus, true, "已退出资产记录编辑模式");
+      });
+
+      assetSaveBtn.addEventListener("click", async () => {
         try {
+          const accountId = assetAccountIdEl.value.trim();
+          if (!accountId) throw new Error("请先在账户管理中创建并选择对应资产账户");
           const payload = {
-            asset_class: document.getElementById("assetClass").value,
-            account_name: document.getElementById("assetAccountName").value.trim(),
-            snapshot_date: document.getElementById("assetSnapshotDate").value.trim(),
-            value: document.getElementById("assetValue").value.trim(),
+            asset_class: assetClassEl.value,
+            account_id: accountId,
+            snapshot_date: assetSnapshotDateEl.value.trim(),
+            value: assetValueEl.value.trim(),
           };
-          const data = await api("/api/assets/manual", "POST", payload);
-          setStatus(assetStatus, true, `资产记录已保存：${data.account_name} ${data.snapshot_date}`);
+          let data;
+          if (state.editingAssetRecord && state.editingAssetRecord.id) {
+            data = await api("/api/assets/update", "POST", {
+              id: state.editingAssetRecord.id,
+              ...payload,
+            });
+            setStatus(assetStatus, true, `资产记录已更新：${data.account_name} ${data.snapshot_date}`);
+            clearAssetEditMode();
+          } else {
+            data = await api("/api/assets/manual", "POST", payload);
+            setStatus(assetStatus, true, `资产记录已保存：${data.account_name} ${data.snapshot_date}`);
+          }
           if (typeof state.refreshWealthAnalytics === "function") {
             await state.refreshWealthAnalytics({ silent: true });
+          }
+          if (typeof state.refreshAssetQuery === "function") {
+            await state.refreshAssetQuery({ silent: true });
           }
         } catch (err) {
           setStatus(assetStatus, false, err.message || String(err));
@@ -1392,6 +1757,8 @@
             { k: "投资(元)", v: filters.include_investment ? data.summary.investment_total_yuan : "-" },
             { k: "现金(元)", v: filters.include_cash ? data.summary.cash_total_yuan : "-" },
             { k: "不动产(元)", v: filters.include_real_estate ? data.summary.real_estate_total_yuan : "-" },
+            { k: "对账校验", v: data.summary.reconciliation_ok ? "一致" : "存在差异", amount: false },
+            { k: "滞后账户数", v: data.summary.stale_account_count, amount: false },
           ]);
 
           wealthRowsWrap.classList.remove("hidden");
@@ -1400,6 +1767,7 @@
               <td>${row.asset_class}</td>
               <td>${row.account_name || row.account_id}</td>
               <td>${row.snapshot_date}</td>
+              <td>${row.stale_days ?? 0}</td>
               <td>${renderAmountValue(row.value_yuan)}</td>
             </tr>
           `).join("");
@@ -1590,6 +1958,199 @@
       refreshWealthAnalytics({ silent: true });
     }
 
+    function initAccountManagement() {
+      const acctStatus = document.getElementById("acctStatus");
+      const acctMetrics = document.getElementById("acctMetrics");
+      const acctWrap = document.getElementById("acctWrap");
+      const acctBody = document.getElementById("acctBody");
+      const acctKind = document.getElementById("acctKind");
+      const acctName = document.getElementById("acctName");
+      const acctEditingId = document.getElementById("acctEditingId");
+      const acctSaveBtn = document.getElementById("acctSaveBtn");
+      const acctCancelEditBtn = document.getElementById("acctCancelEditBtn");
+      const acctEditHint = document.getElementById("acctEditHint");
+      const acctFilterKind = document.getElementById("acctFilterKind");
+      const acctKeyword = document.getElementById("acctKeyword");
+
+      function setAccountEditMode(row) {
+        state.editingAccountRecord = row || null;
+        const editing = !!state.editingAccountRecord;
+        acctSaveBtn.textContent = editing ? "更新账户" : "创建账户";
+        acctCancelEditBtn.classList.toggle("hidden", !editing);
+        acctEditHint.classList.toggle("hidden", !editing);
+        acctEditingId.textContent = editing ? (row.account_id || "-") : "-";
+        acctKind.disabled = editing;
+      }
+
+      function clearAccountEditMode() {
+        state.editingAccountRecord = null;
+        acctKind.value = "investment";
+        acctName.value = "";
+        setAccountEditMode(null);
+      }
+
+      function getFilteredAccountRows() {
+        const kind = String(acctFilterKind.value || "all");
+        const keyword = String(acctKeyword.value || "").trim().toLowerCase();
+        return (state.accountCatalogRows || []).filter(row => {
+          if (kind !== "all" && String(row.account_kind || "") !== kind) return false;
+          if (!keyword) return true;
+          const haystack = [
+            row.account_id,
+            row.account_name,
+            row.account_kind,
+            row.account_type,
+          ].map(v => String(v || "")).join(" ").toLowerCase();
+          return haystack.includes(keyword);
+        });
+      }
+
+      function renderAccountCatalog() {
+        const rows = getFilteredAccountRows();
+        const referencedCount = rows.filter(row =>
+          Number(row.transaction_count || 0) > 0
+          || Number(row.investment_record_count || 0) > 0
+          || Number(row.asset_valuation_count || 0) > 0
+        ).length;
+        showMetrics(acctMetrics, [
+          { k: "账户数", v: rows.length, amount: false },
+          { k: "已引用账户", v: referencedCount, amount: false },
+          { k: "投资账户", v: rows.filter(r => r.account_kind === "investment").length, amount: false },
+          { k: "资产账户", v: rows.filter(r => ["cash", "real_estate"].includes(String(r.account_kind || ""))).length, amount: false },
+        ]);
+
+        acctWrap.classList.remove("hidden");
+        if (rows.length === 0) {
+          acctBody.innerHTML = `<tr><td colspan="8">暂无账户</td></tr>`;
+          return;
+        }
+
+        acctBody.innerHTML = rows.map(row => {
+          const rowJson = encodeURIComponent(JSON.stringify({
+            account_id: row.account_id,
+            account_name: row.account_name,
+            account_kind: row.account_kind,
+          }));
+          const canDelete = Number(row.transaction_count || 0) === 0
+            && Number(row.investment_record_count || 0) === 0
+            && Number(row.asset_valuation_count || 0) === 0;
+          return `
+            <tr>
+              <td>${accountKindLabel(row.account_kind)}</td>
+              <td>${escapeHtml(row.account_name || "")}</td>
+              <td>${escapeHtml(row.account_id || "")}</td>
+              <td>${Number(row.transaction_count || 0)}</td>
+              <td>${Number(row.investment_record_count || 0)}</td>
+              <td>${Number(row.asset_valuation_count || 0)}</td>
+              <td>${escapeHtml(String(row.updated_at || "").replace("T", " ").slice(0, 19))}</td>
+              <td class="actions-cell">
+                <button type="button" class="btn secondary small acct-edit-btn" data-row="${rowJson}">编辑</button>
+                <button type="button" class="btn danger small acct-del-btn" data-id="${escapeHtml(row.account_id || "")}"${canDelete ? "" : " disabled"}>删除</button>
+              </td>
+            </tr>
+          `;
+        }).join("");
+      }
+
+      state.renderAccountCatalog = renderAccountCatalog;
+
+      document.getElementById("acctFilterBtn").addEventListener("click", renderAccountCatalog);
+      document.getElementById("acctClearFilterBtn").addEventListener("click", () => {
+        acctFilterKind.value = "all";
+        acctKeyword.value = "";
+        renderAccountCatalog();
+      });
+      acctFilterKind.addEventListener("change", renderAccountCatalog);
+      acctKeyword.addEventListener("input", () => {
+        renderAccountCatalog();
+      });
+
+      acctCancelEditBtn.addEventListener("click", () => {
+        clearAccountEditMode();
+        setStatus(acctStatus, true, "已退出账户编辑模式");
+      });
+
+      document.getElementById("acctRefreshBtn").addEventListener("click", async () => {
+        try {
+          await refreshAccountCatalog();
+          setStatus(acctStatus, true, `账户列表已刷新，共 ${(state.accountCatalogRows || []).length} 个账户`);
+        } catch (err) {
+          setStatus(acctStatus, false, err.message || String(err));
+        }
+      });
+
+      acctSaveBtn.addEventListener("click", async () => {
+        try {
+          const accountKind = String(acctKind.value || "").trim();
+          const accountName = String(acctName.value || "").trim();
+          if (!accountKind) throw new Error("请选择账户类型");
+          if (!accountName) throw new Error("请输入账户名称");
+          const payload = {
+            account_kind: accountKind,
+            account_name: accountName,
+          };
+          if (state.editingAccountRecord && state.editingAccountRecord.account_id) {
+            payload.account_id = state.editingAccountRecord.account_id;
+          }
+          const data = await api("/api/accounts/upsert", "POST", payload);
+          setStatus(
+            acctStatus,
+            true,
+            payload.account_id
+              ? `账户已更新：${data.row?.account_name || accountName}`
+              : `账户已创建：${data.row?.account_name || accountName}`
+          );
+          clearAccountEditMode();
+          await refreshInvestmentAccounts();
+          if (typeof state.refreshInvestmentQuery === "function") {
+            await state.refreshInvestmentQuery({ silent: true });
+          }
+          if (typeof state.refreshAssetQuery === "function") {
+            await state.refreshAssetQuery({ silent: true });
+          }
+        } catch (err) {
+          setStatus(acctStatus, false, err.message || String(err));
+        }
+      });
+
+      acctBody.addEventListener("click", async (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) return;
+
+        if (target.classList.contains("acct-edit-btn")) {
+          try {
+            const raw = decodeURIComponent(target.getAttribute("data-row") || "{}");
+            const row = JSON.parse(raw);
+            acctKind.value = row.account_kind || "other";
+            acctName.value = row.account_name || "";
+            setAccountEditMode(row);
+            setStatus(acctStatus, true, `已载入账户编辑：${row.account_name || row.account_id}`);
+          } catch {
+            setStatus(acctStatus, false, "账户信息解析失败");
+          }
+          return;
+        }
+
+        if (target.classList.contains("acct-del-btn")) {
+          const accountId = String(target.getAttribute("data-id") || "").trim();
+          if (!accountId) return;
+          if (!window.confirm(`确认删除账户：${accountId} ?（仅允许删除无引用账户）`)) return;
+          try {
+            const payload = await api("/api/accounts/delete", "POST", { account_id: accountId });
+            setStatus(acctStatus, true, `账户已删除：${payload.account_name || accountId}`);
+            if (state.editingAccountRecord && state.editingAccountRecord.account_id === accountId) {
+              clearAccountEditMode();
+            }
+            await refreshInvestmentAccounts();
+          } catch (err) {
+            setStatus(acctStatus, false, err.message || String(err));
+          }
+        }
+      });
+
+      setAccountEditMode(null);
+    }
+
     function initQuery() {
       const qTxMetrics = document.getElementById("qTxMetrics");
       const qTxWrap = document.getElementById("qTxWrap");
@@ -1626,7 +2187,80 @@
       const qInvMetrics = document.getElementById("qInvMetrics");
       const qInvWrap = document.getElementById("qInvWrap");
       const qInvBody = document.getElementById("qInvBody");
-      document.getElementById("qInvBtn").addEventListener("click", async () => {
+      let investmentRowsCache = [];
+      let invInlineEditId = "";
+
+      function renderInvestmentInlineEditorRow(row) {
+        const rowId = escapeHtml(String(row.id || ""));
+        const accountId = String(row.account_id || "");
+        const snapshotDate = escapeHtml(String(row.snapshot_date || ""));
+        const totalAssets = escapeHtml(money(row.total_assets_cents || 0));
+        const transferAmount = escapeHtml(money(row.transfer_amount_cents || 0));
+        const accountOptions = buildAccountOptionsMarkup(getAccountCatalogRowsByKinds("investment"), {
+          selectedValue: accountId,
+          blankLabel: "请选择投资账户",
+          includeKind: false,
+        });
+        return `
+          <tr class="inline-edit-row">
+            <td colspan="6">
+              <div class="inline-edit-box" data-edit-id="${rowId}">
+                <div class="inline-edit-title">编辑投资记录</div>
+                <div class="row-4 inline-edit-grid">
+                  <div>
+                    <label>投资账户</label>
+                    <select data-role="account_id">${accountOptions}</select>
+                  </div>
+                  <div>
+                    <label>快照日期</label>
+                    <input type="date" data-role="snapshot_date" value="${snapshotDate}">
+                  </div>
+                  <div>
+                    <label>总资产(元)</label>
+                    <input type="number" step="0.01" data-role="total_assets" value="${totalAssets}">
+                  </div>
+                  <div>
+                    <label>转入转出(元)</label>
+                    <input type="number" step="0.01" data-role="transfer_amount" value="${transferAmount}">
+                  </div>
+                </div>
+                <div class="actions">
+                  <button type="button" class="btn primary small q-inv-inline-save-btn" data-id="${rowId}">保存</button>
+                  <button type="button" class="btn secondary small q-inv-inline-cancel-btn">取消</button>
+                </div>
+              </div>
+            </td>
+          </tr>
+        `;
+      }
+
+      function renderInvestmentQueryRows(rows) {
+        investmentRowsCache = Array.isArray(rows) ? rows : [];
+        qInvBody.innerHTML = investmentRowsCache.map(row => {
+          const rowJson = encodeURIComponent(JSON.stringify(row));
+          const label = encodeURIComponent(`${row.account_name || row.account_id || ""} ${row.snapshot_date || ""}`);
+          const baseRow = `
+            <tr data-row-id="${escapeHtml(row.id || "")}">
+              <td>${row.snapshot_date || ""}</td>
+              <td>${row.account_name || row.account_id || ""}</td>
+              <td>${renderAmountValue(money(row.total_assets_cents))}</td>
+              <td>${renderAmountValue(money(row.transfer_amount_cents || 0))}</td>
+              <td>${row.source_type || ""}</td>
+              <td class="actions-cell">
+                <button class="btn secondary small q-inv-edit-btn" data-row="${rowJson}">${invInlineEditId === row.id ? "收起" : "编辑"}</button>
+                <button class="btn danger small q-inv-del-btn" data-id="${escapeHtml(row.id || "")}" data-label="${label}">删除</button>
+              </td>
+            </tr>
+          `;
+          if (row.id && invInlineEditId === row.id) {
+            return baseRow + renderInvestmentInlineEditorRow(row);
+          }
+          return baseRow;
+        }).join("");
+        applyAmountMaskInDom(qInvWrap);
+      }
+
+      async function loadInvestmentQuery() {
         const params = new URLSearchParams({
           from: document.getElementById("qInvFrom").value.trim(),
           to: document.getElementById("qInvTo").value.trim(),
@@ -1642,22 +2276,161 @@
           { k: "来源", v: data.summary.source_type || "-" },
         ]);
         qInvWrap.classList.remove("hidden");
-        qInvBody.innerHTML = data.rows.map(row => `
-          <tr>
-            <td>${row.snapshot_date || ""}</td>
-            <td>${row.account_name || row.account_id || ""}</td>
-            <td>${renderAmountValue(money(row.total_assets_cents))}</td>
-            <td>${renderAmountValue(money(row.transfer_amount_cents || 0))}</td>
-            <td>${row.source_type || ""}</td>
-          </tr>
-        `).join("");
-        applyAmountMaskInDom(qInvWrap);
+        if (invInlineEditId && !(data.rows || []).some(row => row.id === invInlineEditId)) {
+          invInlineEditId = "";
+        }
+        renderInvestmentQueryRows(data.rows || []);
+      }
+      state.refreshInvestmentQuery = loadInvestmentQuery;
+      document.getElementById("qInvBtn").addEventListener("click", () => {
+        loadInvestmentQuery().catch(err => window.alert(err.message || String(err)));
+      });
+
+      qInvBody.addEventListener("click", async (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) return;
+
+        if (target.classList.contains("q-inv-edit-btn")) {
+          try {
+            const raw = decodeURIComponent(target.getAttribute("data-row") || "{}");
+            const row = JSON.parse(raw);
+            invInlineEditId = invInlineEditId === row.id ? "" : String(row.id || "");
+            renderInvestmentQueryRows(investmentRowsCache);
+          } catch {
+            window.alert("投资记录解析失败");
+          }
+          return;
+        }
+
+        if (target.classList.contains("q-inv-inline-cancel-btn")) {
+          invInlineEditId = "";
+          renderInvestmentQueryRows(investmentRowsCache);
+          return;
+        }
+
+        if (target.classList.contains("q-inv-inline-save-btn")) {
+          const id = (target.getAttribute("data-id") || "").trim();
+          const box = target.closest(".inline-edit-box");
+          if (!id || !box) return;
+          const accountId = box.querySelector('[data-role="account_id"]');
+          const snapshotDate = box.querySelector('[data-role="snapshot_date"]');
+          const totalAssets = box.querySelector('[data-role="total_assets"]');
+          const transferAmount = box.querySelector('[data-role="transfer_amount"]');
+          try {
+            const selectedAccountId = accountId ? accountId.value.trim() : "";
+            if (!selectedAccountId) throw new Error("请选择投资账户");
+            await api("/api/investments/update", "POST", {
+              id,
+              account_id: selectedAccountId,
+              snapshot_date: snapshotDate ? snapshotDate.value.trim() : "",
+              total_assets: totalAssets ? totalAssets.value.trim() : "",
+              transfer_amount: transferAmount ? transferAmount.value.trim() : "",
+            });
+            invInlineEditId = "";
+            await refreshInvestmentAccounts();
+            await loadInvestmentQuery();
+          } catch (err) {
+            window.alert(err.message || String(err));
+          }
+          return;
+        }
+
+        if (target.classList.contains("q-inv-del-btn")) {
+          const id = (target.getAttribute("data-id") || "").trim();
+          const label = decodeURIComponent(target.getAttribute("data-label") || "");
+          if (!id) return;
+          if (!window.confirm(`确认删除投资记录：${label} ?`)) return;
+          try {
+            await api("/api/investments/delete", "POST", { id });
+            await refreshInvestmentAccounts();
+            await loadInvestmentQuery();
+          } catch (err) {
+            window.alert(err.message || String(err));
+          }
+        }
       });
 
       const qAssetMetrics = document.getElementById("qAssetMetrics");
       const qAssetWrap = document.getElementById("qAssetWrap");
       const qAssetBody = document.getElementById("qAssetBody");
-      document.getElementById("qAssetBtn").addEventListener("click", async () => {
+      let assetRowsCache = [];
+      let assetInlineEditId = "";
+
+      function renderAssetInlineEditorRow(row) {
+        const rowId = escapeHtml(String(row.id || ""));
+        const accountId = String(row.account_id || "");
+        const snapshotDate = escapeHtml(String(row.snapshot_date || ""));
+        const value = escapeHtml(money(row.value_cents || 0));
+        const assetClass = String(row.asset_class || "cash");
+        const assetAccountRows = getAccountCatalogRowsByKinds(assetClass === "real_estate" ? "real_estate" : "cash");
+        const accountOptions = buildAccountOptionsMarkup(assetAccountRows, {
+          selectedValue: accountId,
+          blankLabel: assetClass === "real_estate" ? "请选择不动产账户" : "请选择现金账户",
+          includeKind: false,
+        });
+        return `
+          <tr class="inline-edit-row">
+            <td colspan="6">
+              <div class="inline-edit-box" data-edit-id="${rowId}">
+                <div class="inline-edit-title">编辑资产记录</div>
+                <div class="row-4 inline-edit-grid">
+                  <div>
+                    <label>资产类型</label>
+                    <select data-role="asset_class">
+                      <option value="cash"${assetClass === "cash" ? " selected" : ""}>现金</option>
+                      <option value="real_estate"${assetClass === "real_estate" ? " selected" : ""}>不动产</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label>账户</label>
+                    <select data-role="account_id">${accountOptions}</select>
+                  </div>
+                  <div>
+                    <label>快照日期</label>
+                    <input type="date" data-role="snapshot_date" value="${snapshotDate}">
+                  </div>
+                  <div>
+                    <label>金额(元)</label>
+                    <input type="number" step="0.01" data-role="value" value="${value}">
+                  </div>
+                </div>
+                <div class="actions">
+                  <button type="button" class="btn primary small q-asset-inline-save-btn" data-id="${rowId}">保存</button>
+                  <button type="button" class="btn secondary small q-asset-inline-cancel-btn">取消</button>
+                </div>
+              </div>
+            </td>
+          </tr>
+        `;
+      }
+
+      function renderAssetQueryRows(rows) {
+        assetRowsCache = Array.isArray(rows) ? rows : [];
+        qAssetBody.innerHTML = assetRowsCache.map(row => {
+          const rowJson = encodeURIComponent(JSON.stringify(row));
+          const label = encodeURIComponent(`${row.account_name || row.account_id || ""} ${row.snapshot_date || ""}`);
+          const baseRow = `
+            <tr data-row-id="${escapeHtml(row.id || "")}">
+              <td>${row.snapshot_date}</td>
+              <td>${row.asset_class}</td>
+              <td>${row.account_name || row.account_id}</td>
+              <td>${renderAmountValue(money(row.value_cents))}</td>
+              <td>${row.source_type || ""}</td>
+              <td class="actions-cell">
+                <button class="btn secondary small q-asset-edit-btn" data-row="${rowJson}">${assetInlineEditId === row.id ? "收起" : "编辑"}</button>
+                <button class="btn danger small q-asset-del-btn" data-id="${escapeHtml(row.id || "")}" data-label="${label}">删除</button>
+              </td>
+            </tr>
+          `;
+          if (row.id && assetInlineEditId === row.id) {
+            return baseRow + renderAssetInlineEditorRow(row);
+          }
+          return baseRow;
+        }).join("");
+        applyAmountMaskInDom(qAssetWrap);
+      }
+
+      async function loadAssetQuery() {
         const params = new URLSearchParams({
           from: document.getElementById("qAssetFrom").value.trim(),
           to: document.getElementById("qAssetTo").value.trim(),
@@ -1673,16 +2446,102 @@
           { k: "返回条数", v: data.rows.length },
         ]);
         qAssetWrap.classList.remove("hidden");
-        qAssetBody.innerHTML = (data.rows || []).map(row => `
-          <tr>
-            <td>${row.snapshot_date}</td>
-            <td>${row.asset_class}</td>
-            <td>${row.account_name || row.account_id}</td>
-            <td>${renderAmountValue(money(row.value_cents))}</td>
-            <td>${row.source_type || ""}</td>
-          </tr>
-        `).join("");
-        applyAmountMaskInDom(qAssetWrap);
+        if (assetInlineEditId && !(data.rows || []).some(row => row.id === assetInlineEditId)) {
+          assetInlineEditId = "";
+        }
+        renderAssetQueryRows(data.rows || []);
+      }
+      state.refreshAssetQuery = loadAssetQuery;
+      document.getElementById("qAssetBtn").addEventListener("click", () => {
+        loadAssetQuery().catch(err => window.alert(err.message || String(err)));
+      });
+      document.getElementById("qAssetClass").addEventListener("change", () => {
+        refreshAccountSelectorsFromCatalog();
+      });
+
+      qAssetBody.addEventListener("click", async (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) return;
+
+        if (target.classList.contains("q-asset-edit-btn")) {
+          try {
+            const raw = decodeURIComponent(target.getAttribute("data-row") || "{}");
+            const row = JSON.parse(raw);
+            assetInlineEditId = assetInlineEditId === row.id ? "" : String(row.id || "");
+            renderAssetQueryRows(assetRowsCache);
+          } catch {
+            window.alert("资产记录解析失败");
+          }
+          return;
+        }
+
+        if (target.classList.contains("q-asset-inline-cancel-btn")) {
+          assetInlineEditId = "";
+          renderAssetQueryRows(assetRowsCache);
+          return;
+        }
+
+        if (target.classList.contains("q-asset-inline-save-btn")) {
+          const id = (target.getAttribute("data-id") || "").trim();
+          const box = target.closest(".inline-edit-box");
+          if (!id || !box) return;
+          const assetClass = box.querySelector('[data-role="asset_class"]');
+          const accountId = box.querySelector('[data-role="account_id"]');
+          const snapshotDate = box.querySelector('[data-role="snapshot_date"]');
+          const valueInput = box.querySelector('[data-role="value"]');
+          try {
+            const selectedAccountId = accountId ? accountId.value.trim() : "";
+            if (!selectedAccountId) throw new Error("请选择资产账户");
+            await api("/api/assets/update", "POST", {
+              id,
+              asset_class: assetClass ? assetClass.value : "",
+              account_id: selectedAccountId,
+              snapshot_date: snapshotDate ? snapshotDate.value.trim() : "",
+              value: valueInput ? valueInput.value.trim() : "",
+            });
+            assetInlineEditId = "";
+            if (typeof state.refreshWealthAnalytics === "function") {
+              await state.refreshWealthAnalytics({ silent: true });
+            }
+            await loadAssetQuery();
+          } catch (err) {
+            window.alert(err.message || String(err));
+          }
+          return;
+        }
+
+        if (target.classList.contains("q-asset-del-btn")) {
+          const id = (target.getAttribute("data-id") || "").trim();
+          const label = decodeURIComponent(target.getAttribute("data-label") || "");
+          if (!id) return;
+          if (!window.confirm(`确认删除资产记录：${label} ?`)) return;
+          try {
+            await api("/api/assets/delete", "POST", { id });
+            if (typeof state.refreshWealthAnalytics === "function") {
+              await state.refreshWealthAnalytics({ silent: true });
+            }
+            await loadAssetQuery();
+          } catch (err) {
+            window.alert(err.message || String(err));
+          }
+        }
+      });
+
+      qAssetBody.addEventListener("change", (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) return;
+        if (!target.matches('select[data-role="asset_class"]')) return;
+        const box = target.closest(".inline-edit-box");
+        if (!box) return;
+        const accountSelect = box.querySelector('select[data-role="account_id"]');
+        if (!(accountSelect instanceof HTMLSelectElement)) return;
+        const assetClass = target.value === "real_estate" ? "real_estate" : "cash";
+        const rows = getAccountCatalogRowsByKinds(assetClass);
+        accountSelect.innerHTML = buildAccountOptionsMarkup(rows, {
+          selectedValue: "",
+          blankLabel: assetClass === "real_estate" ? "请选择不动产账户" : "请选择现金账户",
+          includeKind: false,
+        });
       });
     }
 
@@ -1780,6 +2639,7 @@
       initRecordActions();
       initReturnAnalytics();
       initWealth();
+      initAccountManagement();
       initQuery();
       initAdmin();
       await refreshInvestmentAccounts();

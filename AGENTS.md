@@ -198,3 +198,17 @@
   - 管理员清库口令校验与全量清零结果。
 - 建议在每次调整收益算法后执行：
   - `python3 scripts/validate_m1_analytics.py`
+
+## 15) M2 收尾进展（最新）
+
+- 财富总览可解释性增强：
+  - `GET /api/analytics/wealth-overview` 增加对账校验字段（明细合计 vs 汇总）。
+  - 返回账户明细 `stale_days`（快照相对 `as_of` 的滞后天数）。
+  - 前端展示“对账校验 / 滞后账户数”及明细“滞后天数”列。
+- 记录纠错能力增强（前端 + API）：
+  - 投资记录支持修改 / 删除（含导入记录）。
+  - 现金/不动产记录支持修改 / 删除。
+  - 基础查询页新增操作列，可一键回填到“记录录入”页面编辑。
+- 新增真实库健康检查脚本（非破坏性）：
+  - `scripts/check_runtime_db_health.py`
+  - 默认检查 `data/work/processed/ledger/keepwise.db`

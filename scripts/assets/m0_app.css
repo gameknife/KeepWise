@@ -200,6 +200,12 @@ textarea {
   font-size: 14px;
 }
 
+.btn.small {
+  padding: 6px 9px;
+  font-size: 12px;
+  border-radius: 8px;
+}
+
 .btn.primary {
   background: var(--brand);
   color: #fff;
@@ -266,6 +272,34 @@ th {
   color: #36444d;
   position: sticky;
   top: 0;
+}
+
+.actions-cell {
+  min-width: 120px;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.inline-edit-row td {
+  background: #fafbf7;
+}
+
+.inline-edit-box {
+  border: 1px solid #e4e9d8;
+  border-radius: 10px;
+  background: #fffef9;
+  padding: 10px;
+}
+
+.inline-edit-title {
+  font-size: 12px;
+  color: #44515b;
+  font-weight: 600;
+}
+
+.inline-edit-grid {
+  margin-top: 8px;
 }
 
 .status {

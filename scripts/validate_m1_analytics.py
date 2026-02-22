@@ -420,6 +420,24 @@ def run_regression(root: Path) -> dict[str, Any]:
                 f"Wealth overview mismatch: expected={expected_wealth_cents}, "
                 f"got={overview['summary']['wealth_total_cents']}"
             )
+        if not bool(overview["summary"]["reconciliation_ok"]):
+            raise AssertionError("Wealth overview reconciliation should be true")
+        if int(overview["summary"]["selected_rows_total_cents"]) != int(overview["summary"]["wealth_total_cents"]):
+            raise AssertionError(
+                "Wealth overview selected rows total mismatch: "
+                f"selected={overview['summary']['selected_rows_total_cents']}, "
+                f"wealth={overview['summary']['wealth_total_cents']}"
+            )
+        if int(overview["summary"]["stale_account_count"]) != 1:
+            raise AssertionError(
+                f"Wealth overview stale_account_count mismatch: expected=1, got={overview['summary']['stale_account_count']}"
+            )
+        stale_rows = [row for row in overview["rows"] if int(row.get("stale_days") or 0) > 0]
+        if len(stale_rows) != int(overview["summary"]["stale_account_count"]):
+            raise AssertionError(
+                "Wealth overview stale rows mismatch: "
+                f"rows={len(stale_rows)}, summary={overview['summary']['stale_account_count']}"
+            )
 
         wealth_curve = app_mod.query_wealth_curve(
             cfg,
@@ -460,6 +478,16 @@ def run_regression(root: Path) -> dict[str, Any]:
                 f"expected={expected_wealth_without_investment}, "
                 f"got={overview_without_investment['summary']['wealth_total_cents']}"
             )
+        if int(overview_without_investment["summary"]["selected_rows_total_cents"]) != int(
+            overview_without_investment["summary"]["wealth_total_cents"]
+        ):
+            raise AssertionError(
+                "Wealth overview filter selected rows total mismatch: "
+                f"selected={overview_without_investment['summary']['selected_rows_total_cents']}, "
+                f"wealth={overview_without_investment['summary']['wealth_total_cents']}"
+            )
+        if not bool(overview_without_investment["summary"]["reconciliation_ok"]):
+            raise AssertionError("Wealth overview filter reconciliation should be true")
 
         wealth_curve_without_investment = app_mod.query_wealth_curve(
             cfg,
@@ -530,6 +558,139 @@ def run_regression(root: Path) -> dict[str, Any]:
                 f"expected=餐饮, got={tx_row.get('expense_category')}"
             )
 
+        # Manual CRUD regression for investment records (M2+ ergonomics).
+        inv_create = app_mod.upsert_manual_investment(
+            cfg,
+            {
+                "account_name": "回归CRUD投资账户",
+                "snapshot_date": "2026-02-10",
+                "total_assets": "200.00",
+                "transfer_amount": "10.00",
+            },
+        )
+        inv_rows_created = app_mod.query_investments(
+            cfg,
+            {
+                "account_id": [inv_create["account_id"]],
+                "from": ["2026-02-01"],
+                "to": ["2026-02-28"],
+                "limit": ["10"],
+            },
+        )["rows"]
+        if len(inv_rows_created) != 1 or not inv_rows_created[0].get("id"):
+            raise AssertionError("Investment query should return record id for CRUD operations")
+        inv_row_id = str(inv_rows_created[0]["id"])
+        app_mod.update_investment_record(
+            cfg,
+            {
+                "id": inv_row_id,
+                "account_name": "回归CRUD投资账户",
+                "snapshot_date": "2026-02-11",
+                "total_assets": "230.00",
+                "transfer_amount": "20.00",
+            },
+        )
+        inv_rows_updated = app_mod.query_investments(
+            cfg,
+            {
+                "account_id": [inv_create["account_id"]],
+                "from": ["2026-02-01"],
+                "to": ["2026-02-28"],
+                "limit": ["10"],
+            },
+        )["rows"]
+        if len(inv_rows_updated) != 1:
+            raise AssertionError("Investment update should keep exactly one CRUD test row")
+        inv_updated = inv_rows_updated[0]
+        if str(inv_updated["snapshot_date"]) != "2026-02-11":
+            raise AssertionError(
+                f"Investment update snapshot_date mismatch: got={inv_updated['snapshot_date']}"
+            )
+        if int(inv_updated["total_assets_cents"]) != 23_000:
+            raise AssertionError(
+                f"Investment update total_assets mismatch: got={inv_updated['total_assets_cents']}"
+            )
+        if int(inv_updated["transfer_amount_cents"]) != 2_000:
+            raise AssertionError(
+                f"Investment update transfer_amount mismatch: got={inv_updated['transfer_amount_cents']}"
+            )
+        app_mod.delete_investment_record(cfg, {"id": inv_row_id})
+        inv_rows_deleted = app_mod.query_investments(
+            cfg,
+            {
+                "account_id": [inv_create["account_id"]],
+                "from": ["2026-02-01"],
+                "to": ["2026-02-28"],
+                "limit": ["10"],
+            },
+        )["rows"]
+        if inv_rows_deleted:
+            raise AssertionError("Investment delete should remove CRUD test row")
+
+        # Manual CRUD regression for asset valuations.
+        asset_create = app_mod.upsert_manual_asset_valuation(
+            cfg,
+            {
+                "asset_class": "cash",
+                "account_name": "回归CRUD现金账户",
+                "snapshot_date": "2026-02-10",
+                "value": "88.00",
+            },
+        )
+        asset_rows_created = app_mod.query_asset_valuations(
+            cfg,
+            {
+                "account_id": [asset_create["account_id"]],
+                "asset_class": ["cash"],
+                "from": ["2026-02-01"],
+                "to": ["2026-02-28"],
+                "limit": ["10"],
+            },
+        )["rows"]
+        if len(asset_rows_created) != 1 or not asset_rows_created[0].get("id"):
+            raise AssertionError("Asset query should return record id for CRUD operations")
+        asset_row_id = str(asset_rows_created[0]["id"])
+        app_mod.update_asset_valuation(
+            cfg,
+            {
+                "id": asset_row_id,
+                "asset_class": "cash",
+                "account_name": "回归CRUD现金账户",
+                "snapshot_date": "2026-02-11",
+                "value": "99.00",
+            },
+        )
+        asset_rows_updated = app_mod.query_asset_valuations(
+            cfg,
+            {
+                "account_id": [asset_create["account_id"]],
+                "asset_class": ["cash"],
+                "from": ["2026-02-01"],
+                "to": ["2026-02-28"],
+                "limit": ["10"],
+            },
+        )["rows"]
+        if len(asset_rows_updated) != 1:
+            raise AssertionError("Asset update should keep exactly one CRUD test row")
+        asset_updated = asset_rows_updated[0]
+        if str(asset_updated["snapshot_date"]) != "2026-02-11":
+            raise AssertionError(f"Asset update snapshot_date mismatch: got={asset_updated['snapshot_date']}")
+        if int(asset_updated["value_cents"]) != 9_900:
+            raise AssertionError(f"Asset update value mismatch: got={asset_updated['value_cents']}")
+        app_mod.delete_asset_valuation(cfg, {"id": asset_row_id})
+        asset_rows_deleted = app_mod.query_asset_valuations(
+            cfg,
+            {
+                "account_id": [asset_create["account_id"]],
+                "asset_class": ["cash"],
+                "from": ["2026-02-01"],
+                "to": ["2026-02-28"],
+                "limit": ["10"],
+            },
+        )["rows"]
+        if asset_rows_deleted:
+            raise AssertionError("Asset delete should remove CRUD test row")
+
         stats_before_reset = app_mod.query_admin_db_stats(cfg)
         if int(stats_before_reset["summary"]["total_rows"]) <= 0:
             raise AssertionError("Admin stats should report rows before reset")
@@ -561,7 +722,9 @@ def run_regression(root: Path) -> dict[str, Any]:
             "curve_end_net_growth_cents": curve["summary"]["end_net_growth_cents"],
             "per_point_checked": per_point_checked,
             "import_inferred_assets_ok": True,
+            "record_crud_ok": True,
             "wealth_total_cents": expected_wealth_cents,
+            "wealth_overview_stale_account_count": overview["summary"]["stale_account_count"],
             "wealth_curve_net_growth_cents": wealth_curve["summary"]["net_growth_cents"],
             "wealth_total_without_investment_cents": expected_wealth_without_investment,
             "wealth_curve_points": wealth_curve["range"]["points"],
@@ -597,7 +760,9 @@ def main() -> None:
     print(f"  curve_end_net_growth_cents: {result['curve_end_net_growth_cents']}")
     print(f"  per_point_checked: {result['per_point_checked']}")
     print(f"  import_inferred_assets_ok: {result['import_inferred_assets_ok']}")
+    print(f"  record_crud_ok: {result['record_crud_ok']}")
     print(f"  wealth_total_cents: {result['wealth_total_cents']}")
+    print(f"  wealth_overview_stale_account_count: {result['wealth_overview_stale_account_count']}")
     print(f"  wealth_curve_net_growth_cents: {result['wealth_curve_net_growth_cents']}")
     print(f"  wealth_curve_points: {result['wealth_curve_points']}")
     print(f"  admin_reset_deleted_rows: {result['admin_reset_deleted_rows']}")
