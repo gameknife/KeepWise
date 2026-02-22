@@ -2778,6 +2778,22 @@ def query_wealth_curve(config: AppConfig, qs: dict[str, list[str]]) -> dict[str,
     last_total = rows[-1]["wealth_total_cents"] if rows else 0
     change_cents = last_total - first_total
     change_pct = (change_cents / first_total) if first_total > 0 else None
+    start_investment_cents = rows[0]["investment_total_cents"] if rows else 0
+    end_investment_cents = rows[-1]["investment_total_cents"] if rows else 0
+    investment_net_growth_cents = end_investment_cents - start_investment_cents
+    investment_change_pct = (
+        investment_net_growth_cents / start_investment_cents if start_investment_cents > 0 else None
+    )
+    start_cash_cents = rows[0]["cash_total_cents"] if rows else 0
+    end_cash_cents = rows[-1]["cash_total_cents"] if rows else 0
+    cash_net_growth_cents = end_cash_cents - start_cash_cents
+    cash_change_pct = cash_net_growth_cents / start_cash_cents if start_cash_cents > 0 else None
+    start_real_estate_cents = rows[0]["real_estate_total_cents"] if rows else 0
+    end_real_estate_cents = rows[-1]["real_estate_total_cents"] if rows else 0
+    real_estate_net_growth_cents = end_real_estate_cents - start_real_estate_cents
+    real_estate_change_pct = (
+        real_estate_net_growth_cents / start_real_estate_cents if start_real_estate_cents > 0 else None
+    )
 
     return {
         "range": {
@@ -2804,6 +2820,34 @@ def query_wealth_curve(config: AppConfig, qs: dict[str, list[str]]) -> dict[str,
             "net_growth_yuan": cents_to_yuan_text(change_cents),
             "change_pct": round(change_pct, 8) if change_pct is not None else None,
             "change_pct_text": f"{change_pct * 100:.2f}%" if change_pct is not None else None,
+            "start_investment_cents": start_investment_cents,
+            "start_investment_yuan": cents_to_yuan_text(start_investment_cents),
+            "end_investment_cents": end_investment_cents,
+            "end_investment_yuan": cents_to_yuan_text(end_investment_cents),
+            "investment_net_growth_cents": investment_net_growth_cents,
+            "investment_net_growth_yuan": cents_to_yuan_text(investment_net_growth_cents),
+            "investment_change_pct": round(investment_change_pct, 8) if investment_change_pct is not None else None,
+            "investment_change_pct_text": (
+                f"{investment_change_pct * 100:.2f}%" if investment_change_pct is not None else None
+            ),
+            "start_cash_cents": start_cash_cents,
+            "start_cash_yuan": cents_to_yuan_text(start_cash_cents),
+            "end_cash_cents": end_cash_cents,
+            "end_cash_yuan": cents_to_yuan_text(end_cash_cents),
+            "cash_net_growth_cents": cash_net_growth_cents,
+            "cash_net_growth_yuan": cents_to_yuan_text(cash_net_growth_cents),
+            "cash_change_pct": round(cash_change_pct, 8) if cash_change_pct is not None else None,
+            "cash_change_pct_text": f"{cash_change_pct * 100:.2f}%" if cash_change_pct is not None else None,
+            "start_real_estate_cents": start_real_estate_cents,
+            "start_real_estate_yuan": cents_to_yuan_text(start_real_estate_cents),
+            "end_real_estate_cents": end_real_estate_cents,
+            "end_real_estate_yuan": cents_to_yuan_text(end_real_estate_cents),
+            "real_estate_net_growth_cents": real_estate_net_growth_cents,
+            "real_estate_net_growth_yuan": cents_to_yuan_text(real_estate_net_growth_cents),
+            "real_estate_change_pct": round(real_estate_change_pct, 8) if real_estate_change_pct is not None else None,
+            "real_estate_change_pct_text": (
+                f"{real_estate_change_pct * 100:.2f}%" if real_estate_change_pct is not None else None
+            ),
         },
         "rows": rows,
     }

@@ -1485,8 +1485,11 @@
             { k: "区间收益率", v: retData.metrics.return_rate_pct || "-" },
             { k: "年化收益率", v: retData.metrics.annualized_rate_pct || "-" },
             { k: "净增长资金(元)", v: retData.metrics.net_growth_yuan || retData.metrics.profit_yuan },
-            { k: "终点净增长(元)", v: curveData.summary.end_net_growth_yuan || "-" },
-            { k: "终点累计收益率", v: curveData.summary.end_cumulative_return_pct_text || "-" },
+            { k: "曲线点位数", v: curveData.summary.count ?? curveData.range?.points ?? "-", amount: false },
+            { k: "起点总资产(元)", v: curveData.summary.start_assets_yuan || "-" },
+            { k: "终点总资产(元)", v: curveData.summary.end_assets_yuan || "-" },
+            { k: "资产涨跌额(元)", v: curveData.summary.change_yuan || "-" },
+            { k: "资产涨跌幅", v: curveData.summary.change_pct_text || "-", amount: false },
           ]);
 
           const flows = retData.cash_flows || [];
@@ -1807,13 +1810,40 @@
           const data = await api(`/api/analytics/wealth-curve?${params.toString()}`);
           if (requestId !== latestCurveRequestId) return;
 
-          showMetrics(wealthCurveMetrics, [
+          const wealthMetricItems = [
             { k: "点位数", v: data.range.points },
             { k: "起点总财富(元)", v: data.summary.start_wealth_yuan },
             { k: "终点总财富(元)", v: data.summary.end_wealth_yuan },
             { k: "净增长资金(元)", v: data.summary.net_growth_yuan || data.summary.change_yuan },
-            { k: "区间涨跌", v: data.summary.change_pct_text || "-" },
-          ]);
+            { k: "区间涨跌", v: data.summary.change_pct_text || "-", amount: false },
+          ];
+
+          if (filters.include_investment) {
+            wealthMetricItems.push(
+              { k: "投资起点(元)", v: data.summary.start_investment_yuan || "-" },
+              { k: "投资终点(元)", v: data.summary.end_investment_yuan || "-" },
+              { k: "投资净增长(元)", v: data.summary.investment_net_growth_yuan || "-" },
+              { k: "投资涨跌幅", v: data.summary.investment_change_pct_text || "-", amount: false },
+            );
+          }
+          if (filters.include_cash) {
+            wealthMetricItems.push(
+              { k: "现金起点(元)", v: data.summary.start_cash_yuan || "-" },
+              { k: "现金终点(元)", v: data.summary.end_cash_yuan || "-" },
+              { k: "现金净增长(元)", v: data.summary.cash_net_growth_yuan || "-" },
+              { k: "现金涨跌幅", v: data.summary.cash_change_pct_text || "-", amount: false },
+            );
+          }
+          if (filters.include_real_estate) {
+            wealthMetricItems.push(
+              { k: "不动产起点(元)", v: data.summary.start_real_estate_yuan || "-" },
+              { k: "不动产终点(元)", v: data.summary.end_real_estate_yuan || "-" },
+              { k: "不动产净增长(元)", v: data.summary.real_estate_net_growth_yuan || "-" },
+              { k: "不动产涨跌幅", v: data.summary.real_estate_change_pct_text || "-", amount: false },
+            );
+          }
+
+          showMetrics(wealthCurveMetrics, wealthMetricItems);
 
           const seriesDefs = [
             { key: "wealth_total_cents", color: "#0f766e", label: "总财富", formatValue: (val) => renderAmountValue(`${money(val)} 元`) },

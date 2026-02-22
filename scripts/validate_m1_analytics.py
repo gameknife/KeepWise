@@ -314,6 +314,27 @@ def run_regression(root: Path) -> dict[str, Any]:
                 f"row={curve['rows'][-1]['cumulative_net_growth_cents']}, "
                 f"summary={curve['summary']['end_net_growth_cents']}"
             )
+        if int(curve["summary"]["start_assets_cents"]) != int(curve["rows"][0]["total_assets_cents"]):
+            raise AssertionError(
+                "Curve start assets mismatch: "
+                f"summary={curve['summary']['start_assets_cents']}, "
+                f"row={curve['rows'][0]['total_assets_cents']}"
+            )
+        if int(curve["summary"]["end_assets_cents"]) != int(curve["rows"][-1]["total_assets_cents"]):
+            raise AssertionError(
+                "Curve end assets mismatch: "
+                f"summary={curve['summary']['end_assets_cents']}, "
+                f"row={curve['rows'][-1]['total_assets_cents']}"
+            )
+        if int(curve["summary"]["change_cents"]) != (
+            int(curve["summary"]["end_assets_cents"]) - int(curve["summary"]["start_assets_cents"])
+        ):
+            raise AssertionError(
+                "Curve asset change mismatch: "
+                f"change={curve['summary']['change_cents']}, "
+                f"start={curve['summary']['start_assets_cents']}, "
+                f"end={curve['summary']['end_assets_cents']}"
+            )
 
         returns_batch = app_mod.query_investment_returns(
             cfg,
@@ -383,6 +404,21 @@ def run_regression(root: Path) -> dict[str, Any]:
                 f"curve={portfolio_curve['summary']['end_net_growth_cents']}, "
                 f"return={portfolio_ret['metrics']['net_growth_cents']}"
             )
+        if int(portfolio_curve["summary"]["start_assets_cents"]) != int(portfolio_curve["rows"][0]["total_assets_cents"]):
+            raise AssertionError(
+                "Portfolio curve start assets mismatch: "
+                f"summary={portfolio_curve['summary']['start_assets_cents']}, "
+                f"row={portfolio_curve['rows'][0]['total_assets_cents']}"
+            )
+        if int(portfolio_curve["summary"]["change_cents"]) != (
+            int(portfolio_curve["summary"]["end_assets_cents"]) - int(portfolio_curve["summary"]["start_assets_cents"])
+        ):
+            raise AssertionError(
+                "Portfolio curve asset change mismatch: "
+                f"change={portfolio_curve['summary']['change_cents']}, "
+                f"start={portfolio_curve['summary']['start_assets_cents']}, "
+                f"end={portfolio_curve['summary']['end_assets_cents']}"
+            )
 
         curve_start = curve["range"]["effective_from"]
         per_point_checked = 0
@@ -448,6 +484,12 @@ def run_regression(root: Path) -> dict[str, Any]:
                 f"Wealth curve end mismatch: expected={expected_wealth_cents}, "
                 f"got={wealth_curve['summary']['end_wealth_cents']}"
             )
+        if int(wealth_curve["summary"]["start_wealth_cents"]) != int(wealth_curve["rows"][0]["wealth_total_cents"]):
+            raise AssertionError(
+                "Wealth curve start mismatch: "
+                f"summary={wealth_curve['summary']['start_wealth_cents']}, "
+                f"row={wealth_curve['rows'][0]['wealth_total_cents']}"
+            )
         if int(wealth_curve["summary"]["net_growth_cents"]) != int(wealth_curve["summary"]["change_cents"]):
             raise AssertionError(
                 "Wealth curve net growth mismatch: "
@@ -459,6 +501,74 @@ def run_regression(root: Path) -> dict[str, Any]:
                 "Wealth curve end row net growth mismatch: "
                 f"row={wealth_curve['rows'][-1]['wealth_net_growth_cents']}, "
                 f"summary={wealth_curve['summary']['net_growth_cents']}"
+            )
+        if int(wealth_curve["summary"]["start_investment_cents"]) != int(wealth_curve["rows"][0]["investment_total_cents"]):
+            raise AssertionError(
+                "Wealth curve start investment mismatch: "
+                f"summary={wealth_curve['summary']['start_investment_cents']}, "
+                f"row={wealth_curve['rows'][0]['investment_total_cents']}"
+            )
+        if int(wealth_curve["summary"]["end_investment_cents"]) != int(wealth_curve["rows"][-1]["investment_total_cents"]):
+            raise AssertionError(
+                "Wealth curve end investment mismatch: "
+                f"summary={wealth_curve['summary']['end_investment_cents']}, "
+                f"row={wealth_curve['rows'][-1]['investment_total_cents']}"
+            )
+        if int(wealth_curve["summary"]["investment_net_growth_cents"]) != (
+            int(wealth_curve["summary"]["end_investment_cents"]) - int(wealth_curve["summary"]["start_investment_cents"])
+        ):
+            raise AssertionError(
+                "Wealth curve investment net growth mismatch: "
+                f"summary={wealth_curve['summary']['investment_net_growth_cents']}, "
+                f"start={wealth_curve['summary']['start_investment_cents']}, "
+                f"end={wealth_curve['summary']['end_investment_cents']}"
+            )
+        if int(wealth_curve["summary"]["start_cash_cents"]) != int(wealth_curve["rows"][0]["cash_total_cents"]):
+            raise AssertionError(
+                "Wealth curve start cash mismatch: "
+                f"summary={wealth_curve['summary']['start_cash_cents']}, "
+                f"row={wealth_curve['rows'][0]['cash_total_cents']}"
+            )
+        if int(wealth_curve["summary"]["end_cash_cents"]) != int(wealth_curve["rows"][-1]["cash_total_cents"]):
+            raise AssertionError(
+                "Wealth curve end cash mismatch: "
+                f"summary={wealth_curve['summary']['end_cash_cents']}, "
+                f"row={wealth_curve['rows'][-1]['cash_total_cents']}"
+            )
+        if int(wealth_curve["summary"]["cash_net_growth_cents"]) != (
+            int(wealth_curve["summary"]["end_cash_cents"]) - int(wealth_curve["summary"]["start_cash_cents"])
+        ):
+            raise AssertionError(
+                "Wealth curve cash net growth mismatch: "
+                f"summary={wealth_curve['summary']['cash_net_growth_cents']}, "
+                f"start={wealth_curve['summary']['start_cash_cents']}, "
+                f"end={wealth_curve['summary']['end_cash_cents']}"
+            )
+        if int(wealth_curve["summary"]["start_real_estate_cents"]) != int(
+            wealth_curve["rows"][0]["real_estate_total_cents"]
+        ):
+            raise AssertionError(
+                "Wealth curve start real estate mismatch: "
+                f"summary={wealth_curve['summary']['start_real_estate_cents']}, "
+                f"row={wealth_curve['rows'][0]['real_estate_total_cents']}"
+            )
+        if int(wealth_curve["summary"]["end_real_estate_cents"]) != int(
+            wealth_curve["rows"][-1]["real_estate_total_cents"]
+        ):
+            raise AssertionError(
+                "Wealth curve end real estate mismatch: "
+                f"summary={wealth_curve['summary']['end_real_estate_cents']}, "
+                f"row={wealth_curve['rows'][-1]['real_estate_total_cents']}"
+            )
+        if int(wealth_curve["summary"]["real_estate_net_growth_cents"]) != (
+            int(wealth_curve["summary"]["end_real_estate_cents"])
+            - int(wealth_curve["summary"]["start_real_estate_cents"])
+        ):
+            raise AssertionError(
+                "Wealth curve real estate net growth mismatch: "
+                f"summary={wealth_curve['summary']['real_estate_net_growth_cents']}, "
+                f"start={wealth_curve['summary']['start_real_estate_cents']}, "
+                f"end={wealth_curve['summary']['end_real_estate_cents']}"
             )
 
         # Wealth include filters should affect only wealth total and rows selection.
@@ -513,6 +623,14 @@ def run_regression(root: Path) -> dict[str, Any]:
                 "Wealth curve filtered net growth mismatch: "
                 f"summary={wealth_curve_without_investment['summary']['net_growth_cents']}, "
                 f"row={wealth_curve_without_investment['rows'][-1]['wealth_net_growth_cents']}"
+            )
+        if int(wealth_curve_without_investment["summary"]["start_cash_cents"]) != int(
+            wealth_curve_without_investment["rows"][0]["cash_total_cents"]
+        ):
+            raise AssertionError(
+                "Wealth curve filtered start cash mismatch: "
+                f"summary={wealth_curve_without_investment['summary']['start_cash_cents']}, "
+                f"row={wealth_curve_without_investment['rows'][0]['cash_total_cents']}"
             )
 
         # All filters disabled should fail fast.
