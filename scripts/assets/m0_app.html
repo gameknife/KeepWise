@@ -113,13 +113,14 @@
         </div>
 
         <div class="sub-panel">
-          <h3>现金/不动产记录录入</h3>
+          <h3>现金/不动产/负债记录录入</h3>
           <div class="row-3">
             <div>
               <label>资产类型</label>
               <select id="assetClass">
                 <option value="cash">现金账户</option>
                 <option value="real_estate">不动产账户</option>
+                <option value="liability">负债账户</option>
               </select>
             </div>
             <div>
@@ -133,7 +134,7 @@
               <input id="assetSnapshotDate" type="date">
             </div>
             <div>
-              <label>资产金额（元）</label>
+              <label>快照金额（元）</label>
               <input id="assetValue" type="number" step="0.01">
             </div>
           </div>
@@ -237,72 +238,37 @@
 
     <section id="tab-wealth" class="panel hidden">
       <h2>财富总览</h2>
-      <p class="hint">按投资、现金、不动产三类聚合展示，并支持随时间曲线。</p>
+      <p class="hint">按投资、现金、不动产、负债聚合展示资产趋势与结构关系。</p>
 
-      <h3>总览快照</h3>
-      <div class="row">
-        <div>
-          <label>as_of（可选）</label>
-          <input id="wealthAsOf" type="date">
-        </div>
-        <div></div>
-      </div>
       <div class="pill-tabs" id="wealthAssetFilters">
         <button type="button" class="pill-tab active" data-key="include_investment" aria-pressed="true">投资</button>
         <button type="button" class="pill-tab active" data-key="include_cash" aria-pressed="true">现金</button>
         <button type="button" class="pill-tab active" data-key="include_real_estate" aria-pressed="true">不动产</button>
-      </div>
-      <div class="actions">
-        <button id="wealthOverviewBtn" class="btn primary">查询总览</button>
-      </div>
-      <div id="wealthStatus" class="status hidden"></div>
-      <div id="wealthMetrics" class="grid-metrics hidden"></div>
-      <div class="table-wrap hidden" id="wealthRowsWrap">
-        <table>
-          <thead>
-            <tr><th>类型</th><th>账户</th><th>日期</th><th>滞后天数</th><th>金额(元)</th></tr>
-          </thead>
-          <tbody id="wealthRowsBody"></tbody>
-        </table>
+        <button type="button" class="pill-tab active" data-key="include_liability" aria-pressed="true">负债</button>
       </div>
 
-      <h3 style="margin-top:16px">财富增长曲线</h3>
-      <div class="row-4">
+      <div class="row">
         <div>
-          <label>区间预设</label>
-          <select id="wealthPreset">
-            <option value="ytd">年度（YTD）</option>
-            <option value="1y" selected>近一年</option>
-            <option value="3y">近三年</option>
+          <label>趋势区间</label>
+          <select id="wealthCurvePreset">
             <option value="since_inception">成立以来</option>
-            <option value="custom">自定义</option>
+            <option value="1y">近一年</option>
+            <option value="ytd">YTD（今年以来）</option>
           </select>
-        </div>
-        <div>
-          <label>开始日期（custom）</label>
-          <input id="wealthFrom" type="date">
-        </div>
-        <div>
-          <label>结束日期（可选）</label>
-          <input id="wealthTo" type="date">
         </div>
         <div></div>
       </div>
-      <div class="actions">
-        <button id="wealthCurveBtn" class="btn secondary">加载财富曲线</button>
-      </div>
-      <div id="wealthCurveMetrics" class="grid-metrics hidden"></div>
-      <div class="pill-tabs" id="wealthChartTabs">
-        <button class="pill-tab active" data-view="asset">总财富曲线</button>
-        <button class="pill-tab" data-view="growth">净增长资金曲线</button>
-      </div>
+
+      <div id="wealthStatus" class="status hidden"></div>
+
+      <h3 style="margin-top:16px">资产趋势</h3>
       <div id="wealthChartAssetView" class="chart-card">
-        <div class="chart-header">财富总览曲线</div>
+        <div class="chart-header">资产趋势（堆叠）+ 总资产</div>
         <div id="wealthCurveLegend" class="legend hidden"></div>
         <div id="wealthCurveChart" class="chart-host"></div>
       </div>
-      <div id="wealthChartGrowthView" class="chart-card hidden">
-        <div class="chart-header">财富净增长资金曲线</div>
+      <div id="wealthChartGrowthView" class="chart-card">
+        <div class="chart-header">资产 - 负债 - 净资产关系（Sankey）</div>
         <div id="wealthGrowthLegend" class="legend hidden"></div>
         <div id="wealthGrowthChart" class="chart-host"></div>
       </div>
@@ -441,7 +407,7 @@
         </table>
       </div>
 
-      <h3 style="margin-top:16px">非投资资产查询</h3>
+      <h3 style="margin-top:16px">现金/不动产/负债记录查询</h3>
       <div class="row-3">
         <div><label>开始日期</label><input id="qAssetFrom" type="date"></div>
         <div><label>结束日期</label><input id="qAssetTo" type="date"></div>
@@ -451,6 +417,7 @@
             <option value="">全部</option>
             <option value="cash">现金</option>
             <option value="real_estate">不动产</option>
+            <option value="liability">负债</option>
           </select>
         </div>
         <div>
@@ -462,7 +429,7 @@
         <div><label>limit</label><input id="qAssetLimit" type="number" value="100"></div>
       </div>
       <div class="actions">
-        <button id="qAssetBtn" class="btn secondary">查询非投资资产</button>
+        <button id="qAssetBtn" class="btn secondary">查询资产/负债记录</button>
       </div>
       <div id="qAssetMetrics" class="grid-metrics hidden"></div>
       <div class="table-wrap hidden" id="qAssetWrap">
@@ -747,6 +714,7 @@
     function syncCustomDateState(selectId, fromInputId) {
       const selectEl = document.getElementById(selectId);
       const fromEl = document.getElementById(fromInputId);
+      if (!selectEl || !fromEl) return;
       const apply = () => {
         const isCustom = selectEl.value === "custom";
         fromEl.disabled = !isCustom;
@@ -839,6 +807,7 @@
       const investmentRows = getAccountCatalogRowsByKinds("investment");
       const cashRows = getAccountCatalogRowsByKinds("cash");
       const realEstateRows = getAccountCatalogRowsByKinds("real_estate");
+      const liabilityRows = getAccountCatalogRowsByKinds("liability");
 
       setSelectAccountOptions(document.getElementById("invAccountId"), investmentRows, {
         blankLabel: "请选择投资账户",
@@ -855,8 +824,12 @@
 
       const assetClassEl = document.getElementById("assetClass");
       const assetClass = assetClassEl ? assetClassEl.value : "cash";
-      const assetRows = assetClass === "real_estate" ? realEstateRows : cashRows;
-      const assetAccountLabel = assetClass === "real_estate" ? "请选择不动产账户" : "请选择现金账户";
+      const assetRows = assetClass === "real_estate"
+        ? realEstateRows
+        : (assetClass === "liability" ? liabilityRows : cashRows);
+      const assetAccountLabel = assetClass === "real_estate"
+        ? "请选择不动产账户"
+        : (assetClass === "liability" ? "请选择负债账户" : "请选择现金账户");
       setSelectAccountOptions(document.getElementById("assetAccountId"), assetRows, {
         blankLabel: assetAccountLabel,
         includeKind: false,
@@ -866,10 +839,14 @@
       const qAssetClass = qAssetClassEl ? qAssetClassEl.value : "";
       const qAssetRows = qAssetClass === "cash"
         ? cashRows
-        : (qAssetClass === "real_estate" ? realEstateRows : [...cashRows, ...realEstateRows]);
+        : (
+          qAssetClass === "real_estate"
+            ? realEstateRows
+            : (qAssetClass === "liability" ? liabilityRows : [...cashRows, ...realEstateRows, ...liabilityRows])
+        );
       const qAssetLabel = qAssetClass
-        ? `全部${qAssetClass === "cash" ? "现金" : "不动产"}账户`
-        : "全部资产账户";
+        ? `全部${qAssetClass === "cash" ? "现金" : (qAssetClass === "real_estate" ? "不动产" : "负债")}账户`
+        : "全部资产/负债账户";
       setSelectAccountOptions(document.getElementById("qAssetAccountId"), qAssetRows, {
         blankLabel: qAssetLabel,
         includeKind: qAssetClass === "",
@@ -1080,6 +1057,449 @@
       overlay.addEventListener("mouseleave", hideHover);
     }
 
+    function renderWealthStackedTrendChart(hostId, legendId, rows, filters = {}) {
+      const host = document.getElementById(hostId);
+      const legend = document.getElementById(legendId);
+      if (!host || !legend) return;
+      if (!rows || rows.length === 0) {
+        host.innerHTML = `<div class="empty">暂无可视化数据</div>`;
+        legend.classList.add("hidden");
+        return;
+      }
+
+      const width = 1000;
+      const height = 380;
+      const padLeft = 104;
+      const padRight = 24;
+      const padTop = 16;
+      const padBottom = 30;
+      const chartWidth = width - padLeft - padRight;
+      const chartHeight = height - padTop - padBottom;
+      const xStep = rows.length > 1 ? chartWidth / (rows.length - 1) : 0;
+      const x = idx => padLeft + idx * xStep;
+
+      const stackSeries = [];
+      if (filters.include_investment) stackSeries.push({ key: "investment_total_cents", label: "投资", color: "#e28b00" });
+      if (filters.include_cash) stackSeries.push({ key: "cash_total_cents", label: "现金", color: "#2f6db4" });
+      if (filters.include_real_estate) stackSeries.push({ key: "real_estate_total_cents", label: "不动产", color: "#7d5a97" });
+
+      const includeLiability = !!filters.include_liability;
+      const areaSegments = [];
+      let maxVal = 0;
+      let minVal = 0;
+      const grossLine = [];
+      const liabilityLine = [];
+      const pointMeta = [];
+
+      rows.forEach((row, idx) => {
+        let positiveBase = 0;
+        const segmentsAtPoint = [];
+        stackSeries.forEach(series => {
+          const value = Number(row[series.key] || 0);
+          const y0 = positiveBase;
+          const y1 = positiveBase + value;
+          positiveBase = y1;
+          segmentsAtPoint.push({ ...series, y0, y1, value });
+          maxVal = Math.max(maxVal, y1);
+        });
+        const liability = includeLiability ? Number(row.liability_total_cents || 0) : 0;
+        const liabilityBottom = -liability;
+        minVal = Math.min(minVal, liabilityBottom);
+        const gross = Number(row.wealth_total_cents || 0);
+        const net = Number(row.net_asset_total_cents || 0);
+        maxVal = Math.max(maxVal, gross);
+        minVal = Math.min(minVal, 0);
+        grossLine.push(gross);
+        liabilityLine.push(liability);
+        pointMeta.push({
+          snapshot_date: row.snapshot_date || "",
+          gross,
+          liability,
+          net,
+          segments: segmentsAtPoint,
+        });
+
+        segmentsAtPoint.forEach(seg => {
+          let holder = areaSegments.find(item => item.key === seg.key);
+          if (!holder) {
+            holder = { key: seg.key, label: seg.label, color: seg.color, uppers: [], lowers: [] };
+            areaSegments.push(holder);
+          }
+          holder.uppers.push({ x: x(idx), yValue: seg.y1 });
+          holder.lowers.push({ x: x(idx), yValue: seg.y0 });
+        });
+      });
+
+      if (Math.abs(maxVal - minVal) < 1e-9) {
+        maxVal += 1;
+        minVal -= 1;
+      }
+      const span = maxVal - minVal;
+      const y = val => padTop + ((maxVal - val) / span) * chartHeight;
+      const zeroY = y(0);
+
+      const yTickCount = 4;
+      const gridLines = [];
+      const yLabels = [];
+      for (let i = 0; i <= yTickCount; i += 1) {
+        const ratio = i / yTickCount;
+        const val = maxVal - ratio * span;
+        const yy = y(val);
+        gridLines.push(
+          `<line x1="${padLeft}" y1="${yy.toFixed(2)}" x2="${width - padRight}" y2="${yy.toFixed(2)}" stroke="#e3e8d8" stroke-width="1" />`
+        );
+        yLabels.push(
+          `<text x="${padLeft - 8}" y="${(yy + 4).toFixed(2)}" font-size="11" text-anchor="end" fill="#6a767f">${
+            shouldMaskAmounts() ? "****" : `${formatYuanShortFromCents(val)}元`
+          }</text>`
+        );
+      }
+      const areaPolygons = areaSegments.map(seg => {
+        const upper = seg.uppers.map(p => `${p.x.toFixed(2)},${y(p.yValue).toFixed(2)}`);
+        const lower = seg.lowers.slice().reverse().map(p => `${p.x.toFixed(2)},${y(p.yValue).toFixed(2)}`);
+        return `
+          <polygon points="${upper.concat(lower).join(" ")}"
+            fill="${seg.color}" fill-opacity="0.14" stroke="${seg.color}" stroke-width="1.4" />
+        `;
+      }).join("");
+
+      const liabilityArea = includeLiability
+        ? (() => {
+            const upper = rows.map((_, idx) => `${x(idx).toFixed(2)},${zeroY.toFixed(2)}`);
+            const lower = rows.slice().reverse().map((row, reverseIdx) => {
+              const idx = rows.length - 1 - reverseIdx;
+              const liab = Number(row.liability_total_cents || 0);
+              return `${x(idx).toFixed(2)},${y(-liab).toFixed(2)}`;
+            });
+            return `
+              <polygon points="${upper.concat(lower).join(" ")}"
+                fill="#b42318" fill-opacity="0.07" stroke="none" />
+              <polygon points="${upper.concat(lower).join(" ")}"
+                fill="url(#wealthLiabilityPattern)" stroke="#b42318" stroke-opacity="0.75" stroke-width="1.2" />
+            `;
+          })()
+        : "";
+
+      function polyline(values, color, widthPx = 2.4, dash = "") {
+        const points = values.map((val, idx) => `${x(idx).toFixed(2)},${y(Number(val)).toFixed(2)}`).join(" ");
+        return `<polyline fill="none" stroke="${color}" stroke-width="${widthPx}" ${dash ? `stroke-dasharray="${dash}"` : ""} points="${points}" />`;
+      }
+
+      const grossLineSvg = polyline(grossLine, "#0f766e", 2.8);
+      const liabilityLineSvg = includeLiability ? polyline(liabilityLine.map(v => -v), "#b42318", 2.0, "6 4") : "";
+
+      const xStartLabel = rows[0].snapshot_date || "";
+      const xEndLabel = rows[rows.length - 1].snapshot_date || "";
+
+      host.innerHTML = `
+        <div class="chart-stage">
+          <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet" class="chart-svg">
+            <defs>
+              <pattern id="wealthLiabilityPattern" patternUnits="userSpaceOnUse" width="12" height="12" patternTransform="rotate(135)">
+                <line x1="0" y1="0" x2="0" y2="12" stroke="#b42318" stroke-width="2" stroke-opacity="0.22" stroke-dasharray="3 4" />
+              </pattern>
+            </defs>
+            ${gridLines.join("")}
+            ${yLabels.join("")}
+            <line x1="${padLeft}" y1="${height - padBottom}" x2="${width - padRight}" y2="${height - padBottom}" stroke="#cfd8c3" stroke-width="1.2" />
+            <line x1="${padLeft}" y1="${padTop}" x2="${padLeft}" y2="${height - padBottom}" stroke="#cfd8c3" stroke-width="1.2" />
+            ${areaPolygons}
+            ${liabilityArea}
+            <line x1="${padLeft}" y1="${zeroY.toFixed(2)}" x2="${width - padRight}" y2="${zeroY.toFixed(2)}" stroke="#b6c2bd" stroke-width="1.3" stroke-dasharray="5 4" />
+            ${grossLineSvg}
+            ${liabilityLineSvg}
+            <line data-role="hover-line" x1="${padLeft}" y1="${padTop}" x2="${padLeft}" y2="${height - padBottom}" stroke="#6f7f86" stroke-width="1.2" stroke-dasharray="4 4" visibility="hidden" />
+            <circle data-role="hover-dot-gross" r="4.5" fill="#fff" stroke="#0f766e" stroke-width="2" visibility="hidden" />
+            ${includeLiability ? '<circle data-role="hover-dot-liab" r="4.2" fill="#fff" stroke="#b42318" stroke-width="2" visibility="hidden" />' : ""}
+            <text x="${padLeft}" y="${height - 8}" font-size="11" fill="#6a767f">${xStartLabel}</text>
+            <text x="${width - padRight - 90}" y="${height - 8}" font-size="11" fill="#6a767f">${xEndLabel}</text>
+            <rect data-role="overlay" x="${padLeft}" y="${padTop}" width="${chartWidth}" height="${chartHeight}" fill="transparent" />
+          </svg>
+          <div class="chart-tooltip hidden" data-role="tooltip"></div>
+        </div>
+      `;
+
+      const legendItems = [
+        ...areaSegments.map(seg => `<span class="legend-item"><i style="background:${seg.color}"></i>${seg.label}(堆叠)</span>`),
+        includeLiability ? `<span class="legend-item"><i style="background:#b42318"></i>负债(向下堆叠/虚线)</span>` : "",
+        `<span class="legend-item"><i style="background:#0f766e"></i>总资产</span>`,
+      ].filter(Boolean);
+      legend.classList.remove("hidden");
+      legend.innerHTML = legendItems.join("");
+
+      const stage = host.querySelector(".chart-stage");
+      const overlay = host.querySelector('[data-role="overlay"]');
+      const hoverLine = host.querySelector('[data-role="hover-line"]');
+      const dotGross = host.querySelector('[data-role="hover-dot-gross"]');
+      const dotLiab = host.querySelector('[data-role="hover-dot-liab"]');
+      const tooltip = host.querySelector('[data-role="tooltip"]');
+      if (!stage || !overlay || !hoverLine || !tooltip || !dotGross) return;
+
+      function showAt(index, pointerX = null) {
+        if (index < 0 || index >= pointMeta.length) return;
+        const meta = pointMeta[index];
+        const xx = x(index);
+        hoverLine.setAttribute("x1", xx.toFixed(2));
+        hoverLine.setAttribute("x2", xx.toFixed(2));
+        hoverLine.setAttribute("visibility", "visible");
+
+        dotGross.setAttribute("cx", xx.toFixed(2));
+        dotGross.setAttribute("cy", y(meta.gross).toFixed(2));
+        dotGross.setAttribute("visibility", "visible");
+
+        if (dotLiab) {
+          dotLiab.setAttribute("cx", xx.toFixed(2));
+          dotLiab.setAttribute("cy", y(-meta.liability).toFixed(2));
+          dotLiab.setAttribute("visibility", includeLiability ? "visible" : "hidden");
+        }
+
+        const lines = [];
+        meta.segments.forEach(seg => {
+          lines.push(`<div class="t-row"><i style="background:${seg.color}"></i><span>${seg.label}: ${renderAmountValue(`${money(seg.value)} 元`)}</span></div>`);
+        });
+        if (includeLiability) {
+          lines.push(`<div class="t-row"><i style="background:#b42318"></i><span>负债: ${renderAmountValue(`${money(meta.liability)} 元`)}</span></div>`);
+        }
+        lines.push(`<div class="t-row"><i style="background:#0f766e"></i><span>总资产: ${renderAmountValue(`${money(meta.gross)} 元`)}</span></div>`);
+
+        tooltip.innerHTML = `<div class="t-title">${meta.snapshot_date}</div>${lines.join("")}`;
+        tooltip.classList.remove("hidden");
+
+        const stageRect = stage.getBoundingClientRect();
+        const targetX = pointerX !== null ? pointerX : (xx / width) * stageRect.width;
+        const tooltipWidth = tooltip.offsetWidth || 180;
+        let left = targetX + 12;
+        if (left + tooltipWidth > stageRect.width - 6) left = targetX - tooltipWidth - 12;
+        if (left < 6) left = 6;
+        tooltip.style.left = `${left}px`;
+        tooltip.style.top = "8px";
+      }
+
+      function hideHover() {
+        hoverLine.setAttribute("visibility", "hidden");
+        dotGross.setAttribute("visibility", "hidden");
+        if (dotLiab) dotLiab.setAttribute("visibility", "hidden");
+        tooltip.classList.add("hidden");
+      }
+
+      overlay.addEventListener("mousemove", (event) => {
+        const rect = overlay.getBoundingClientRect();
+        if (rect.width <= 0) return;
+        const px = event.clientX - rect.left;
+        const localX = (px / rect.width) * chartWidth;
+        const idx = rows.length > 1 ? Math.round(localX / xStep) : 0;
+        const clampedIdx = Math.max(0, Math.min(rows.length - 1, idx));
+        showAt(clampedIdx, event.clientX - stage.getBoundingClientRect().left);
+      });
+      overlay.addEventListener("mouseenter", () => showAt(rows.length - 1));
+      overlay.addEventListener("mouseleave", hideHover);
+      applyAmountMaskInDom(host);
+    }
+
+    function renderWealthSankeyChart(hostId, legendId, overviewData, filters = {}) {
+      const host = document.getElementById(hostId);
+      const legend = document.getElementById(legendId);
+      if (!host || !legend) return;
+      const summary = overviewData && overviewData.summary ? overviewData.summary : null;
+      if (!summary) {
+        host.innerHTML = `<div class="empty">暂无关系图数据</div>`;
+        legend.classList.add("hidden");
+        return;
+      }
+
+      const liability = filters.include_liability ? Number(summary.liability_total_cents || 0) : 0;
+      const gross = Number(summary.gross_assets_total_cents || summary.wealth_total_cents || 0);
+      const net = Number(summary.net_asset_total_cents || (gross - liability));
+      if (gross <= 0 && liability <= 0) {
+        host.innerHTML = `<div class="empty">暂无关系图数据</div>`;
+        legend.classList.add("hidden");
+        return;
+      }
+
+      const categories = [
+        { key: "cash", enabled: !!filters.include_cash, label: "现金", color: "#f59e0b", total: Number(summary.cash_total_cents || 0) },
+        { key: "real_estate", enabled: !!filters.include_real_estate, label: "不动产", color: "#60a5fa", total: Number(summary.real_estate_total_cents || 0) },
+        { key: "investment", enabled: !!filters.include_investment, label: "投资", color: "#8b5cf6", total: Number(summary.investment_total_cents || 0) },
+      ].filter(item => item.enabled && item.total > 0);
+
+      const width = 980;
+      const height = 420;
+      const centerY = 220;
+
+      function formatSankeyAmount(cents, options = {}) {
+        const { negative = false } = options;
+        if (shouldMaskAmounts()) return "****";
+        const raw = Number(cents || 0);
+        const value = negative ? -Math.abs(raw) : raw;
+        const yuan = value / 100;
+        const abs = Math.abs(yuan);
+        if (abs >= 100000000) return `${(yuan / 100000000).toFixed(2)}亿`;
+        if (abs >= 10000) return `${(yuan / 10000).toFixed(2)}万`;
+        return `${yuan.toFixed(2)}元`;
+      }
+
+      function escapeSvgText(text) {
+        return escapeHtml(String(text || "")).replaceAll("\n", " ");
+      }
+
+      function linkPath(x1, y1, x2, y2, bend = 0.42) {
+        const dx = x2 - x1;
+        const c1 = x1 + dx * bend;
+        const c2 = x2 - dx * (1 - bend);
+        return `M ${x1} ${y1} C ${c1} ${y1}, ${c2} ${y2}, ${x2} ${y2}`;
+      }
+
+      const flowBase = Math.max(gross, Math.abs(net), liability, 1);
+      const flowWidth = (value, minWidth = 3, maxWidth = 58) => {
+        const raw = (Math.abs(Number(value || 0)) / flowBase) * maxWidth;
+        return Math.max(minWidth, Math.min(maxWidth, raw));
+      };
+
+      const leftNodeX = 56;
+      const leftNodeW = 170;
+      const leftNodeH = 42;
+      const leftGap = 16;
+      const leftBlockH = categories.length > 0 ? categories.length * leftNodeH + (categories.length - 1) * leftGap : 0;
+      const leftStartY = Math.max(78, centerY - Math.round(leftBlockH / 2));
+
+      const grossNode = { x: 392, y: centerY - 32, w: 170, h: 64, label: "总资产", value: gross, color: "#6366f1" };
+      const netNode = { x: 700, y: centerY - 74, w: 170, h: 48, label: "净资产", value: net, color: "#10b981" };
+      const debtNode = { x: 700, y: centerY + 30, w: 170, h: 48, label: "负债", value: liability, color: "#ef4444" };
+
+      categories.forEach((item, idx) => {
+        item.x = leftNodeX;
+        item.y = leftStartY + idx * (leftNodeH + leftGap);
+        item.w = leftNodeW;
+        item.h = leftNodeH;
+      });
+
+      const topCards = [
+        { x: 392, y: 16, w: 120, h: 52, label: "总资产", value: gross, color: "#6366f1" },
+        { x: 520, y: 16, w: 120, h: 52, label: "总负债", value: liability, color: "#ef4444", negative: true },
+        { x: 648, y: 16, w: 120, h: 52, label: "净资产", value: net, color: "#10b981" },
+      ];
+
+      function nodeBox(node, options = {}) {
+        const { muted = false } = options;
+        const stroke = muted ? "rgba(148,163,184,0.28)" : "rgba(99,102,241,0.14)";
+        return `
+          <g>
+            <rect x="${node.x}" y="${node.y}" width="${node.w}" height="${node.h}" rx="12" ry="12"
+              fill="rgba(255,255,255,0.96)" stroke="${stroke}" stroke-width="1" />
+            <rect x="${node.x}" y="${node.y}" width="8" height="${node.h}" rx="12" ry="12" fill="${node.color}" opacity="0.88" />
+            <text x="${node.x + 14}" y="${node.y + 18}" font-size="12" fill="#475569">${escapeSvgText(node.label)}</text>
+            <text x="${node.x + 14}" y="${node.y + node.h - 12}" font-size="13" font-weight="700" fill="${node.color}">
+              ${escapeSvgText(formatSankeyAmount(node.value, { negative: node.label.includes("负债") }))}
+            </text>
+          </g>
+        `;
+      }
+
+      function categoryNodeBox(node) {
+        const ratio = gross > 0 ? (Number(node.total || 0) / gross) : 0;
+        const ratioText = `${(ratio * 100).toFixed(1)}%`;
+        return `
+          <g>
+            <rect x="${node.x}" y="${node.y}" width="${node.w}" height="${node.h}" rx="10" ry="10"
+              fill="rgba(255,255,255,0.95)" stroke="rgba(148,163,184,0.22)" stroke-width="1" />
+            <rect x="${node.x}" y="${node.y}" width="7" height="${node.h}" rx="10" ry="10" fill="${node.color}" />
+            <text x="${node.x + 13}" y="${node.y + 16}" font-size="11.5" fill="#334155">${escapeSvgText(node.label)}</text>
+            <text x="${node.x + 13}" y="${node.y + 31}" font-size="10.5" fill="rgba(71,85,105,0.78)">
+              ${escapeSvgText(formatSankeyAmount(node.total))} · ${escapeSvgText(ratioText)}
+            </text>
+          </g>
+        `;
+      }
+
+      function summaryCard(card) {
+        return `
+          <g>
+            <rect x="${card.x}" y="${card.y}" width="${card.w}" height="${card.h}" rx="12" ry="12"
+              fill="rgba(255,255,255,0.90)" stroke="rgba(148,163,184,0.20)" stroke-width="1" />
+            <text x="${card.x + 12}" y="${card.y + 17}" font-size="11.5" fill="#64748b">${escapeSvgText(card.label)}</text>
+            <text x="${card.x + 12}" y="${card.y + 38}" font-size="13.5" font-weight="700" fill="${card.color}">
+              ${escapeSvgText(formatSankeyAmount(card.value, { negative: !!card.negative }))}
+            </text>
+          </g>
+        `;
+      }
+
+      const links = [];
+      categories.forEach((cat, idx) => {
+        links.push({
+          d: linkPath(cat.x + cat.w, cat.y + cat.h / 2, grossNode.x, grossNode.y + grossNode.h / 2 + (idx - (categories.length - 1) / 2) * 8, 0.46),
+          color: cat.color,
+          width: flowWidth(cat.total, 4, 44),
+          glow: 0.22,
+        });
+      });
+
+      const netPortion = Math.max(0, gross - liability);
+      if (netPortion > 0) {
+        links.push({
+          d: linkPath(grossNode.x + grossNode.w, grossNode.y + grossNode.h / 2 - 6, netNode.x, netNode.y + netNode.h / 2, 0.44),
+          color: "#10b981",
+          width: flowWidth(netPortion, 5, 52),
+          glow: 0.20,
+        });
+      }
+      if (liability > 0) {
+        links.push({
+          d: linkPath(grossNode.x + grossNode.w, grossNode.y + grossNode.h / 2 + 8, debtNode.x, debtNode.y + debtNode.h / 2, 0.44),
+          color: "#ef4444",
+          width: flowWidth(liability, 4, 44),
+          glow: 0.16,
+          dash: "8 5",
+        });
+      }
+
+      host.innerHTML = `
+        <div class="chart-stage">
+          <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet" class="chart-svg">
+            <defs>
+              <linearGradient id="wealthSankeyBg" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#fbfdff" />
+                <stop offset="100%" stop-color="#f7faff" />
+              </linearGradient>
+              <radialGradient id="wealthSankeyGlowA" cx="22%" cy="22%" r="70%">
+                <stop offset="0%" stop-color="rgba(99,102,241,0.07)" />
+                <stop offset="100%" stop-color="rgba(99,102,241,0)" />
+              </radialGradient>
+              <radialGradient id="wealthSankeyGlowB" cx="72%" cy="60%" r="65%">
+                <stop offset="0%" stop-color="rgba(16,185,129,0.06)" />
+                <stop offset="100%" stop-color="rgba(16,185,129,0)" />
+              </radialGradient>
+            </defs>
+            <rect x="0.5" y="0.5" width="${width - 1}" height="${height - 1}" rx="14" ry="14" fill="url(#wealthSankeyBg)" stroke="rgba(148,163,184,0.20)" />
+            <rect x="0" y="0" width="${width}" height="${height}" rx="14" ry="14" fill="url(#wealthSankeyGlowA)" />
+            <rect x="0" y="0" width="${width}" height="${height}" rx="14" ry="14" fill="url(#wealthSankeyGlowB)" />
+            <text x="22" y="28" font-size="15.5" fill="#0f172a" font-weight="700">财富关系图</text>
+
+            ${topCards.map(summaryCard).join("")}
+
+            ${links.map(link => `
+              <path d="${link.d}" fill="none" stroke="${link.color}" stroke-opacity="${link.glow}" stroke-linecap="round"
+                stroke-width="${link.width}" ${link.dash ? `stroke-dasharray="${link.dash}"` : ""} />
+              <path d="${link.d}" fill="none" stroke="${link.color}" stroke-opacity="0.72" stroke-linecap="round"
+                stroke-width="${Math.max(1.05, link.width * 0.16)}" ${link.dash ? `stroke-dasharray="${link.dash}"` : ""} />
+            `).join("")}
+
+            ${categories.map(categoryNodeBox).join("")}
+            ${nodeBox(grossNode)}
+            ${nodeBox(netNode, { muted: true })}
+            ${liability > 0 ? nodeBox(debtNode, { muted: true }) : ""}
+
+            <text x="22" y="${height - 16}" font-size="11" fill="rgba(100,116,139,0.88)">
+              说明：总资产由现金 / 不动产 / 投资构成，总资产再拆分为净资产与负债（虚线）。
+            </text>
+          </svg>
+        </div>
+      `;
+
+      legend.classList.add("hidden");
+      legend.innerHTML = "";
+      applyAmountMaskInDom(host);
+    }
     async function refreshInvestmentAccounts() {
       const data = await api("/api/meta/accounts?kind=investment");
       state.investmentAccounts = data.investment_accounts || [];
@@ -1382,6 +1802,7 @@
         include_investment: true,
         include_cash: true,
         include_real_estate: true,
+        include_liability: true,
       };
       buttons.forEach(btn => {
         const key = btn.getAttribute("data-key");
@@ -1680,18 +2101,8 @@
 
     function initWealth() {
       const wealthStatus = document.getElementById("wealthStatus");
-      const wealthMetrics = document.getElementById("wealthMetrics");
-      const wealthRowsWrap = document.getElementById("wealthRowsWrap");
-      const wealthRowsBody = document.getElementById("wealthRowsBody");
-      const wealthCurveMetrics = document.getElementById("wealthCurveMetrics");
-      const wealthAsOf = document.getElementById("wealthAsOf");
-      const wealthPreset = document.getElementById("wealthPreset");
-      const wealthFrom = document.getElementById("wealthFrom");
-      const wealthTo = document.getElementById("wealthTo");
+      const wealthCurvePreset = document.getElementById("wealthCurvePreset");
       const wealthFilterButtons = Array.from(document.querySelectorAll("#wealthAssetFilters .pill-tab"));
-      const wealthChartAssetView = document.getElementById("wealthChartAssetView");
-      const wealthChartGrowthView = document.getElementById("wealthChartGrowthView");
-      const wealthChartTabButtons = Array.from(document.querySelectorAll("#wealthChartTabs .pill-tab"));
 
       let latestOverviewRequestId = 0;
       let latestCurveRequestId = 0;
@@ -1702,7 +2113,12 @@
       }
 
       function hasAnyFilterEnabled(filters) {
-        return filters.include_investment || filters.include_cash || filters.include_real_estate;
+        return (
+          filters.include_investment
+          || filters.include_cash
+          || filters.include_real_estate
+          || filters.include_liability
+        );
       }
 
       function serializeFilterParams(filters) {
@@ -1710,31 +2126,23 @@
           include_investment: toQueryBool(filters.include_investment),
           include_cash: toQueryBool(filters.include_cash),
           include_real_estate: toQueryBool(filters.include_real_estate),
+          include_liability: toQueryBool(filters.include_liability),
         };
       }
 
+      function wealthPresetLabel(preset) {
+        if (preset === "since_inception") return "成立以来";
+        if (preset === "1y") return "近一年";
+        if (preset === "ytd") return "YTD";
+        return preset || "-";
+      }
+
       function clearWealthOverviewVisuals() {
-        hide(wealthMetrics);
-        hide(wealthRowsWrap);
-        wealthRowsBody.innerHTML = "";
+        renderWealthSankeyChart("wealthGrowthChart", "wealthGrowthLegend", null, {});
       }
 
       function clearWealthCurveVisuals() {
-        hide(wealthCurveMetrics);
-        renderLineChart("wealthCurveChart", "wealthCurveLegend", [], [
-          { key: "wealth_total_cents", color: "#0f766e", label: "总财富" },
-        ]);
-        renderLineChart("wealthGrowthChart", "wealthGrowthLegend", [], [
-          { key: "wealth_net_growth_cents", color: "#0f766e", label: "总财富净增长" },
-        ]);
-      }
-
-      function setWealthChartView(view) {
-        wealthChartAssetView.classList.toggle("hidden", view !== "asset");
-        wealthChartGrowthView.classList.toggle("hidden", view !== "growth");
-        wealthChartTabButtons.forEach(btn => {
-          btn.classList.toggle("active", btn.getAttribute("data-view") === view);
-        });
+        renderWealthStackedTrendChart("wealthCurveChart", "wealthCurveLegend", [], {});
       }
 
       async function refreshWealthOverview(options = {}) {
@@ -1749,35 +2157,14 @@
           }
 
           const params = new URLSearchParams({
-            as_of: wealthAsOf.value.trim(),
             ...serializeFilterParams(filters),
           });
           const data = await api(`/api/analytics/wealth-overview?${params.toString()}`);
           if (requestId !== latestOverviewRequestId) return;
-
-          showMetrics(wealthMetrics, [
-            { k: "总财富(元)", v: data.summary.wealth_total_yuan },
-            { k: "投资(元)", v: filters.include_investment ? data.summary.investment_total_yuan : "-" },
-            { k: "现金(元)", v: filters.include_cash ? data.summary.cash_total_yuan : "-" },
-            { k: "不动产(元)", v: filters.include_real_estate ? data.summary.real_estate_total_yuan : "-" },
-            { k: "对账校验", v: data.summary.reconciliation_ok ? "一致" : "存在差异", amount: false },
-            { k: "滞后账户数", v: data.summary.stale_account_count, amount: false },
-          ]);
-
-          wealthRowsWrap.classList.remove("hidden");
-          wealthRowsBody.innerHTML = (data.rows || []).map(row => `
-            <tr>
-              <td>${row.asset_class}</td>
-              <td>${row.account_name || row.account_id}</td>
-              <td>${row.snapshot_date}</td>
-              <td>${row.stale_days ?? 0}</td>
-              <td>${renderAmountValue(row.value_yuan)}</td>
-            </tr>
-          `).join("");
-          applyAmountMaskInDom(wealthRowsWrap);
+          renderWealthSankeyChart("wealthGrowthChart", "wealthGrowthLegend", data, filters);
 
           if (!silent) {
-            setStatus(wealthStatus, true, `财富总览已更新（as_of: ${data.as_of}）`);
+            setStatus(wealthStatus, true, `财富结构关系图已更新（as_of: ${data.as_of}）`);
           }
         } catch (err) {
           if (requestId !== latestOverviewRequestId) return;
@@ -1790,12 +2177,6 @@
         const { silent = false } = options;
         const requestId = ++latestCurveRequestId;
         try {
-          if (wealthPreset.value === "custom" && !wealthFrom.value.trim()) {
-            clearWealthCurveVisuals();
-            if (!silent) setStatus(wealthStatus, false, "自定义区间需要填写开始日期");
-            return;
-          }
-
           const filters = readWealthFilters();
           if (!hasAnyFilterEnabled(filters)) {
             clearWealthCurveVisuals();
@@ -1804,128 +2185,19 @@
           }
 
           const params = new URLSearchParams({
-            ...buildPresetParams("wealth"),
+            preset: wealthCurvePreset ? wealthCurvePreset.value : "since_inception",
             ...serializeFilterParams(filters),
           });
           const data = await api(`/api/analytics/wealth-curve?${params.toString()}`);
           if (requestId !== latestCurveRequestId) return;
-
-          const wealthMetricItems = [
-            { k: "点位数", v: data.range.points },
-            { k: "起点总财富(元)", v: data.summary.start_wealth_yuan },
-            { k: "终点总财富(元)", v: data.summary.end_wealth_yuan },
-            { k: "净增长资金(元)", v: data.summary.net_growth_yuan || data.summary.change_yuan },
-            { k: "区间涨跌", v: data.summary.change_pct_text || "-", amount: false },
-          ];
-
-          if (filters.include_investment) {
-            wealthMetricItems.push(
-              { k: "投资起点(元)", v: data.summary.start_investment_yuan || "-" },
-              { k: "投资终点(元)", v: data.summary.end_investment_yuan || "-" },
-              { k: "投资净增长(元)", v: data.summary.investment_net_growth_yuan || "-" },
-              { k: "投资涨跌幅", v: data.summary.investment_change_pct_text || "-", amount: false },
-            );
-          }
-          if (filters.include_cash) {
-            wealthMetricItems.push(
-              { k: "现金起点(元)", v: data.summary.start_cash_yuan || "-" },
-              { k: "现金终点(元)", v: data.summary.end_cash_yuan || "-" },
-              { k: "现金净增长(元)", v: data.summary.cash_net_growth_yuan || "-" },
-              { k: "现金涨跌幅", v: data.summary.cash_change_pct_text || "-", amount: false },
-            );
-          }
-          if (filters.include_real_estate) {
-            wealthMetricItems.push(
-              { k: "不动产起点(元)", v: data.summary.start_real_estate_yuan || "-" },
-              { k: "不动产终点(元)", v: data.summary.end_real_estate_yuan || "-" },
-              { k: "不动产净增长(元)", v: data.summary.real_estate_net_growth_yuan || "-" },
-              { k: "不动产涨跌幅", v: data.summary.real_estate_change_pct_text || "-", amount: false },
-            );
-          }
-
-          showMetrics(wealthCurveMetrics, wealthMetricItems);
-
-          const seriesDefs = [
-            { key: "wealth_total_cents", color: "#0f766e", label: "总财富", formatValue: (val) => renderAmountValue(`${money(val)} 元`) },
-          ];
-          if (filters.include_investment) {
-            seriesDefs.push({
-              key: "investment_total_cents",
-              color: "#e28b00",
-              label: "投资",
-              formatValue: (val) => renderAmountValue(`${money(val)} 元`),
-            });
-          }
-          if (filters.include_cash) {
-            seriesDefs.push({
-              key: "cash_total_cents",
-              color: "#2f6db4",
-              label: "现金",
-              formatValue: (val) => renderAmountValue(`${money(val)} 元`),
-            });
-          }
-          if (filters.include_real_estate) {
-            seriesDefs.push({
-              key: "real_estate_total_cents",
-              color: "#7d5a97",
-              label: "不动产",
-              formatValue: (val) => renderAmountValue(`${money(val)} 元`),
-            });
-          }
-
-          renderLineChart("wealthCurveChart", "wealthCurveLegend", data.rows || [], seriesDefs, {
-            includeZero: true,
-            yTickCount: 4,
-            yAxisFormatter: (val) => (shouldMaskAmounts() ? "****" : `${formatYuanShortFromCents(val)}元`),
-            tooltipTitle: (row) => row.snapshot_date || "",
-          });
-
-          const growthSeriesDefs = [
-            {
-              key: "wealth_net_growth_cents",
-              color: "#0f766e",
-              label: "总财富净增长",
-              formatValue: (val) => renderAmountValue(`${money(val)} 元`),
-            },
-          ];
-          if (filters.include_investment) {
-            growthSeriesDefs.push({
-              key: "investment_net_growth_cents",
-              color: "#e28b00",
-              label: "投资净增长",
-              formatValue: (val) => renderAmountValue(`${money(val)} 元`),
-            });
-          }
-          if (filters.include_cash) {
-            growthSeriesDefs.push({
-              key: "cash_net_growth_cents",
-              color: "#2f6db4",
-              label: "现金净增长",
-              formatValue: (val) => renderAmountValue(`${money(val)} 元`),
-            });
-          }
-          if (filters.include_real_estate) {
-            growthSeriesDefs.push({
-              key: "real_estate_net_growth_cents",
-              color: "#7d5a97",
-              label: "不动产净增长",
-              formatValue: (val) => renderAmountValue(`${money(val)} 元`),
-            });
-          }
-
-          renderLineChart("wealthGrowthChart", "wealthGrowthLegend", data.rows || [], growthSeriesDefs, {
-            includeZero: true,
-            yTickCount: 4,
-            yAxisFormatter: (val) => (shouldMaskAmounts() ? "****" : `${formatYuanShortFromCents(val)}元`),
-            referenceLines: [{ value: 0, label: shouldMaskAmounts() ? "****" : "0元", color: "#9ca3af" }],
-            tooltipTitle: (row) => row.snapshot_date || "",
-          });
+          renderWealthStackedTrendChart("wealthCurveChart", "wealthCurveLegend", data.rows || [], filters);
 
           if (!silent) {
+            const presetText = wealthPresetLabel(wealthCurvePreset ? wealthCurvePreset.value : data.range.preset);
             setStatus(
               wealthStatus,
               true,
-              `财富曲线已更新：区间 ${data.range.effective_from} ~ ${data.range.effective_to}`
+              `资产趋势已更新（${presetText}）：${data.range.effective_from} ~ ${data.range.effective_to}`
             );
           }
         } catch (err) {
@@ -1958,33 +2230,12 @@
         });
       });
 
-      wealthAsOf.addEventListener("change", () => {
-        refreshWealthOverview({ silent: true });
-      });
-      wealthChartTabButtons.forEach(btn => {
-        btn.addEventListener("click", () => {
-          setWealthChartView(btn.getAttribute("data-view") || "asset");
+      if (wealthCurvePreset) {
+        wealthCurvePreset.addEventListener("change", () => {
+          refreshWealthCurve({ silent: true });
         });
-      });
-      wealthPreset.addEventListener("change", () => {
-        refreshWealthCurve({ silent: true });
-      });
-      wealthFrom.addEventListener("change", () => {
-        refreshWealthCurve({ silent: true });
-      });
-      wealthTo.addEventListener("change", () => {
-        refreshWealthCurve({ silent: true });
-      });
+      }
 
-      document.getElementById("wealthOverviewBtn").addEventListener("click", async () => {
-        await refreshWealthOverview({ silent: false });
-      });
-
-      document.getElementById("wealthCurveBtn").addEventListener("click", async () => {
-        await refreshWealthCurve({ silent: false });
-      });
-
-      setWealthChartView("asset");
       refreshWealthAnalytics({ silent: true });
     }
 
@@ -2046,7 +2297,7 @@
           { k: "账户数", v: rows.length, amount: false },
           { k: "已引用账户", v: referencedCount, amount: false },
           { k: "投资账户", v: rows.filter(r => r.account_kind === "investment").length, amount: false },
-          { k: "资产账户", v: rows.filter(r => ["cash", "real_estate"].includes(String(r.account_kind || ""))).length, amount: false },
+          { k: "资产/负债账户", v: rows.filter(r => ["cash", "real_estate", "liability"].includes(String(r.account_kind || ""))).length, amount: false },
         ]);
 
         acctWrap.classList.remove("hidden");
@@ -2392,10 +2643,14 @@
         const snapshotDate = escapeHtml(String(row.snapshot_date || ""));
         const value = escapeHtml(money(row.value_cents || 0));
         const assetClass = String(row.asset_class || "cash");
-        const assetAccountRows = getAccountCatalogRowsByKinds(assetClass === "real_estate" ? "real_estate" : "cash");
+        const assetAccountRows = getAccountCatalogRowsByKinds(
+          assetClass === "real_estate" ? "real_estate" : (assetClass === "liability" ? "liability" : "cash")
+        );
         const accountOptions = buildAccountOptionsMarkup(assetAccountRows, {
           selectedValue: accountId,
-          blankLabel: assetClass === "real_estate" ? "请选择不动产账户" : "请选择现金账户",
+          blankLabel: assetClass === "real_estate"
+            ? "请选择不动产账户"
+            : (assetClass === "liability" ? "请选择负债账户" : "请选择现金账户"),
           includeKind: false,
         });
         return `
@@ -2409,6 +2664,7 @@
                     <select data-role="asset_class">
                       <option value="cash"${assetClass === "cash" ? " selected" : ""}>现金</option>
                       <option value="real_estate"${assetClass === "real_estate" ? " selected" : ""}>不动产</option>
+                      <option value="liability"${assetClass === "liability" ? " selected" : ""}>负债</option>
                     </select>
                   </div>
                   <div>
@@ -2565,11 +2821,15 @@
         if (!box) return;
         const accountSelect = box.querySelector('select[data-role="account_id"]');
         if (!(accountSelect instanceof HTMLSelectElement)) return;
-        const assetClass = target.value === "real_estate" ? "real_estate" : "cash";
+        const assetClass = target.value === "real_estate"
+          ? "real_estate"
+          : (target.value === "liability" ? "liability" : "cash");
         const rows = getAccountCatalogRowsByKinds(assetClass);
         accountSelect.innerHTML = buildAccountOptionsMarkup(rows, {
           selectedValue: "",
-          blankLabel: assetClass === "real_estate" ? "请选择不动产账户" : "请选择现金账户",
+          blankLabel: assetClass === "real_estate"
+            ? "请选择不动产账户"
+            : (assetClass === "liability" ? "请选择负债账户" : "请选择现金账户"),
           includeKind: false,
         });
       });
@@ -2661,9 +2921,6 @@
 
       setTodayIfEmpty("invSnapshotDate");
       setTodayIfEmpty("assetSnapshotDate");
-      setTodayIfEmpty("wealthAsOf");
-
-      syncCustomDateState("wealthPreset", "wealthFrom");
 
       await initImportActions();
       initRecordActions();

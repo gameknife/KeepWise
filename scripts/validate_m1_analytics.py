@@ -456,6 +456,11 @@ def run_regression(root: Path) -> dict[str, Any]:
                 f"Wealth overview mismatch: expected={expected_wealth_cents}, "
                 f"got={overview['summary']['wealth_total_cents']}"
             )
+        if int(overview["summary"]["net_asset_total_cents"]) != expected_wealth_cents:
+            raise AssertionError(
+                "Wealth overview net asset mismatch (no liabilities expected): "
+                f"got={overview['summary']['net_asset_total_cents']}"
+            )
         if not bool(overview["summary"]["reconciliation_ok"]):
             raise AssertionError("Wealth overview reconciliation should be true")
         if int(overview["summary"]["selected_rows_total_cents"]) != int(overview["summary"]["wealth_total_cents"]):
@@ -483,6 +488,11 @@ def run_regression(root: Path) -> dict[str, Any]:
             raise AssertionError(
                 f"Wealth curve end mismatch: expected={expected_wealth_cents}, "
                 f"got={wealth_curve['summary']['end_wealth_cents']}"
+            )
+        if int(wealth_curve["summary"]["end_net_asset_cents"]) != expected_wealth_cents:
+            raise AssertionError(
+                "Wealth curve end net asset mismatch (no liabilities expected): "
+                f"got={wealth_curve['summary']['end_net_asset_cents']}"
             )
         if int(wealth_curve["summary"]["start_wealth_cents"]) != int(wealth_curve["rows"][0]["wealth_total_cents"]):
             raise AssertionError(
@@ -642,6 +652,7 @@ def run_regression(root: Path) -> dict[str, Any]:
                     "include_investment": ["false"],
                     "include_cash": ["false"],
                     "include_real_estate": ["false"],
+                    "include_liability": ["false"],
                 },
             ),
             (
@@ -653,6 +664,7 @@ def run_regression(root: Path) -> dict[str, Any]:
                     "include_investment": ["false"],
                     "include_cash": ["false"],
                     "include_real_estate": ["false"],
+                    "include_liability": ["false"],
                 },
             ),
         ):
@@ -808,6 +820,121 @@ def run_regression(root: Path) -> dict[str, Any]:
         )["rows"]
         if asset_rows_deleted:
             raise AssertionError("Asset delete should remove CRUD test row")
+
+        # Manual CRUD regression for liability valuations.
+        liability_create = app_mod.upsert_manual_asset_valuation(
+            cfg,
+            {
+                "asset_class": "liability",
+                "account_name": "回归CRUD负债账户",
+                "snapshot_date": "2026-02-10",
+                "value": "120.00",
+            },
+        )
+        liability_rows_created = app_mod.query_asset_valuations(
+            cfg,
+            {
+                "account_id": [liability_create["account_id"]],
+                "asset_class": ["liability"],
+                "from": ["2026-02-01"],
+                "to": ["2026-02-28"],
+                "limit": ["10"],
+            },
+        )["rows"]
+        if len(liability_rows_created) != 1 or not liability_rows_created[0].get("id"):
+            raise AssertionError("Liability query should return record id for CRUD operations")
+        liability_row_id = str(liability_rows_created[0]["id"])
+        app_mod.update_asset_valuation(
+            cfg,
+            {
+                "id": liability_row_id,
+                "asset_class": "liability",
+                "account_name": "回归CRUD负债账户",
+                "snapshot_date": "2026-02-11",
+                "value": "135.00",
+            },
+        )
+        liability_rows_updated = app_mod.query_asset_valuations(
+            cfg,
+            {
+                "account_id": [liability_create["account_id"]],
+                "asset_class": ["liability"],
+                "from": ["2026-02-01"],
+                "to": ["2026-02-28"],
+                "limit": ["10"],
+            },
+        )["rows"]
+        if len(liability_rows_updated) != 1:
+            raise AssertionError("Liability update should keep exactly one CRUD test row")
+        liability_updated = liability_rows_updated[0]
+        if str(liability_updated["snapshot_date"]) != "2026-02-11":
+            raise AssertionError(
+                f"Liability update snapshot_date mismatch: got={liability_updated['snapshot_date']}"
+            )
+        if int(liability_updated["value_cents"]) != 13_500:
+            raise AssertionError(f"Liability update value mismatch: got={liability_updated['value_cents']}")
+        liability_overview = app_mod.query_wealth_overview(
+            cfg,
+            {
+                "as_of": ["2026-02-11"],
+                "include_investment": ["false"],
+                "include_cash": ["false"],
+                "include_real_estate": ["false"],
+                "include_liability": ["true"],
+            },
+        )
+        if int(liability_overview["summary"]["liability_total_cents"]) != 13_500:
+            raise AssertionError(
+                "Liability overview total mismatch: "
+                f"got={liability_overview['summary']['liability_total_cents']}"
+            )
+        if int(liability_overview["summary"]["net_asset_total_cents"]) != -13_500:
+            raise AssertionError(
+                "Liability overview net asset mismatch: "
+                f"got={liability_overview['summary']['net_asset_total_cents']}"
+            )
+        if not bool(liability_overview["summary"]["reconciliation_ok"]):
+            raise AssertionError("Liability overview reconciliation should be true")
+        liability_curve = app_mod.query_wealth_curve(
+            cfg,
+            {
+                "preset": ["custom"],
+                "from": ["2026-02-10"],
+                "to": ["2026-02-11"],
+                "include_investment": ["false"],
+                "include_cash": ["false"],
+                "include_real_estate": ["false"],
+                "include_liability": ["true"],
+            },
+        )
+        if int(liability_curve["summary"]["end_liability_cents"]) != 13_500:
+            raise AssertionError(
+                "Liability curve end liability mismatch: "
+                f"got={liability_curve['summary']['end_liability_cents']}"
+            )
+        if int(liability_curve["summary"]["end_net_asset_cents"]) != -13_500:
+            raise AssertionError(
+                "Liability curve end net asset mismatch: "
+                f"got={liability_curve['summary']['end_net_asset_cents']}"
+            )
+        if int(liability_curve["rows"][-1]["net_asset_total_cents"]) != -13_500:
+            raise AssertionError(
+                "Liability curve end row net asset mismatch: "
+                f"got={liability_curve['rows'][-1]['net_asset_total_cents']}"
+            )
+        app_mod.delete_asset_valuation(cfg, {"id": liability_row_id})
+        liability_rows_deleted = app_mod.query_asset_valuations(
+            cfg,
+            {
+                "account_id": [liability_create["account_id"]],
+                "asset_class": ["liability"],
+                "from": ["2026-02-01"],
+                "to": ["2026-02-28"],
+                "limit": ["10"],
+            },
+        )["rows"]
+        if liability_rows_deleted:
+            raise AssertionError("Liability delete should remove CRUD test row")
 
         stats_before_reset = app_mod.query_admin_db_stats(cfg)
         if int(stats_before_reset["summary"]["total_rows"]) <= 0:

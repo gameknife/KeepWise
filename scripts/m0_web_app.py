@@ -135,7 +135,7 @@ def ensure_db(config: AppConfig) -> None:
 
 
 SUPPORTED_PRESETS = {"ytd", "1y", "3y", "since_inception", "custom"}
-SUPPORTED_ASSET_CLASSES = {"cash", "real_estate"}
+SUPPORTED_ASSET_CLASSES = {"cash", "real_estate", "liability"}
 ACCOUNT_KIND_CHOICES = {
     "investment",
     "cash",
@@ -645,6 +645,8 @@ def account_id_from_asset_name(asset_class: str, account_name: str) -> str:
     suffix = str(digest).replace("-", "")[:12]
     if asset_class == "cash":
         return f"acct_cash_{suffix}"
+    if asset_class == "liability":
+        return f"acct_liab_{suffix}"
     return f"acct_re_{suffix}"
 
 
@@ -687,6 +689,8 @@ def infer_account_kind(
     asset_cash_count: int,
     asset_real_estate_count: int,
 ) -> str:
+    if account_type == "liability" or account_id.startswith("acct_liab_"):
+        return "liability"
     if asset_real_estate_count > 0 or account_id.startswith("acct_re_"):
         return "real_estate"
     if asset_cash_count > 0 or account_id.startswith("acct_cash_"):
@@ -981,10 +985,15 @@ def upsert_manual_asset_valuation(config: AppConfig, payload: dict[str, Any]) ->
     ensure_db(config)
     asset_class = str(payload.get("asset_class", "")).strip().lower()
     if asset_class not in SUPPORTED_ASSET_CLASSES:
-        raise ValueError("asset_class 必须是 cash 或 real_estate")
+        raise ValueError("asset_class 必须是 cash、real_estate 或 liability")
 
     snapshot_date = yzxy_import_mod.normalize_date(str(payload.get("snapshot_date", "")))
-    default_name = "现金账户" if asset_class == "cash" else "不动产账户"
+    default_name_map = {
+        "cash": "现金账户",
+        "real_estate": "不动产账户",
+        "liability": "负债账户",
+    }
+    default_name = default_name_map.get(asset_class, "资产账户")
     account_id_input = str(payload.get("account_id", "")).strip()
     account_name_input = str(payload.get("account_name", "")).strip()
     account_name = account_name_input or default_name
@@ -1006,9 +1015,11 @@ def upsert_manual_asset_valuation(config: AppConfig, payload: dict[str, Any]) ->
                 raise ValueError("所选账户不是现金账户")
             if asset_class == "real_estate" and account_type not in {"other"} and not account_id.startswith("acct_re_"):
                 raise ValueError("所选账户不是不动产账户")
+            if asset_class == "liability" and account_type != "liability":
+                raise ValueError("所选账户不是负债账户")
         else:
             account_id = account_id_from_asset_name(asset_class, account_name)
-            account_type = "cash" if asset_class == "cash" else "other"
+            account_type = "cash" if asset_class == "cash" else ("liability" if asset_class == "liability" else "other")
         record_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{account_id}:{asset_class}:{snapshot_date}"))
         with conn:
             upsert_account(
@@ -1059,9 +1070,14 @@ def update_asset_valuation(config: AppConfig, payload: dict[str, Any]) -> dict[s
 
     asset_class = str(payload.get("asset_class", "")).strip().lower()
     if asset_class not in SUPPORTED_ASSET_CLASSES:
-        raise ValueError("asset_class 必须是 cash 或 real_estate")
+        raise ValueError("asset_class 必须是 cash、real_estate 或 liability")
     snapshot_date = yzxy_import_mod.normalize_date(str(payload.get("snapshot_date", "")))
-    default_name = "现金账户" if asset_class == "cash" else "不动产账户"
+    default_name_map = {
+        "cash": "现金账户",
+        "real_estate": "不动产账户",
+        "liability": "负债账户",
+    }
+    default_name = default_name_map.get(asset_class, "资产账户")
     account_id_input = str(payload.get("account_id", "")).strip()
     account_name_input = str(payload.get("account_name", "")).strip()
     account_name = account_name_input or default_name
@@ -1093,9 +1109,11 @@ def update_asset_valuation(config: AppConfig, payload: dict[str, Any]) -> dict[s
                 raise ValueError("所选账户不是现金账户")
             if asset_class == "real_estate" and account_type not in {"other"} and not account_id.startswith("acct_re_"):
                 raise ValueError("所选账户不是不动产账户")
+            if asset_class == "liability" and account_type != "liability":
+                raise ValueError("所选账户不是负债账户")
         else:
             account_id = account_id_from_asset_name(asset_class, account_name)
-            account_type = "cash" if asset_class == "cash" else "other"
+            account_type = "cash" if asset_class == "cash" else ("liability" if asset_class == "liability" else "other")
         with conn:
             upsert_account(
                 conn,
@@ -1176,8 +1194,8 @@ def delete_asset_valuation(config: AppConfig, payload: dict[str, Any]) -> dict[s
 
 def query_accounts(config: AppConfig, qs: dict[str, list[str]]) -> dict[str, Any]:
     kind = (qs.get("kind") or ["all"])[0].strip().lower() or "all"
-    if kind not in {"all", "investment", "cash", "real_estate"}:
-        raise ValueError("kind 仅支持 all/investment/cash/real_estate")
+    if kind not in {"all", "investment", "cash", "real_estate", "liability"}:
+        raise ValueError("kind 仅支持 all/investment/cash/real_estate/liability")
 
     conn = sqlite3.connect(config.db_path)
     conn.row_factory = sqlite3.Row
@@ -1217,6 +1235,7 @@ def query_accounts(config: AppConfig, qs: dict[str, list[str]]) -> dict[str, Any
     investment_items = [dict(row) for row in investment_rows]
     cash_items = [dict(row) for row in asset_rows if row["asset_class"] == "cash"]
     real_estate_items = [dict(row) for row in asset_rows if row["asset_class"] == "real_estate"]
+    liability_items = [dict(row) for row in asset_rows if row["asset_class"] == "liability"]
 
     if kind == "investment":
         selected = investment_items
@@ -1224,8 +1243,10 @@ def query_accounts(config: AppConfig, qs: dict[str, list[str]]) -> dict[str, Any
         selected = cash_items
     elif kind == "real_estate":
         selected = real_estate_items
+    elif kind == "liability":
+        selected = liability_items
     else:
-        selected = investment_items + cash_items + real_estate_items
+        selected = investment_items + cash_items + real_estate_items + liability_items
 
     return {
         "kind": kind,
@@ -1233,6 +1254,7 @@ def query_accounts(config: AppConfig, qs: dict[str, list[str]]) -> dict[str, Any
         "investment_accounts": investment_items,
         "cash_accounts": cash_items,
         "real_estate_accounts": real_estate_items,
+        "liability_accounts": liability_items,
     }
 
 
@@ -1453,7 +1475,7 @@ def query_asset_valuations(config: AppConfig, qs: dict[str, list[str]]) -> dict[
     account_id = (qs.get("account_id") or [""])[0].strip()
 
     if asset_class and asset_class not in SUPPORTED_ASSET_CLASSES:
-        raise ValueError("asset_class 仅支持 cash/real_estate")
+        raise ValueError("asset_class 仅支持 cash/real_estate/liability")
 
     conditions: list[str] = []
     params: list[Any] = []
@@ -2493,7 +2515,8 @@ def query_wealth_overview(config: AppConfig, qs: dict[str, list[str]]) -> dict[s
     include_investment = parse_bool_param((qs.get("include_investment") or [""])[0], default=True)
     include_cash = parse_bool_param((qs.get("include_cash") or [""])[0], default=True)
     include_real_estate = parse_bool_param((qs.get("include_real_estate") or [""])[0], default=True)
-    if not (include_investment or include_cash or include_real_estate):
+    include_liability = parse_bool_param((qs.get("include_liability") or [""])[0], default=True)
+    if not (include_investment or include_cash or include_real_estate or include_liability):
         raise ValueError("至少需要选择一个资产类型")
 
     conn = sqlite3.connect(config.db_path)
@@ -2567,13 +2590,17 @@ def query_wealth_overview(config: AppConfig, qs: dict[str, list[str]]) -> dict[s
     investment_total = sum(int(row["value_cents"]) for row in investment_rows)
     cash_rows = [row for row in asset_rows if row["asset_class"] == "cash"]
     real_estate_rows = [row for row in asset_rows if row["asset_class"] == "real_estate"]
+    liability_rows = [row for row in asset_rows if row["asset_class"] == "liability"]
     cash_total = sum(int(row["value_cents"]) for row in cash_rows)
     real_estate_total = sum(int(row["value_cents"]) for row in real_estate_rows)
-    wealth_total = (
+    liability_total = sum(int(row["value_cents"]) for row in liability_rows)
+    gross_assets_total = (
         (investment_total if include_investment else 0)
         + (cash_total if include_cash else 0)
         + (real_estate_total if include_real_estate else 0)
     )
+    selected_liability_total = liability_total if include_liability else 0
+    net_asset_total = gross_assets_total - selected_liability_total
 
     def fmt_rows(rows: list[sqlite3.Row], cls: str) -> list[dict[str, Any]]:
         result = []
@@ -2597,13 +2624,21 @@ def query_wealth_overview(config: AppConfig, qs: dict[str, list[str]]) -> dict[s
     investment_items = fmt_rows(investment_rows, "investment")
     cash_items = fmt_rows(cash_rows, "cash")
     real_estate_items = fmt_rows(real_estate_rows, "real_estate")
+    liability_items = fmt_rows(liability_rows, "liability")
     selected_rows = (
         (investment_items if include_investment else [])
         + (cash_items if include_cash else [])
         + (real_estate_items if include_real_estate else [])
+        + (liability_items if include_liability else [])
     )
-    selected_rows_total_cents = sum(int(row["value_cents"]) for row in selected_rows)
-    reconciliation_delta_cents = selected_rows_total_cents - wealth_total
+    selected_rows_assets_total_cents = sum(
+        int(row["value_cents"]) for row in selected_rows if str(row["asset_class"]) != "liability"
+    )
+    selected_rows_liability_total_cents = sum(
+        int(row["value_cents"]) for row in selected_rows if str(row["asset_class"]) == "liability"
+    )
+    selected_rows_total_cents = selected_rows_assets_total_cents - selected_rows_liability_total_cents
+    reconciliation_delta_cents = selected_rows_total_cents - net_asset_total
     stale_account_count = sum(1 for row in selected_rows if int(row.get("stale_days") or 0) > 0)
 
     return {
@@ -2613,6 +2648,7 @@ def query_wealth_overview(config: AppConfig, qs: dict[str, list[str]]) -> dict[s
             "include_investment": include_investment,
             "include_cash": include_cash,
             "include_real_estate": include_real_estate,
+            "include_liability": include_liability,
         },
         "summary": {
             "investment_total_cents": investment_total,
@@ -2621,10 +2657,20 @@ def query_wealth_overview(config: AppConfig, qs: dict[str, list[str]]) -> dict[s
             "cash_total_yuan": cents_to_yuan_text(cash_total),
             "real_estate_total_cents": real_estate_total,
             "real_estate_total_yuan": cents_to_yuan_text(real_estate_total),
-            "wealth_total_cents": wealth_total,
-            "wealth_total_yuan": cents_to_yuan_text(wealth_total),
+            "liability_total_cents": liability_total,
+            "liability_total_yuan": cents_to_yuan_text(liability_total),
+            "wealth_total_cents": gross_assets_total,
+            "wealth_total_yuan": cents_to_yuan_text(gross_assets_total),
+            "gross_assets_total_cents": gross_assets_total,
+            "gross_assets_total_yuan": cents_to_yuan_text(gross_assets_total),
+            "net_asset_total_cents": net_asset_total,
+            "net_asset_total_yuan": cents_to_yuan_text(net_asset_total),
             "selected_rows_total_cents": selected_rows_total_cents,
             "selected_rows_total_yuan": cents_to_yuan_text(selected_rows_total_cents),
+            "selected_rows_assets_total_cents": selected_rows_assets_total_cents,
+            "selected_rows_assets_total_yuan": cents_to_yuan_text(selected_rows_assets_total_cents),
+            "selected_rows_liability_total_cents": selected_rows_liability_total_cents,
+            "selected_rows_liability_total_yuan": cents_to_yuan_text(selected_rows_liability_total_cents),
             "reconciliation_delta_cents": reconciliation_delta_cents,
             "reconciliation_delta_yuan": cents_to_yuan_text(reconciliation_delta_cents),
             "reconciliation_ok": reconciliation_delta_cents == 0,
@@ -2641,7 +2687,8 @@ def query_wealth_curve(config: AppConfig, qs: dict[str, list[str]]) -> dict[str,
     include_investment = parse_bool_param((qs.get("include_investment") or [""])[0], default=True)
     include_cash = parse_bool_param((qs.get("include_cash") or [""])[0], default=True)
     include_real_estate = parse_bool_param((qs.get("include_real_estate") or [""])[0], default=True)
-    if not (include_investment or include_cash or include_real_estate):
+    include_liability = parse_bool_param((qs.get("include_liability") or [""])[0], default=True)
+    if not (include_investment or include_cash or include_real_estate or include_liability):
         raise ValueError("至少需要选择一个资产类型")
 
     conn = sqlite3.connect(config.db_path)
@@ -2678,7 +2725,9 @@ def query_wealth_curve(config: AppConfig, qs: dict[str, list[str]]) -> dict[str,
             FROM (
                 SELECT snapshot_date FROM investment_records WHERE snapshot_date >= ? AND snapshot_date <= ?
                 UNION
-                SELECT snapshot_date FROM account_valuations WHERE snapshot_date >= ? AND snapshot_date <= ?
+                SELECT snapshot_date
+                FROM account_valuations
+                WHERE snapshot_date >= ? AND snapshot_date <= ?
             )
             ORDER BY snapshot_date ASC
             """,
@@ -2728,33 +2777,52 @@ def query_wealth_curve(config: AppConfig, qs: dict[str, list[str]]) -> dict[str,
             """,
             (effective_to.isoformat(),),
         ).fetchall()
+        liability_history = conn.execute(
+            """
+            SELECT account_id, snapshot_date, value_cents
+            FROM account_valuations
+            WHERE asset_class = 'liability' AND snapshot_date <= ?
+            ORDER BY account_id, snapshot_date
+            """,
+            (effective_to.isoformat(),),
+        ).fetchall()
     finally:
         conn.close()
 
     investment_totals = build_asof_totals(dates=dates, history_rows=investment_history)
     cash_totals = build_asof_totals(dates=dates, history_rows=cash_history)
     real_estate_totals = build_asof_totals(dates=dates, history_rows=real_estate_history)
+    liability_totals = build_asof_totals(dates=dates, history_rows=liability_history)
 
     rows: list[dict[str, Any]] = []
     first_investment_total = 0
     first_cash_total = 0
     first_real_estate_total = 0
+    first_liability_total = 0
     first_wealth_total = 0
+    first_net_asset_total = 0
     for d in dates:
         inv = investment_totals[d]
         cash = cash_totals[d]
         re = real_estate_totals[d]
+        liability = liability_totals[d]
         wealth = (
             (inv if include_investment else 0)
             + (cash if include_cash else 0)
             + (re if include_real_estate else 0)
         )
+        selected_liability = liability if include_liability else 0
+        net_asset = wealth - selected_liability
         if not rows:
             first_investment_total = inv
             first_cash_total = cash
             first_real_estate_total = re
+            first_liability_total = liability
             first_wealth_total = wealth
+            first_net_asset_total = net_asset
         wealth_net_growth_cents = wealth - first_wealth_total
+        liability_net_growth_cents = liability - first_liability_total
+        net_asset_net_growth_cents = net_asset - first_net_asset_total
         investment_net_growth_cents = inv - first_investment_total
         cash_net_growth_cents = cash - first_cash_total
         real_estate_net_growth_cents = re - first_real_estate_total
@@ -2764,10 +2832,15 @@ def query_wealth_curve(config: AppConfig, qs: dict[str, list[str]]) -> dict[str,
                 "investment_total_cents": inv,
                 "cash_total_cents": cash,
                 "real_estate_total_cents": re,
+                "liability_total_cents": liability,
                 "wealth_total_cents": wealth,
                 "wealth_total_yuan": cents_to_yuan_text(wealth),
+                "net_asset_total_cents": net_asset,
+                "net_asset_total_yuan": cents_to_yuan_text(net_asset),
                 "wealth_net_growth_cents": wealth_net_growth_cents,
                 "wealth_net_growth_yuan": cents_to_yuan_text(wealth_net_growth_cents),
+                "liability_net_growth_cents": liability_net_growth_cents,
+                "net_asset_net_growth_cents": net_asset_net_growth_cents,
                 "investment_net_growth_cents": investment_net_growth_cents,
                 "cash_net_growth_cents": cash_net_growth_cents,
                 "real_estate_net_growth_cents": real_estate_net_growth_cents,
@@ -2778,6 +2851,16 @@ def query_wealth_curve(config: AppConfig, qs: dict[str, list[str]]) -> dict[str,
     last_total = rows[-1]["wealth_total_cents"] if rows else 0
     change_cents = last_total - first_total
     change_pct = (change_cents / first_total) if first_total > 0 else None
+    start_liability_cents = rows[0]["liability_total_cents"] if rows else 0
+    end_liability_cents = rows[-1]["liability_total_cents"] if rows else 0
+    liability_total_change_cents = end_liability_cents - start_liability_cents
+    liability_change_pct = (
+        liability_total_change_cents / start_liability_cents if start_liability_cents > 0 else None
+    )
+    start_net_asset_cents = rows[0]["net_asset_total_cents"] if rows else 0
+    end_net_asset_cents = rows[-1]["net_asset_total_cents"] if rows else 0
+    net_asset_change_cents = end_net_asset_cents - start_net_asset_cents
+    net_asset_change_pct = net_asset_change_cents / start_net_asset_cents if start_net_asset_cents > 0 else None
     start_investment_cents = rows[0]["investment_total_cents"] if rows else 0
     end_investment_cents = rows[-1]["investment_total_cents"] if rows else 0
     investment_net_growth_cents = end_investment_cents - start_investment_cents
@@ -2808,6 +2891,7 @@ def query_wealth_curve(config: AppConfig, qs: dict[str, list[str]]) -> dict[str,
             "include_investment": include_investment,
             "include_cash": include_cash,
             "include_real_estate": include_real_estate,
+            "include_liability": include_liability,
         },
         "summary": {
             "start_wealth_cents": first_total,
@@ -2820,6 +2904,28 @@ def query_wealth_curve(config: AppConfig, qs: dict[str, list[str]]) -> dict[str,
             "net_growth_yuan": cents_to_yuan_text(change_cents),
             "change_pct": round(change_pct, 8) if change_pct is not None else None,
             "change_pct_text": f"{change_pct * 100:.2f}%" if change_pct is not None else None,
+            "start_liability_cents": start_liability_cents,
+            "start_liability_yuan": cents_to_yuan_text(start_liability_cents),
+            "end_liability_cents": end_liability_cents,
+            "end_liability_yuan": cents_to_yuan_text(end_liability_cents),
+            "liability_net_growth_cents": liability_total_change_cents,
+            "liability_net_growth_yuan": cents_to_yuan_text(liability_total_change_cents),
+            "liability_change_pct": round(liability_change_pct, 8) if liability_change_pct is not None else None,
+            "liability_change_pct_text": (
+                f"{liability_change_pct * 100:.2f}%" if liability_change_pct is not None else None
+            ),
+            "start_net_asset_cents": start_net_asset_cents,
+            "start_net_asset_yuan": cents_to_yuan_text(start_net_asset_cents),
+            "end_net_asset_cents": end_net_asset_cents,
+            "end_net_asset_yuan": cents_to_yuan_text(end_net_asset_cents),
+            "net_asset_change_cents": net_asset_change_cents,
+            "net_asset_change_yuan": cents_to_yuan_text(net_asset_change_cents),
+            "net_asset_net_growth_cents": net_asset_change_cents,
+            "net_asset_net_growth_yuan": cents_to_yuan_text(net_asset_change_cents),
+            "net_asset_change_pct": round(net_asset_change_pct, 8) if net_asset_change_pct is not None else None,
+            "net_asset_change_pct_text": (
+                f"{net_asset_change_pct * 100:.2f}%" if net_asset_change_pct is not None else None
+            ),
             "start_investment_cents": start_investment_cents,
             "start_investment_yuan": cents_to_yuan_text(start_investment_cents),
             "end_investment_cents": end_investment_cents,
