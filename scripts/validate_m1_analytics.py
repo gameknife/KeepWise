@@ -114,6 +114,13 @@ def build_sample_dataset(conn: sqlite3.Connection) -> dict[str, str]:
     insert_investment(
         conn,
         account_id=inv_account_id,
+        snapshot_date="2025-01-15",
+        total_assets_cents=9_200_000,
+        transfer_amount_cents=0,
+    )
+    insert_investment(
+        conn,
+        account_id=inv_account_id,
         snapshot_date="2026-01-01",
         total_assets_cents=10_000_000,
         transfer_amount_cents=0,
@@ -581,6 +588,71 @@ def run_regression(root: Path) -> dict[str, Any]:
                 f"end={wealth_curve['summary']['end_real_estate_cents']}"
             )
 
+        # M3 preset switching regression: wealth curve presets should be stable and end at latest snapshot.
+        wealth_curve_since_inception = app_mod.query_wealth_curve(
+            cfg,
+            {"preset": ["since_inception"]},
+        )
+        wealth_curve_1y = app_mod.query_wealth_curve(
+            cfg,
+            {"preset": ["1y"]},
+        )
+        wealth_curve_ytd = app_mod.query_wealth_curve(
+            cfg,
+            {"preset": ["ytd"]},
+        )
+        preset_curves = {
+            "since_inception": wealth_curve_since_inception,
+            "1y": wealth_curve_1y,
+            "ytd": wealth_curve_ytd,
+        }
+        for preset_name, preset_curve in preset_curves.items():
+            if preset_curve["range"]["preset"] != preset_name:
+                raise AssertionError(
+                    f"Wealth curve preset echo mismatch for {preset_name}: "
+                    f"got={preset_curve['range']['preset']}"
+                )
+            if not preset_curve["rows"] or int(preset_curve["range"]["points"]) <= 0:
+                raise AssertionError(f"Wealth curve preset {preset_name} should return non-empty rows")
+            if str(preset_curve["range"]["effective_to"]) != range_to:
+                raise AssertionError(
+                    f"Wealth curve preset {preset_name} effective_to mismatch: "
+                    f"expected={range_to}, got={preset_curve['range']['effective_to']}"
+                )
+            if str(preset_curve["rows"][-1]["snapshot_date"]) != str(preset_curve["range"]["effective_to"]):
+                raise AssertionError(
+                    f"Wealth curve preset {preset_name} end row date mismatch: "
+                    f"row={preset_curve['rows'][-1]['snapshot_date']}, "
+                    f"range={preset_curve['range']['effective_to']}"
+                )
+            if int(preset_curve["summary"]["end_wealth_cents"]) != expected_wealth_cents:
+                raise AssertionError(
+                    f"Wealth curve preset {preset_name} end wealth mismatch: "
+                    f"expected={expected_wealth_cents}, got={preset_curve['summary']['end_wealth_cents']}"
+                )
+
+        if str(wealth_curve_since_inception["range"]["effective_from"]) != "2025-01-15":
+            raise AssertionError(
+                "Wealth curve since_inception start mismatch: "
+                f"got={wealth_curve_since_inception['range']['effective_from']}"
+            )
+        if str(wealth_curve_ytd["range"]["effective_from"]) != range_from:
+            raise AssertionError(
+                "Wealth curve ytd start mismatch: "
+                f"expected={range_from}, got={wealth_curve_ytd['range']['effective_from']}"
+            )
+        if not (
+            str(wealth_curve_since_inception["range"]["effective_from"])
+            < str(wealth_curve_1y["range"]["effective_from"])
+            < str(wealth_curve_ytd["range"]["effective_from"])
+        ):
+            raise AssertionError(
+                "Wealth curve preset start ordering mismatch: "
+                f"since_inception={wealth_curve_since_inception['range']['effective_from']}, "
+                f"1y={wealth_curve_1y['range']['effective_from']}, "
+                f"ytd={wealth_curve_ytd['range']['effective_from']}"
+            )
+
         # Wealth include filters should affect only wealth total and rows selection.
         expected_wealth_without_investment = 5_500_000 + 80_000_000
         overview_without_investment = app_mod.query_wealth_overview(
@@ -973,6 +1045,12 @@ def run_regression(root: Path) -> dict[str, Any]:
             "wealth_curve_net_growth_cents": wealth_curve["summary"]["net_growth_cents"],
             "wealth_total_without_investment_cents": expected_wealth_without_investment,
             "wealth_curve_points": wealth_curve["range"]["points"],
+            "wealth_curve_presets_ok": True,
+            "wealth_curve_preset_starts": {
+                "since_inception": wealth_curve_since_inception["range"]["effective_from"],
+                "1y": wealth_curve_1y["range"]["effective_from"],
+                "ytd": wealth_curve_ytd["range"]["effective_from"],
+            },
             "admin_reset_deleted_rows": reset_result["summary"]["deleted_rows"],
         }
 
@@ -1010,6 +1088,8 @@ def main() -> None:
     print(f"  wealth_overview_stale_account_count: {result['wealth_overview_stale_account_count']}")
     print(f"  wealth_curve_net_growth_cents: {result['wealth_curve_net_growth_cents']}")
     print(f"  wealth_curve_points: {result['wealth_curve_points']}")
+    print(f"  wealth_curve_presets_ok: {result['wealth_curve_presets_ok']}")
+    print(f"  wealth_curve_preset_starts: {result['wealth_curve_preset_starts']}")
     print(f"  admin_reset_deleted_rows: {result['admin_reset_deleted_rows']}")
 
 

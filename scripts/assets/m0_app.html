@@ -1317,9 +1317,9 @@
       }
 
       const categories = [
-        { key: "cash", enabled: !!filters.include_cash, label: "现金", color: "#f59e0b", total: Number(summary.cash_total_cents || 0) },
-        { key: "real_estate", enabled: !!filters.include_real_estate, label: "不动产", color: "#60a5fa", total: Number(summary.real_estate_total_cents || 0) },
-        { key: "investment", enabled: !!filters.include_investment, label: "投资", color: "#8b5cf6", total: Number(summary.investment_total_cents || 0) },
+        { key: "cash", enabled: !!filters.include_cash, label: "现金", color: "#2f6db4", total: Number(summary.cash_total_cents || 0) },
+        { key: "real_estate", enabled: !!filters.include_real_estate, label: "不动产", color: "#7d5a97", total: Number(summary.real_estate_total_cents || 0) },
+        { key: "investment", enabled: !!filters.include_investment, label: "投资", color: "#e28b00", total: Number(summary.investment_total_cents || 0) },
       ].filter(item => item.enabled && item.total > 0);
 
       const width = 980;
@@ -1364,7 +1364,7 @@
 
       const grossNode = { x: 392, y: centerY - 32, w: 170, h: 64, label: "总资产", value: gross, color: "#6366f1" };
       const netNode = { x: 700, y: centerY - 74, w: 170, h: 48, label: "净资产", value: net, color: "#10b981" };
-      const debtNode = { x: 700, y: centerY + 30, w: 170, h: 48, label: "负债", value: liability, color: "#ef4444" };
+      const debtNode = { x: 700, y: centerY + 30, w: 170, h: 48, label: "负债", value: liability, color: "#b42318" };
 
       categories.forEach((item, idx) => {
         item.x = leftNodeX;
@@ -1375,7 +1375,7 @@
 
       const topCards = [
         { x: 392, y: 16, w: 120, h: 52, label: "总资产", value: gross, color: "#6366f1" },
-        { x: 520, y: 16, w: 120, h: 52, label: "总负债", value: liability, color: "#ef4444", negative: true },
+        { x: 520, y: 16, w: 120, h: 52, label: "总负债", value: liability, color: "#b42318", negative: true },
         { x: 648, y: 16, w: 120, h: 52, label: "净资产", value: net, color: "#10b981" },
       ];
 
@@ -1446,7 +1446,7 @@
       if (liability > 0) {
         links.push({
           d: linkPath(grossNode.x + grossNode.w, grossNode.y + grossNode.h / 2 + 8, debtNode.x, debtNode.y + debtNode.h / 2, 0.44),
-          color: "#ef4444",
+          color: "#b42318",
           width: flowWidth(liability, 4, 44),
           glow: 0.16,
           dash: "8 5",
