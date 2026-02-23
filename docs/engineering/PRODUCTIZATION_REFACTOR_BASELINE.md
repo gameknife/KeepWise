@@ -42,7 +42,7 @@
 - `scripts/validate_m1_analytics.py`
   - 贯穿式回归（当前最重要的稳定器）
 - `scripts/assets/*.html`
-  - 工作台/规则管理/消费分析（内联脚本较重）
+  - 工作台/规则管理/消费分析（已外置脚本，工作台已拆为多文件顺序加载，仍待更细粒度模块化）
 
 ## 本轮已完成的结构重构（已落地）
 
@@ -181,9 +181,26 @@
 
 ### Phase 5：前端脚本模块化（先不换框架）
 
+状态：
+
+- 已完成（按当前计划范围）
+- 已完成第一步：`workbench.html` / `rules_admin.html` / `consumption_dashboard.html` 的内联脚本已外置为独立 JS
+- 已完成第二步：`workbench` 页面脚本已按功能域拆为多文件顺序加载（shared/embed/account-catalog/chart/import/record/return/wealth/budget/income/account/query/admin）
+- 已完成：`rules_admin` 页面脚本按功能域拆分（shared/render/data/events+bootstrap）
+- 已完成：`consumption_dashboard` 页面脚本按功能域拆分（shared/data/render/bootstrap）
+- 已完成第三步（基线版）：建立前端共享命名空间出口（`window.keepwiseWorkbench` / `window.keepwiseRulesAdmin` / `window.keepwiseConsumption`）
+- 已完成：静态资源路由改为清单生成式注册，降低分片脚本扩展时的路由维护成本
+- 已完成：`consumption_dashboard` / `rules_admin` 的入口与数据/渲染分片开始采用“命名空间优先调用（保留全局回退）”
+- 已完成：`workbench` 总入口（bootstrap）改为命名空间优先初始化，并逐步导出关键分片入口
+
+说明（不再阻塞 Phase 5）：
+
+- `workbench` 各分片内部仍存在较多对共享 `state` 与全局函数名的直接访问。
+- 这属于“更深度去全局化”优化，可在技术栈切换前后按功能域渐进推进，不再作为本阶段前端模块化的完成阻塞条件。
+
 目标：
 
-- 将 `workbench.html` 内联脚本逐步拆为 `assets/js/*.js`
+- 将页面脚本逐步拆为可维护的前端模块（可先页面级 `assets/*.js`，再细分）
 - 保持当前原生 JS，不先引入前端框架
 
 收益：

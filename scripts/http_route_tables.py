@@ -8,6 +8,55 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs
 
+TEXT_ASSET_CONTENT_TYPES = {
+    ".css": "text/css",
+    ".js": "application/javascript",
+}
+
+WORKBENCH_TEXT_ASSET_FILES = (
+    "workbench.css",
+    "workbench_shared.js",
+    "workbench_consumption_embed.js",
+    "workbench_account_catalog_shared.js",
+    "workbench_chart_line.js",
+    "workbench_chart_wealth_trend.js",
+    "workbench_chart_wealth_sankey.js",
+    "workbench_import_actions.js",
+    "workbench_record_actions.js",
+    "workbench_analytics_filter_helpers.js",
+    "workbench_returns.js",
+    "workbench_wealth.js",
+    "workbench_budget.js",
+    "workbench_income.js",
+    "workbench_account_management.js",
+    "workbench_query.js",
+    "workbench_admin_bootstrap.js",
+)
+
+CONSUMPTION_TEXT_ASSET_FILES = (
+    "consumption_report.css",
+    "consumption_dashboard_shared.js",
+    "consumption_dashboard_data.js",
+    "consumption_dashboard_render.js",
+    "consumption_dashboard_bootstrap.js",
+)
+
+RULES_ADMIN_TEXT_ASSET_FILES = (
+    "rules_admin.css",
+    "rules_admin_shared.js",
+    "rules_admin_render.js",
+    "rules_admin_data.js",
+    "rules_admin_events_bootstrap.js",
+)
+
+
+def _text_asset_route(filename: str) -> tuple[str, tuple[str, str]]:
+    suffix = Path(filename).suffix.lower()
+    content_type = TEXT_ASSET_CONTENT_TYPES.get(suffix)
+    if not content_type:
+        raise ValueError(f"unsupported text asset type: {filename}")
+    return (f"/assets/{filename}", (filename, content_type))
+
 
 def build_get_page_file_routes() -> dict[str, str]:
     return {
@@ -20,11 +69,12 @@ def build_get_page_file_routes() -> dict[str, str]:
 
 
 def build_get_text_asset_routes() -> dict[str, tuple[str, str]]:
-    return {
-        "/assets/workbench.css": ("workbench.css", "text/css"),
-        "/assets/consumption_report.css": ("consumption_report.css", "text/css"),
-        "/assets/rules_admin.css": ("rules_admin.css", "text/css"),
-    }
+    filenames = (
+        *WORKBENCH_TEXT_ASSET_FILES,
+        *CONSUMPTION_TEXT_ASSET_FILES,
+        *RULES_ADMIN_TEXT_ASSET_FILES,
+    )
+    return dict(_text_asset_route(filename) for filename in filenames)
 
 
 def build_get_api_routes(
