@@ -11,14 +11,17 @@ Checks:
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import math
 import sqlite3
 import tempfile
 import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import import_classified_to_ledger as ledger_import_mod
 import import_youzhiyouxing_investments as yzxy_mod
 import m0_web_app as app_mod
 import migrate_ledger_db as migrate_mod
@@ -221,6 +224,125 @@ def build_config(root: Path, db_path: Path) -> app_mod.AppConfig:
     )
 
 
+def write_classified_csv(path: Path, rows: list[dict[str, str]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = [
+        "source_file",
+        "source_path",
+        "statement_year",
+        "statement_month",
+        "statement_category",
+        "trans_date",
+        "post_date",
+        "description",
+        "merchant_normalized",
+        "amount_rmb",
+        "card_last4",
+        "original_amount",
+        "country_area",
+        "expense_category",
+        "classify_source",
+        "confidence",
+        "needs_review",
+        "excluded_in_analysis",
+        "exclude_reason",
+    ]
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def assert_incremental_eml_import_dedupe(root: Path, tmp_dir: Path) -> None:
+    db_path = tmp_dir / "import_dedupe.db"
+    migrate_mod.apply_migrations(db_path, root / "db" / "migrations")
+
+    row_a = {
+        "source_file": "2026-01.eml",
+        "source_path": "cmb/2026-01.eml",
+        "statement_year": "2026",
+        "statement_month": "1",
+        "statement_category": "消费",
+        "trans_date": "2026-01-10",
+        "post_date": "2026-01-10",
+        "description": "测试交易A",
+        "merchant_normalized": "测试商户A",
+        "amount_rmb": "12.34",
+        "card_last4": "1234",
+        "original_amount": "",
+        "country_area": "",
+        "expense_category": "餐饮",
+        "classify_source": "manual_rule",
+        "confidence": "0.95",
+        "needs_review": "0",
+        "excluded_in_analysis": "0",
+        "exclude_reason": "",
+    }
+    row_b = {
+        "source_file": "2026-01.eml",
+        "source_path": "cmb/2026-01.eml",
+        "statement_year": "2026",
+        "statement_month": "1",
+        "statement_category": "消费",
+        "trans_date": "2026-01-09",
+        "post_date": "2026-01-09",
+        "description": "测试交易B",
+        "merchant_normalized": "测试商户B",
+        "amount_rmb": "56.78",
+        "card_last4": "1234",
+        "original_amount": "",
+        "country_area": "",
+        "expense_category": "购物",
+        "classify_source": "manual_rule",
+        "confidence": "0.95",
+        "needs_review": "0",
+        "excluded_in_analysis": "0",
+        "exclude_reason": "",
+    }
+
+    csv_one = tmp_dir / "classified_one.csv"
+    csv_two = tmp_dir / "classified_two.csv"
+    write_classified_csv(csv_one, [row_a])
+    write_classified_csv(csv_two, [row_b, row_a])  # row_a line number changes in this batch
+
+    ledger_import_mod.import_csv(
+        db_path,
+        csv_one,
+        source_type="cmb_eml",
+        replace_existing_source_transactions=False,
+    )
+    ledger_import_mod.import_csv(
+        db_path,
+        csv_two,
+        source_type="cmb_eml",
+        replace_existing_source_transactions=False,
+    )
+
+    conn = sqlite3.connect(db_path)
+    try:
+        total = int(conn.execute("SELECT COUNT(*) FROM transactions WHERE source_type='cmb_eml'").fetchone()[0])
+        if total != 2:
+            raise AssertionError(f"Incremental EML import dedupe failed: expected 2 tx, got {total}")
+        dup_count = int(
+            conn.execute(
+                """
+                SELECT COUNT(*)
+                FROM (
+                    SELECT source_file, posted_at, occurred_at, amount_cents, description, account_id, COUNT(*) AS c
+                    FROM transactions
+                    WHERE source_type='cmb_eml'
+                    GROUP BY source_file, posted_at, occurred_at, amount_cents, description, account_id
+                    HAVING c > 1
+                )
+                """
+            ).fetchone()[0]
+        )
+        if dup_count != 0:
+            raise AssertionError(f"Incremental EML import dedupe failed: duplicate groups={dup_count}")
+    finally:
+        conn.close()
+
+
 def run_regression(root: Path) -> dict[str, Any]:
     manual_rows, manual_errors, _ = yzxy_mod.parse_manual_rows(
         [
@@ -257,6 +379,9 @@ def run_regression(root: Path) -> dict[str, Any]:
         )
 
     with tempfile.TemporaryDirectory(prefix="keepwise-m1-regression-") as tmp_dir:
+        tmp_path = Path(tmp_dir)
+        assert_incremental_eml_import_dedupe(root, tmp_path)
+
         db_path = Path(tmp_dir) / "ledger_regression.db"
         migrate_mod.apply_migrations(db_path, root / "db" / "migrations")
 
@@ -1008,6 +1133,245 @@ def run_regression(root: Path) -> dict[str, Any]:
         if liability_rows_deleted:
             raise AssertionError("Liability delete should remove CRUD test row")
 
+        # M4 baseline regression: monthly budget items + budget overview + FIRE progress.
+        budget_items_before = app_mod.query_monthly_budget_items(cfg, {})
+        if int(budget_items_before["summary"]["total_count"]) < 3:
+            raise AssertionError("Budget item templates should be seeded by migration")
+        budget_rows_by_name = {str(row["name"]): row for row in budget_items_before["rows"]}
+        for required_name in ("房贷", "日常开销", "缴费"):
+            if required_name not in budget_rows_by_name:
+                raise AssertionError(f"Missing default budget template: {required_name}")
+
+        app_mod.upsert_monthly_budget_item(
+            cfg,
+            {
+                "id": budget_rows_by_name["房贷"]["id"],
+                "name": "房贷",
+                "monthly_amount": "6000.00",
+                "sort_order": budget_rows_by_name["房贷"]["sort_order"],
+                "is_active": True,
+            },
+        )
+        app_mod.upsert_monthly_budget_item(
+            cfg,
+            {
+                "id": budget_rows_by_name["日常开销"]["id"],
+                "name": "日常开销",
+                "monthly_amount": "3000.00",
+                "sort_order": budget_rows_by_name["日常开销"]["sort_order"],
+                "is_active": True,
+            },
+        )
+        app_mod.upsert_monthly_budget_item(
+            cfg,
+            {
+                "id": budget_rows_by_name["缴费"]["id"],
+                "name": "缴费",
+                "monthly_amount": "1000.00",
+                "sort_order": budget_rows_by_name["缴费"]["sort_order"],
+                "is_active": True,
+            },
+        )
+        custom_budget_item = app_mod.upsert_monthly_budget_item(
+            cfg,
+            {
+                "name": "娱乐",
+                "monthly_amount": "500.00",
+                "sort_order": 40,
+                "is_active": False,
+            },
+        )
+        budget_items_after = app_mod.query_monthly_budget_items(cfg, {})
+        expected_monthly_budget_cents = 1_000_000  # 6000 + 3000 + 1000 元，未计入停用项“娱乐”
+        expected_annual_budget_cents = expected_monthly_budget_cents * 12
+        if int(budget_items_after["summary"]["monthly_budget_total_cents"]) != expected_monthly_budget_cents:
+            raise AssertionError(
+                "Budget monthly total mismatch: "
+                f"expected={expected_monthly_budget_cents}, "
+                f"got={budget_items_after['summary']['monthly_budget_total_cents']}"
+            )
+        if int(budget_items_after["summary"]["annual_budget_cents"]) != expected_annual_budget_cents:
+            raise AssertionError(
+                "Budget annual total mismatch: "
+                f"expected={expected_annual_budget_cents}, "
+                f"got={budget_items_after['summary']['annual_budget_cents']}"
+            )
+
+        budget_overview = app_mod.query_budget_overview(cfg, {"year": ["2026"]})
+        if int(budget_overview["budget"]["monthly_total_cents"]) != expected_monthly_budget_cents:
+            raise AssertionError("Budget overview monthly total mismatch")
+        if int(budget_overview["budget"]["annual_total_cents"]) != expected_annual_budget_cents:
+            raise AssertionError("Budget overview annual total mismatch")
+        if int(budget_overview["actual"]["spent_total_cents"]) != 12_345:
+            raise AssertionError(
+                f"Budget overview actual spent mismatch: got={budget_overview['actual']['spent_total_cents']}"
+            )
+        test_today = datetime.now().date()
+        if test_today.year < 2026:
+            expected_elapsed_months = 0
+        elif test_today.year > 2026:
+            expected_elapsed_months = 12
+        else:
+            expected_elapsed_months = test_today.month
+        if int(budget_overview["analysis_scope"]["elapsed_months"]) != expected_elapsed_months:
+            raise AssertionError(
+                "Budget overview elapsed months mismatch: "
+                f"expected={expected_elapsed_months}, got={budget_overview['analysis_scope']['elapsed_months']}"
+            )
+        if int(budget_overview["budget"]["ytd_budget_cents"]) != expected_monthly_budget_cents * expected_elapsed_months:
+            raise AssertionError("Budget overview YTD budget mismatch")
+        if int(budget_overview["metrics"]["annual_remaining_cents"]) != (expected_annual_budget_cents - 12_345):
+            raise AssertionError("Budget overview remaining budget mismatch")
+        budget_monthly_review = app_mod.query_budget_monthly_review(cfg, {"year": ["2026"]})
+        if len(budget_monthly_review["rows"]) != 12:
+            raise AssertionError(
+                f"Budget monthly review row count mismatch: got={len(budget_monthly_review['rows'])}"
+            )
+        jan_row = next((row for row in budget_monthly_review["rows"] if str(row["month_key"]) == "2026-01"), None)
+        if not jan_row:
+            raise AssertionError("Budget monthly review missing 2026-01 row")
+        if int(jan_row["spent_cents"]) != 12_345:
+            raise AssertionError(
+                "Budget monthly review January spent mismatch: "
+                f"got={jan_row['spent_cents']}"
+            )
+        if int(budget_monthly_review["summary"]["annual_spent_cents"]) != 12_345:
+            raise AssertionError(
+                "Budget monthly review annual spent mismatch: "
+                f"got={budget_monthly_review['summary']['annual_spent_cents']}"
+            )
+
+        fire_progress = app_mod.query_fire_progress(cfg, {"year": ["2026"]})
+        expected_investable_cents = 14_000_000 + 5_500_000
+        if int(fire_progress["investable_assets"]["total_cents"]) != expected_investable_cents:
+            raise AssertionError(
+                "FIRE progress investable assets mismatch: "
+                f"expected={expected_investable_cents}, got={fire_progress['investable_assets']['total_cents']}"
+            )
+        if not approx_equal(float(fire_progress["withdrawal_rate"]), 0.04, tol=1e-12):
+            raise AssertionError(f"FIRE withdrawal rate mismatch: got={fire_progress['withdrawal_rate']}")
+        expected_required_assets_cents = int(math.ceil(expected_annual_budget_cents / 0.04))
+        if int(fire_progress["metrics"]["required_assets_cents"]) != expected_required_assets_cents:
+            raise AssertionError(
+                "FIRE required assets mismatch: "
+                f"expected={expected_required_assets_cents}, got={fire_progress['metrics']['required_assets_cents']}"
+            )
+        expected_coverage_years = expected_investable_cents / expected_annual_budget_cents
+        if not approx_equal(float(fire_progress["metrics"]["coverage_years"]), expected_coverage_years, tol=1e-8):
+            raise AssertionError(
+                "FIRE coverage years mismatch: "
+                f"expected={expected_coverage_years}, got={fire_progress['metrics']['coverage_years']}"
+            )
+        expected_freedom_ratio = (expected_investable_cents * 0.04) / expected_annual_budget_cents
+        if not approx_equal(float(fire_progress["metrics"]["freedom_ratio"]), expected_freedom_ratio, tol=1e-8):
+            raise AssertionError(
+                "FIRE freedom ratio mismatch: "
+                f"expected={expected_freedom_ratio}, got={fire_progress['metrics']['freedom_ratio']}"
+            )
+        fire_progress_custom_rate = app_mod.query_fire_progress(
+            cfg,
+            {"year": ["2026"], "withdrawal_rate": ["0.035"]},
+        )
+        if not approx_equal(float(fire_progress_custom_rate["withdrawal_rate"]), 0.035, tol=1e-12):
+            raise AssertionError(
+                "FIRE custom withdrawal rate echo mismatch: "
+                f"got={fire_progress_custom_rate['withdrawal_rate']}"
+            )
+        expected_custom_required_assets_cents = int(math.ceil(expected_annual_budget_cents / 0.035))
+        if int(fire_progress_custom_rate["metrics"]["required_assets_cents"]) != expected_custom_required_assets_cents:
+            raise AssertionError(
+                "FIRE custom required assets mismatch: "
+                f"expected={expected_custom_required_assets_cents}, "
+                f"got={fire_progress_custom_rate['metrics']['required_assets_cents']}"
+            )
+        app_mod.delete_monthly_budget_item(cfg, {"id": custom_budget_item["id"]})
+
+        conn = sqlite3.connect(db_path)
+        try:
+            with conn:
+                conn.execute(
+                    """
+                    INSERT INTO import_jobs(id, source_type, source_file, status, started_at, total_count, imported_count, error_count)
+                    VALUES (?, 'cmb_eml', 'regression.eml', 'success', datetime('now'), 1, 1, 0)
+                    """,
+                    (make_id("regression:import_job:cmb_eml"),),
+                )
+                conn.execute(
+                    """
+                    INSERT INTO import_jobs(id, source_type, source_file, status, started_at, total_count, imported_count, error_count)
+                    VALUES (?, 'manual', 'manual', 'success', datetime('now'), 1, 1, 0)
+                    """,
+                    (make_id("regression:import_job:manual"),),
+                )
+                conn.execute(
+                    """
+                    INSERT INTO reconciliations(id, transaction_id, status)
+                    VALUES (?, 'tx_reg_1', 'pending')
+                    ON CONFLICT(transaction_id) DO UPDATE SET
+                        status=excluded.status,
+                        updated_at=datetime('now')
+                    """,
+                    (make_id("regression:recon:tx_reg_1"),),
+                )
+            inv_count_before_tx_reset = int(conn.execute("SELECT COUNT(*) FROM investment_records").fetchone()[0])
+            asset_count_before_tx_reset = int(conn.execute("SELECT COUNT(*) FROM account_valuations").fetchone()[0])
+            manual_jobs_before_tx_reset = int(
+                conn.execute("SELECT COUNT(*) FROM import_jobs WHERE source_type='manual'").fetchone()[0]
+            )
+            tx_count_before_tx_reset = int(conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0])
+            if tx_count_before_tx_reset <= 0:
+                raise AssertionError("Regression setup failed: expected transactions before transaction reset")
+        finally:
+            conn.close()
+
+        try:
+            app_mod.reset_admin_transaction_data(cfg, confirm_text="WRONG")
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("Admin transaction reset should reject wrong confirm text")
+
+        tx_reset_result = app_mod.reset_admin_transaction_data(
+            cfg,
+            confirm_text=app_mod.ADMIN_RESET_CONFIRM_PHRASE,
+        )
+        if int(tx_reset_result["summary"]["total_rows_after"]) != 0:
+            raise AssertionError(
+                "Admin transaction reset failed: expected total_rows_after=0 for transaction scopes, "
+                f"got={tx_reset_result['summary']['total_rows_after']}"
+            )
+
+        conn = sqlite3.connect(db_path)
+        try:
+            tx_count_after_tx_reset = int(conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0])
+            recon_count_after_tx_reset = int(conn.execute("SELECT COUNT(*) FROM reconciliations").fetchone()[0])
+            cmb_jobs_after_tx_reset = int(
+                conn.execute("SELECT COUNT(*) FROM import_jobs WHERE source_type='cmb_eml'").fetchone()[0]
+            )
+            manual_jobs_after_tx_reset = int(
+                conn.execute("SELECT COUNT(*) FROM import_jobs WHERE source_type='manual'").fetchone()[0]
+            )
+            inv_count_after_tx_reset = int(conn.execute("SELECT COUNT(*) FROM investment_records").fetchone()[0])
+            asset_count_after_tx_reset = int(conn.execute("SELECT COUNT(*) FROM account_valuations").fetchone()[0])
+        finally:
+            conn.close()
+        if tx_count_after_tx_reset != 0 or recon_count_after_tx_reset != 0 or cmb_jobs_after_tx_reset != 0:
+            raise AssertionError(
+                "Admin transaction reset should clear transactions/reconciliations/cmb_eml jobs: "
+                f"tx={tx_count_after_tx_reset}, recon={recon_count_after_tx_reset}, cmb_jobs={cmb_jobs_after_tx_reset}"
+            )
+        if manual_jobs_after_tx_reset != manual_jobs_before_tx_reset:
+            raise AssertionError(
+                "Admin transaction reset should keep non-cmb import jobs: "
+                f"before={manual_jobs_before_tx_reset}, after={manual_jobs_after_tx_reset}"
+            )
+        if inv_count_after_tx_reset != inv_count_before_tx_reset or asset_count_after_tx_reset != asset_count_before_tx_reset:
+            raise AssertionError(
+                "Admin transaction reset should not affect investment/asset records: "
+                f"inv_before={inv_count_before_tx_reset}, inv_after={inv_count_after_tx_reset}, "
+                f"asset_before={asset_count_before_tx_reset}, asset_after={asset_count_after_tx_reset}"
+            )
+
         stats_before_reset = app_mod.query_admin_db_stats(cfg)
         if int(stats_before_reset["summary"]["total_rows"]) <= 0:
             raise AssertionError("Admin stats should report rows before reset")
@@ -1051,7 +1415,11 @@ def run_regression(root: Path) -> dict[str, Any]:
                 "1y": wealth_curve_1y["range"]["effective_from"],
                 "ytd": wealth_curve_ytd["range"]["effective_from"],
             },
+            "budget_monthly_total_cents": expected_monthly_budget_cents,
+            "fire_investable_assets_cents": expected_investable_cents,
             "admin_reset_deleted_rows": reset_result["summary"]["deleted_rows"],
+            "admin_transaction_reset_ok": True,
+            "eml_incremental_dedupe_ok": True,
         }
 
 
@@ -1090,7 +1458,11 @@ def main() -> None:
     print(f"  wealth_curve_points: {result['wealth_curve_points']}")
     print(f"  wealth_curve_presets_ok: {result['wealth_curve_presets_ok']}")
     print(f"  wealth_curve_preset_starts: {result['wealth_curve_preset_starts']}")
+    print(f"  budget_monthly_total_cents: {result['budget_monthly_total_cents']}")
+    print(f"  fire_investable_assets_cents: {result['fire_investable_assets_cents']}")
     print(f"  admin_reset_deleted_rows: {result['admin_reset_deleted_rows']}")
+    print(f"  admin_transaction_reset_ok: {result['admin_transaction_reset_ok']}")
+    print(f"  eml_incremental_dedupe_ok: {result['eml_incremental_dedupe_ok']}")
 
 
 if __name__ == "__main__":

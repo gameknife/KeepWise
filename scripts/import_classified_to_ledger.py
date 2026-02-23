@@ -70,19 +70,29 @@ def category_id_from_name(name: str) -> str:
     return f"cat_{digest}"
 
 
-def transaction_id(row: dict[str, str], row_number: int) -> str:
-    source = "|".join(
+def transaction_identity_base(row: dict[str, str]) -> str:
+    return "|".join(
         [
             (row.get("source_file") or "").strip(),
             (row.get("source_path") or "").strip(),
+            (row.get("statement_year") or "").strip(),
+            (row.get("statement_month") or "").strip(),
+            (row.get("statement_category") or "").strip(),
             (row.get("post_date") or "").strip(),
             (row.get("trans_date") or "").strip(),
             (row.get("description") or "").strip(),
             (row.get("amount_rmb") or "").strip(),
             (row.get("card_last4") or "").strip(),
-            str(row_number),
+            (row.get("original_amount") or "").strip(),
+            (row.get("country_area") or "").strip(),
         ]
     )
+
+
+def transaction_id(row: dict[str, str], *, source_type: str, occurrence_index: int) -> str:
+    # Use a source-row fingerprint + occurrence rank instead of CSV global row number.
+    # This keeps IDs stable when users import overlapping EML batches in different combinations.
+    source = "|".join([source_type, transaction_identity_base(row), str(occurrence_index)])
     return hashlib.sha1(source.encode("utf-8")).hexdigest()
 
 
@@ -210,6 +220,7 @@ def import_csv(
     classified_csv: Path,
     *,
     source_type: str,
+    replace_existing_source_transactions: bool = True,
 ) -> tuple[int, int, str]:
     if not classified_csv.exists():
         raise FileNotFoundError(f"未找到分类结果 CSV: {classified_csv}")
@@ -221,7 +232,11 @@ def import_csv(
     job_id = str(uuid.uuid4())
     started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
     metadata_json = json.dumps(
-        {"classified_csv": str(classified_csv), "source_type": source_type},
+        {
+            "classified_csv": str(classified_csv),
+            "source_type": source_type,
+            "replace_existing_source_transactions": replace_existing_source_transactions,
+        },
         ensure_ascii=False,
     )
 
@@ -233,17 +248,19 @@ def import_csv(
             """,
             (job_id, source_type, str(classified_csv), started_at, metadata_json),
         )
-        # Current import is a full snapshot for one source.
-        conn.execute("DELETE FROM transactions WHERE source_type = ?", (source_type,))
+        if replace_existing_source_transactions:
+            # CLI/report pipeline keeps full-snapshot semantics by default.
+            conn.execute("DELETE FROM transactions WHERE source_type = ?", (source_type,))
 
     total_count = 0
     imported_count = 0
     error_count = 0
+    occurrence_counters: dict[str, int] = {}
 
     try:
         with classified_csv.open("r", newline="", encoding="utf-8") as f:
             reader = csv.DictReader(f)
-            for row_number, row in enumerate(reader, start=2):
+            for row in reader:
                 total_count += 1
                 try:
                     category_name = (row.get("expense_category") or "").strip() or "待分类"
@@ -251,11 +268,18 @@ def import_csv(
                     card_last4 = (row.get("card_last4") or "").strip()
                     account_id = account_id_from_last4(card_last4)
                     account_name = account_name_from_last4(card_last4)
-                    tx_id = transaction_id(row, row_number)
+                    identity_base = transaction_identity_base(row)
+                    occurrence_index = occurrence_counters.get(identity_base, 0) + 1
+                    occurrence_counters[identity_base] = occurrence_index
 
                     with conn:
                         upsert_account(conn, account_id, account_name)
                         upsert_category(conn, category_id, category_name)
+                        tx_id = transaction_id(
+                            row,
+                            source_type=source_type,
+                            occurrence_index=occurrence_index,
+                        )
                         upsert_transaction(
                             conn,
                             row,

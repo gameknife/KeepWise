@@ -22,6 +22,7 @@
         <button class="tab-btn" data-tab="tab-records">记录录入</button>
         <button class="tab-btn" data-tab="tab-return">收益分析</button>
         <button class="tab-btn" data-tab="tab-wealth">财富总览</button>
+        <button class="tab-btn" data-tab="tab-budget">预算与FIRE</button>
         <button class="tab-btn" data-tab="tab-query">基础查询</button>
         <button class="tab-btn" data-tab="tab-admin">高级管理</button>
       </div>
@@ -274,6 +275,102 @@
       </div>
     </section>
 
+    <section id="tab-budget" class="panel hidden">
+      <h2>预算与 FIRE 进度</h2>
+      <p class="hint">低心智负担方案：维护少量平均月度支出预算项，系统自动折算年度预算，并对比实际消费与财务自由度。</p>
+
+      <div class="split-grid">
+        <div class="sub-panel">
+          <h3>平均月度支出预算项</h3>
+          <div class="row-4">
+            <div>
+              <label>项目名称</label>
+              <input id="budgetItemName" type="text" placeholder="例如：房贷">
+            </div>
+            <div>
+              <label>月度预算（元）</label>
+              <input id="budgetItemMonthlyAmount" type="number" step="0.01" min="0" value="0">
+            </div>
+            <div>
+              <label>排序</label>
+              <input id="budgetItemSortOrder" type="number" step="1" value="1000">
+            </div>
+            <div>
+              <label>状态</label>
+              <select id="budgetItemIsActive">
+                <option value="true" selected>启用</option>
+                <option value="false">停用</option>
+              </select>
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <label>编辑中的预算项 ID</label>
+              <div id="budgetItemEditingId" class="metric" style="padding:9px 11px">-</div>
+            </div>
+            <div></div>
+          </div>
+          <div class="actions">
+            <button id="budgetItemSaveBtn" class="btn primary">保存预算项</button>
+            <button id="budgetItemCancelEditBtn" class="btn secondary hidden" type="button">取消编辑</button>
+            <button id="budgetItemRefreshBtn" class="btn secondary" type="button">刷新预算项</button>
+          </div>
+          <div id="budgetItemEditHint" class="hint hidden" style="margin-top:8px">当前为编辑模式</div>
+          <div id="budgetItemsStatus" class="status hidden"></div>
+          <div id="budgetItemsMetrics" class="grid-metrics hidden"></div>
+
+          <div class="table-wrap hidden" id="budgetItemsWrap">
+            <table>
+              <thead>
+                <tr><th>项目</th><th>月度预算(元)</th><th>年度预算(元)</th><th>状态</th><th>来源</th><th>操作</th></tr>
+              </thead>
+              <tbody id="budgetItemsBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="sub-panel">
+          <h3>预算总览与财务自由度</h3>
+          <div class="row-3">
+            <div>
+              <label>预算年度</label>
+              <input id="budgetYear" type="number" min="2000" max="2100" step="1">
+            </div>
+            <div>
+              <label>提取率（%）</label>
+              <input id="budgetWithdrawalRatePct" type="number" min="0.01" max="99.99" step="0.01" value="4.00">
+            </div>
+            <div></div>
+          </div>
+          <div class="actions">
+            <button id="budgetRefreshBtn" class="btn primary" type="button">刷新预算/FIRE指标</button>
+          </div>
+          <div id="budgetStatus" class="status hidden"></div>
+
+          <h4 style="margin-top:12px">预算总览</h4>
+          <div id="budgetSummaryMetrics" class="grid-metrics hidden"></div>
+
+          <h4 style="margin-top:12px">FIRE 进度</h4>
+          <div id="fireMetrics" class="grid-metrics hidden"></div>
+
+          <h4 style="margin-top:12px">月度复盘（总额）</h4>
+          <div id="budgetMonthlyReviewMetrics" class="grid-metrics hidden"></div>
+          <div class="table-wrap hidden" id="budgetMonthlyReviewWrap">
+            <table>
+              <thead>
+                <tr><th>月份</th><th>预算(元)</th><th>实际消费(元)</th><th>差额(元)</th><th>达成率</th><th>笔数</th><th>状态</th></tr>
+              </thead>
+              <tbody id="budgetMonthlyReviewBody"></tbody>
+            </table>
+          </div>
+
+          <p class="hint" style="margin-top:12px">
+            实际消费口径默认排除待确认交易与排除统计交易；财务自由度口径使用「投资 + 现金」，默认提取率 4%。
+          </p>
+        </div>
+      </div>
+    </section>
+
     <section id="tab-query" class="panel hidden">
       <h2>基础查询</h2>
       <p class="hint">提供交易、投资、非投资资产记录的筛选与列表。</p>
@@ -461,8 +558,10 @@
 
       <div class="actions">
         <button id="adminLoadStatsBtn" class="btn secondary">查看数据库数据量</button>
+        <button id="adminResetTxBtn" class="btn danger">仅清理交易数据（EML）</button>
         <button id="adminResetDbBtn" class="btn danger">清空全部数据库数据</button>
       </div>
+      <p class="hint">“仅清理交易数据”会清空交易流水、对账记录，以及交易相关导入任务（`cmb_eml`），不会影响投资/资产/预算数据。</p>
       <div id="adminStatus" class="status hidden"></div>
       <div id="adminMetrics" class="grid-metrics hidden"></div>
       <div class="table-wrap hidden" id="adminRowsWrap">
@@ -481,6 +580,7 @@
 
   <script>
     const PRIVACY_MASK_STORAGE_KEY = "keepwise:privacy-mask-amounts";
+    const BUDGET_WITHDRAWAL_RATE_PCT_STORAGE_KEY = "keepwise:budget-withdrawal-rate-pct";
 
     const state = {
       emlPreviewToken: "",
@@ -490,6 +590,7 @@
       refreshReturnAnalytics: null,
       refreshReturnBatchAnalytics: null,
       refreshWealthAnalytics: null,
+      refreshBudgetAnalytics: null,
       refreshInvestmentQuery: null,
       refreshAssetQuery: null,
       renderAccountCatalog: null,
@@ -497,6 +598,7 @@
       editingAccountRecord: null,
       editingInvestmentRecord: null,
       editingAssetRecord: null,
+      editingBudgetItem: null,
     };
 
     const ACCOUNT_KIND_LABELS = {
@@ -633,6 +735,9 @@
       }
       if (typeof state.refreshWealthAnalytics === "function") {
         tasks.push(state.refreshWealthAnalytics({ silent: true }));
+      }
+      if (typeof state.refreshBudgetAnalytics === "function") {
+        tasks.push(state.refreshBudgetAnalytics({ silent: true }));
       }
       if (tasks.length > 0) {
         await Promise.allSettled(tasks);
@@ -2239,6 +2344,345 @@
       refreshWealthAnalytics({ silent: true });
     }
 
+    function initBudget() {
+      const budgetStatus = document.getElementById("budgetStatus");
+      const budgetYear = document.getElementById("budgetYear");
+      const budgetSummaryMetrics = document.getElementById("budgetSummaryMetrics");
+      const fireMetrics = document.getElementById("fireMetrics");
+      const budgetMonthlyReviewMetrics = document.getElementById("budgetMonthlyReviewMetrics");
+      const budgetMonthlyReviewWrap = document.getElementById("budgetMonthlyReviewWrap");
+      const budgetMonthlyReviewBody = document.getElementById("budgetMonthlyReviewBody");
+
+      const budgetItemsStatus = document.getElementById("budgetItemsStatus");
+      const budgetItemsMetrics = document.getElementById("budgetItemsMetrics");
+      const budgetItemsWrap = document.getElementById("budgetItemsWrap");
+      const budgetItemsBody = document.getElementById("budgetItemsBody");
+      const budgetItemName = document.getElementById("budgetItemName");
+      const budgetItemMonthlyAmount = document.getElementById("budgetItemMonthlyAmount");
+      const budgetItemSortOrder = document.getElementById("budgetItemSortOrder");
+      const budgetItemIsActive = document.getElementById("budgetItemIsActive");
+      const budgetItemEditingId = document.getElementById("budgetItemEditingId");
+      const budgetItemEditHint = document.getElementById("budgetItemEditHint");
+      const budgetItemSaveBtn = document.getElementById("budgetItemSaveBtn");
+      const budgetItemCancelEditBtn = document.getElementById("budgetItemCancelEditBtn");
+      const budgetItemRefreshBtn = document.getElementById("budgetItemRefreshBtn");
+      const budgetRefreshBtn = document.getElementById("budgetRefreshBtn");
+      const budgetWithdrawalRatePct = document.getElementById("budgetWithdrawalRatePct");
+
+      if (!budgetYear) return;
+      if (!budgetYear.value) budgetYear.value = String(new Date().getFullYear());
+      if (budgetWithdrawalRatePct) {
+        let restored = "";
+        try {
+          restored = String(window.localStorage.getItem(BUDGET_WITHDRAWAL_RATE_PCT_STORAGE_KEY) || "").trim();
+        } catch {}
+        const restoredNum = Number(restored);
+        if (restored && Number.isFinite(restoredNum) && restoredNum > 0 && restoredNum < 100) {
+          budgetWithdrawalRatePct.value = restoredNum.toFixed(2);
+        } else if (!budgetWithdrawalRatePct.value) {
+          budgetWithdrawalRatePct.value = "4.00";
+        }
+      }
+
+      let latestBudgetOverviewReq = 0;
+      let latestFireReq = 0;
+      let latestBudgetItemsReq = 0;
+
+      function clearBudgetItemEditMode() {
+        state.editingBudgetItem = null;
+        budgetItemEditingId.textContent = "-";
+        budgetItemEditHint.classList.add("hidden");
+        budgetItemCancelEditBtn.classList.add("hidden");
+        budgetItemSaveBtn.textContent = "保存预算项";
+        budgetItemName.value = "";
+        budgetItemMonthlyAmount.value = "0";
+        budgetItemSortOrder.value = "1000";
+        budgetItemIsActive.value = "true";
+      }
+
+      function setBudgetItemEditMode(row) {
+        state.editingBudgetItem = row;
+        budgetItemEditingId.textContent = String(row.id || "-");
+        budgetItemEditHint.classList.remove("hidden");
+        budgetItemCancelEditBtn.classList.remove("hidden");
+        budgetItemSaveBtn.textContent = "更新预算项";
+        budgetItemName.value = String(row.name || "");
+        budgetItemMonthlyAmount.value = Number(row.monthly_amount_yuan || 0);
+        budgetItemSortOrder.value = String(row.sort_order ?? 1000);
+        budgetItemIsActive.value = row.is_active ? "true" : "false";
+      }
+
+      function getSelectedBudgetYear() {
+        const value = String(budgetYear.value || "").trim();
+        const yearNum = Number(value);
+        if (!Number.isFinite(yearNum) || yearNum < 2000 || yearNum > 2100) {
+          return new Date().getFullYear();
+        }
+        return Math.trunc(yearNum);
+      }
+
+      function getWithdrawalRateDecimal() {
+        const raw = String(budgetWithdrawalRatePct ? budgetWithdrawalRatePct.value : "4").trim();
+        const pctNum = Number(raw);
+        if (!Number.isFinite(pctNum) || pctNum <= 0 || pctNum >= 100) {
+          throw new Error("提取率必须在 0 到 100 之间（百分比）");
+        }
+        try {
+          window.localStorage.setItem(BUDGET_WITHDRAWAL_RATE_PCT_STORAGE_KEY, pctNum.toFixed(2));
+        } catch {}
+        return pctNum / 100;
+      }
+
+      async function refreshBudgetItems(options = {}) {
+        const { silent = true } = options;
+        const reqId = ++latestBudgetItemsReq;
+        try {
+          const data = await api("/api/budgets/monthly-items");
+          if (reqId !== latestBudgetItemsReq) return;
+
+          showMetrics(budgetItemsMetrics, [
+            { k: "预算项总数", v: data.summary.total_count, amount: false },
+            { k: "启用预算项", v: data.summary.active_count, amount: false },
+            { k: "月度预算总额(元)", v: data.summary.monthly_budget_total_yuan },
+            { k: "年度预算(元)", v: data.summary.annual_budget_yuan },
+          ]);
+
+          budgetItemsWrap.classList.remove("hidden");
+          budgetItemsBody.innerHTML = (data.rows || []).map(row => `
+            <tr data-budget-item-id="${row.id}">
+              <td>${escapeHtml(row.name)}</td>
+              <td>${renderAmountValue(row.monthly_amount_yuan)}</td>
+              <td>${renderAmountValue(row.annual_amount_yuan)}</td>
+              <td>${row.is_active ? "启用" : "停用"}</td>
+              <td>${row.is_builtin ? "内置" : "自定义"}</td>
+              <td>
+                <button class="btn secondary js-budget-edit" type="button">编辑</button>
+                <button class="btn danger js-budget-delete" type="button">删除</button>
+              </td>
+            </tr>
+          `).join("");
+          applyAmountMaskInDom(budgetItemsWrap);
+          state.budgetItemsRows = data.rows || [];
+          if (!silent) setStatus(budgetItemsStatus, true, "预算项已刷新");
+        } catch (err) {
+          if (reqId !== latestBudgetItemsReq) return;
+          hide(budgetItemsMetrics);
+          hide(budgetItemsWrap);
+          budgetItemsBody.innerHTML = "";
+          setStatus(budgetItemsStatus, false, err.message || String(err));
+        }
+      }
+
+      async function refreshBudgetOverview(options = {}) {
+        const { silent = true } = options;
+        const reqId = ++latestBudgetOverviewReq;
+        try {
+          const year = getSelectedBudgetYear();
+          const data = await api(`/api/analytics/budget-overview?year=${encodeURIComponent(year)}`);
+          if (reqId !== latestBudgetOverviewReq) return;
+          showMetrics(budgetSummaryMetrics, [
+            { k: "预算年度", v: data.year, amount: false },
+            { k: "月度预算总额(元)", v: data.budget.monthly_total_yuan },
+            { k: "年度预算(元)", v: data.budget.annual_total_yuan },
+            { k: "实际消费累计(元)", v: data.actual.spent_total_yuan },
+            { k: "剩余预算(元)", v: data.metrics.annual_remaining_yuan },
+            { k: "达成率/使用率", v: data.metrics.usage_rate_pct_text, amount: false },
+            { k: "YTD预算(元)", v: data.budget.ytd_budget_yuan },
+            { k: "YTD实际(元)", v: data.actual.ytd_spent_yuan },
+            { k: "YTD偏差(元)", v: data.metrics.ytd_variance_yuan },
+            { k: "已过月份", v: data.analysis_scope.elapsed_months, amount: false },
+          ]);
+          if (!silent) {
+            setStatus(budgetStatus, true, `预算总览已更新（${data.year}年，as_of: ${data.as_of_date}）`);
+          }
+        } catch (err) {
+          if (reqId !== latestBudgetOverviewReq) return;
+          hide(budgetSummaryMetrics);
+          setStatus(budgetStatus, false, err.message || String(err));
+        }
+      }
+
+      async function refreshFireProgress(options = {}) {
+        const { silent = true } = options;
+        const reqId = ++latestFireReq;
+        try {
+          const year = getSelectedBudgetYear();
+          const withdrawalRate = getWithdrawalRateDecimal();
+          const data = await api(
+            `/api/analytics/fire-progress?year=${encodeURIComponent(year)}&withdrawal_rate=${encodeURIComponent(withdrawalRate)}`
+          );
+          if (reqId !== latestFireReq) return;
+          showMetrics(fireMetrics, [
+            { k: "可投资资产(元)", v: data.investable_assets.total_yuan },
+            { k: "其中投资(元)", v: data.investable_assets.investment_yuan },
+            { k: "其中现金(元)", v: data.investable_assets.cash_yuan },
+            { k: "FIRE目标资产(元)", v: data.metrics.required_assets_yuan },
+            { k: "与目标差额(元)", v: data.metrics.goal_gap_yuan },
+            { k: "尚需资产(元)", v: data.metrics.remaining_to_goal_yuan },
+            { k: "覆盖年数", v: data.metrics.coverage_years_text || "-", amount: false },
+            { k: "财务自由度", v: data.metrics.freedom_ratio_pct_text || "-", amount: false },
+            { k: "提取率", v: data.withdrawal_rate_pct_text, amount: false },
+            { k: "资产快照日期", v: data.investable_assets.as_of, amount: false },
+          ]);
+          if (!silent && budgetStatus.classList.contains("hidden")) {
+            setStatus(budgetStatus, true, `FIRE 指标已更新（${data.year}年）`);
+          }
+        } catch (err) {
+          if (reqId !== latestFireReq) return;
+          hide(fireMetrics);
+          setStatus(budgetStatus, false, err.message || String(err));
+        }
+      }
+
+      async function refreshBudgetMonthlyReview(options = {}) {
+        const { silent = true } = options;
+        try {
+          const year = getSelectedBudgetYear();
+          const data = await api(`/api/analytics/budget-monthly-review?year=${encodeURIComponent(year)}`);
+          showMetrics(budgetMonthlyReviewMetrics, [
+            { k: "月度预算(元)", v: data.summary.monthly_budget_yuan },
+            { k: "年度预算(元)", v: data.summary.annual_budget_yuan },
+            { k: "年度实际消费(元)", v: data.summary.annual_spent_yuan },
+            { k: "年度差额(元)", v: data.summary.annual_variance_yuan },
+            { k: "年度达成率", v: data.summary.annual_usage_rate_pct_text, amount: false },
+            { k: "超预算月份", v: data.summary.over_budget_months, amount: false },
+            { k: "低于预算月份", v: data.summary.under_budget_months, amount: false },
+            { k: "持平月份", v: data.summary.equal_months, amount: false },
+          ]);
+          budgetMonthlyReviewWrap.classList.remove("hidden");
+          budgetMonthlyReviewBody.innerHTML = (data.rows || []).map(row => `
+            <tr>
+              <td>${escapeHtml(row.month_key)}</td>
+              <td>${renderAmountValue(row.budget_yuan)}</td>
+              <td>${renderAmountValue(row.spent_yuan)}</td>
+              <td>${renderAmountValue(row.variance_yuan)}</td>
+              <td>${escapeHtml(row.usage_rate_pct_text || "-")}</td>
+              <td>${escapeHtml(String(row.tx_count || 0))}</td>
+              <td>${escapeHtml(row.status || "-")}</td>
+            </tr>
+          `).join("");
+          applyAmountMaskInDom(budgetMonthlyReviewWrap);
+          if (!silent && budgetStatus.classList.contains("hidden")) {
+            setStatus(budgetStatus, true, `月度复盘已更新（${data.year}年）`);
+          }
+        } catch (err) {
+          hide(budgetMonthlyReviewMetrics);
+          hide(budgetMonthlyReviewWrap);
+          budgetMonthlyReviewBody.innerHTML = "";
+          setStatus(budgetStatus, false, err.message || String(err));
+        }
+      }
+
+      async function refreshBudgetAnalytics(options = {}) {
+        const { silent = true } = options;
+        await Promise.all([
+          refreshBudgetItems({ silent }),
+          refreshBudgetOverview({ silent }),
+          refreshFireProgress({ silent }),
+          refreshBudgetMonthlyReview({ silent }),
+        ]);
+      }
+
+      state.refreshBudgetAnalytics = refreshBudgetAnalytics;
+
+      budgetItemSaveBtn.addEventListener("click", async () => {
+        try {
+          const name = String(budgetItemName.value || "").trim();
+          if (!name) throw new Error("请填写预算项名称");
+          const monthlyAmount = String(budgetItemMonthlyAmount.value || "").trim();
+          const payload = {
+            id: state.editingBudgetItem ? state.editingBudgetItem.id : undefined,
+            name,
+            monthly_amount: monthlyAmount,
+            sort_order: String(budgetItemSortOrder.value || "1000").trim(),
+            is_active: budgetItemIsActive.value === "true",
+          };
+          const data = await api("/api/budgets/monthly-items/upsert", "POST", payload);
+          setStatus(
+            budgetItemsStatus,
+            true,
+            state.editingBudgetItem ? `预算项已更新：${data.name}` : `预算项已保存：${data.name}`
+          );
+          clearBudgetItemEditMode();
+          await Promise.all([
+            refreshBudgetItems({ silent: true }),
+            refreshBudgetOverview({ silent: true }),
+            refreshFireProgress({ silent: true }),
+            refreshBudgetMonthlyReview({ silent: true }),
+          ]);
+        } catch (err) {
+          setStatus(budgetItemsStatus, false, err.message || String(err));
+        }
+      });
+
+      budgetItemCancelEditBtn.addEventListener("click", () => {
+        clearBudgetItemEditMode();
+      });
+
+      budgetItemRefreshBtn.addEventListener("click", async () => {
+        await refreshBudgetItems({ silent: false });
+      });
+
+      budgetRefreshBtn.addEventListener("click", async () => {
+        await Promise.all([
+          refreshBudgetOverview({ silent: false }),
+          refreshFireProgress({ silent: true }),
+          refreshBudgetMonthlyReview({ silent: true }),
+        ]);
+      });
+
+      budgetYear.addEventListener("change", () => {
+        refreshBudgetOverview({ silent: true });
+        refreshFireProgress({ silent: true });
+        refreshBudgetMonthlyReview({ silent: true });
+      });
+
+      if (budgetWithdrawalRatePct) {
+        budgetWithdrawalRatePct.addEventListener("change", () => {
+          refreshFireProgress({ silent: true });
+        });
+      }
+
+      budgetItemsBody.addEventListener("click", async (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) return;
+        const rowEl = target.closest("tr[data-budget-item-id]");
+        if (!rowEl) return;
+        const itemId = rowEl.getAttribute("data-budget-item-id");
+        if (!itemId) return;
+        const row = (state.budgetItemsRows || []).find(item => String(item.id) === itemId);
+        if (!row) return;
+
+        if (target.classList.contains("js-budget-edit")) {
+          setBudgetItemEditMode(row);
+          return;
+        }
+
+        if (target.classList.contains("js-budget-delete")) {
+          const ok = window.confirm(`确认删除预算项「${row.name}」？`);
+          if (!ok) return;
+          try {
+            await api("/api/budgets/monthly-items/delete", "POST", { id: itemId });
+            if (state.editingBudgetItem && String(state.editingBudgetItem.id) === itemId) {
+              clearBudgetItemEditMode();
+            }
+            setStatus(budgetItemsStatus, true, `预算项已删除：${row.name}`);
+            await Promise.all([
+              refreshBudgetItems({ silent: true }),
+              refreshBudgetOverview({ silent: true }),
+              refreshFireProgress({ silent: true }),
+              refreshBudgetMonthlyReview({ silent: true }),
+            ]);
+          } catch (err) {
+            setStatus(budgetItemsStatus, false, err.message || String(err));
+          }
+        }
+      });
+
+      clearBudgetItemEditMode();
+      refreshBudgetAnalytics({ silent: true });
+    }
+
     function initAccountManagement() {
       const acctStatus = document.getElementById("acctStatus");
       const acctMetrics = document.getElementById("acctMetrics");
@@ -2885,6 +3329,39 @@
         }
       });
 
+      document.getElementById("adminResetTxBtn").addEventListener("click", async () => {
+        try {
+          const payload = await api("/api/admin/reset-transactions", "POST", {
+            confirm_text: adminConfirmText.value.trim(),
+            clear_import_sessions: true,
+          });
+          showMetrics(adminMetrics, [
+            { k: "清理范围", v: "交易数据（EML）" },
+            { k: "清理前总行数", v: payload.summary.total_rows_before },
+            { k: "清理后总行数", v: payload.summary.total_rows_after },
+            { k: "已删除行数", v: payload.summary.deleted_rows },
+          ]);
+          renderAdminRows(payload.before_rows || [], payload.after_rows || []);
+          setStatus(
+            adminStatus,
+            true,
+            `交易数据已清理，可重新导入 EML（清理会话目录 ${payload.cleared_preview_sessions || 0} 个）`
+          );
+          adminConfirmText.value = "";
+          if (typeof state.refreshBudgetAnalytics === "function") {
+            state.refreshBudgetAnalytics().catch(() => {});
+          }
+          if (typeof state.refreshInvestmentQuery === "function") {
+            state.refreshInvestmentQuery().catch(() => {});
+          }
+          if (typeof state.refreshAssetQuery === "function") {
+            state.refreshAssetQuery().catch(() => {});
+          }
+        } catch (err) {
+          setStatus(adminStatus, false, err.message || String(err));
+        }
+      });
+
       document.getElementById("adminResetDbBtn").addEventListener("click", async () => {
         try {
           const payload = await api("/api/admin/reset-db", "POST", {
@@ -2926,6 +3403,7 @@
       initRecordActions();
       initReturnAnalytics();
       initWealth();
+      initBudget();
       initAccountManagement();
       initQuery();
       initAdmin();
