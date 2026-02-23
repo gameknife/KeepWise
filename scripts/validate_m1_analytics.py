@@ -24,7 +24,7 @@ from typing import Any
 import import_classified_to_ledger as ledger_import_mod
 import import_cmb_bank_pdf_transactions as cmb_bank_pdf_mod
 import import_youzhiyouxing_investments as yzxy_mod
-import m0_web_app as app_mod
+import keepwise_web_app as app_mod
 import migrate_ledger_db as migrate_mod
 
 

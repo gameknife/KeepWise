@@ -61,7 +61,7 @@
 启动本地 Web（默认 `http://127.0.0.1:8081`）：
 
 ```bash
-./run_m0_app.sh
+./run_keepwise_app.sh
 ```
 
 当前支持：
@@ -190,6 +190,6 @@ python3 scripts/import_classified_to_ledger.py \
 
 ## M0 产物（流程与架构）
 
-- 产品流程定义：`docs/m0/PRODUCT_FLOW_M0.md`
-- 信息架构：`docs/m0/INFORMATION_ARCHITECTURE_M0.md`
-- 数据字典 v1：`docs/m0/DATA_DICTIONARY_V1.md`
+- 产品流程定义：`docs/foundation/PRODUCT_FLOW.md`
+- 信息架构：`docs/foundation/INFORMATION_ARCHITECTURE.md`
+- 数据字典 v1：`docs/foundation/DATA_DICTIONARY_V1.md`

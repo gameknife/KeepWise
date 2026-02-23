@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Investment analytics helper functions extracted from m0_web_app."""
+"""Investment analytics helper functions extracted from keepwise_web_app."""
 
 from __future__ import annotations
 

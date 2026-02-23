@@ -107,15 +107,15 @@
 
 ## 10) M0 文档入口
 
-- 产品流程定义：`docs/m0/PRODUCT_FLOW_M0.md`
-- 信息架构：`docs/m0/INFORMATION_ARCHITECTURE_M0.md`
-- 数据字典：`docs/m0/DATA_DICTIONARY_V1.md`
+- 产品流程定义：`docs/foundation/PRODUCT_FLOW.md`
+- 信息架构：`docs/foundation/INFORMATION_ARCHITECTURE.md`
+- 数据字典：`docs/foundation/DATA_DICTIONARY_V1.md`
 - 当前收敛范围：仅做 EML 交互导入、投资记录单条录入、有知有行导出表批量导入、以及基础查询展示。
 
 ## 11) M0 开发进展（已开始落地）
 
-- 新增本地工作台启动脚本：`run_m0_app.sh`。
-- 新增 M0 Web 应用：`scripts/m0_web_app.py`。
+- 新增本地工作台启动脚本：`run_keepwise_app.sh`。
+- 新增 M0 Web 应用：`scripts/keepwise_web_app.py`。
   - EML 文件交互预览与确认导入。
   - 投资记录单条录入。
   - 有知有行 CSV / XLSX 预览与批量导入。
@@ -142,7 +142,7 @@
 
 - 新增迁移：`db/migrations/0004_add_account_valuations.sql`
   - 新表 `account_valuations`：用于现金/不动产按账户快照记录。
-- `scripts/m0_web_app.py` 新增能力：
+- `scripts/keepwise_web_app.py` 新增能力：
   - 现金/不动产手工录入：`POST /api/assets/manual`
   - 账户元数据：`GET /api/meta/accounts`
   - 投资区间收益率（现金加权/Modified Dietz）：
@@ -172,7 +172,7 @@
     - `include_investment`
     - `include_cash`
     - `include_real_estate`
-- `scripts/assets/m0_app.html` 与 `scripts/assets/m0_app.css` 已扩展为 M1 工作台：
+- `scripts/assets/workbench.html` 与 `scripts/assets/workbench.css` 已扩展为 M1 工作台：
   - 导入中心（保留）
   - 记录录入（投资 + 现金/不动产）
   - 收益分析（区间收益率 + 全部账户收益率对比 + 投资总资产曲线 + 区间累计收益率曲线）

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""M4 analytics and budget service functions for KeepWise web app."""
+"""Budget/FIRE analytics service functions for KeepWise web app."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ TRANSACTION_IMPORT_SOURCE_TYPES = ("cmb_eml", "cmb_bank_pdf")
 DEFAULT_FIRE_WITHDRAWAL_RATE = 0.04
 
 
-class M4ConfigLike(Protocol):
+class BudgetFireConfigLike(Protocol):
     db_path: Path
 
 
@@ -107,7 +107,7 @@ def _format_monthly_budget_item_row(row: sqlite3.Row) -> dict[str, Any]:
     }
 
 
-def query_monthly_budget_items(config: M4ConfigLike, qs: dict[str, list[str]]) -> dict[str, Any]:
+def query_monthly_budget_items(config: BudgetFireConfigLike, qs: dict[str, list[str]]) -> dict[str, Any]:
     conn = sqlite3.connect(config.db_path)
     conn.row_factory = sqlite3.Row
     try:
@@ -129,7 +129,7 @@ def query_monthly_budget_items(config: M4ConfigLike, qs: dict[str, list[str]]) -
     }
 
 
-def upsert_monthly_budget_item(config: M4ConfigLike, payload: dict[str, Any]) -> dict[str, Any]:
+def upsert_monthly_budget_item(config: BudgetFireConfigLike, payload: dict[str, Any]) -> dict[str, Any]:
     item_id = str(payload.get("id", "")).strip()
     name = str(payload.get("name", "")).strip()
     if not name:
@@ -195,7 +195,7 @@ def upsert_monthly_budget_item(config: M4ConfigLike, payload: dict[str, Any]) ->
     return _format_monthly_budget_item_row(saved)
 
 
-def delete_monthly_budget_item(config: M4ConfigLike, payload: dict[str, Any]) -> dict[str, Any]:
+def delete_monthly_budget_item(config: BudgetFireConfigLike, payload: dict[str, Any]) -> dict[str, Any]:
     item_id = str(payload.get("id", "")).strip()
     if not item_id:
         raise ValueError("id 必填")
@@ -236,7 +236,7 @@ def _budget_year_months_elapsed(selected_year: int, today: date) -> int:
     return today.month
 
 
-def query_budget_overview(config: M4ConfigLike, qs: dict[str, list[str]]) -> dict[str, Any]:
+def query_budget_overview(config: BudgetFireConfigLike, qs: dict[str, list[str]]) -> dict[str, Any]:
     today = datetime.now().date()
     year = parse_year_param((qs.get("year") or [""])[0], default_year=today.year)
     month_start = f"{year:04d}-01"
@@ -311,7 +311,7 @@ def query_budget_overview(config: M4ConfigLike, qs: dict[str, list[str]]) -> dic
     }
 
 
-def query_budget_monthly_review(config: M4ConfigLike, qs: dict[str, list[str]]) -> dict[str, Any]:
+def query_budget_monthly_review(config: BudgetFireConfigLike, qs: dict[str, list[str]]) -> dict[str, Any]:
     today = datetime.now().date()
     year = parse_year_param((qs.get("year") or [""])[0], default_year=today.year)
     month_start = f"{year:04d}-01"
@@ -413,7 +413,7 @@ def query_budget_monthly_review(config: M4ConfigLike, qs: dict[str, list[str]]) 
     }
 
 
-def query_consumption_report(config: M4ConfigLike, _qs: dict[str, list[str]]) -> dict[str, Any]:
+def query_consumption_report(config: BudgetFireConfigLike, _qs: dict[str, list[str]]) -> dict[str, Any]:
     conn = sqlite3.connect(config.db_path)
     conn.row_factory = sqlite3.Row
     try:
@@ -588,7 +588,7 @@ def query_consumption_report(config: M4ConfigLike, _qs: dict[str, list[str]]) ->
     }
 
 
-def query_salary_income_overview(config: M4ConfigLike, qs: dict[str, list[str]]) -> dict[str, Any]:
+def query_salary_income_overview(config: BudgetFireConfigLike, qs: dict[str, list[str]]) -> dict[str, Any]:
     today = datetime.now().date()
     year = parse_year_param((qs.get("year") or [""])[0], default_year=today.year)
     month_start = f"{year:04d}-01"
@@ -744,10 +744,10 @@ def query_salary_income_overview(config: M4ConfigLike, qs: dict[str, list[str]])
 
 
 def query_fire_progress(
-    config: M4ConfigLike,
+    config: BudgetFireConfigLike,
     qs: dict[str, list[str]],
     *,
-    wealth_overview_query: Callable[[M4ConfigLike, dict[str, list[str]]], dict[str, Any]],
+    wealth_overview_query: Callable[[BudgetFireConfigLike, dict[str, list[str]]], dict[str, Any]],
 ) -> dict[str, Any]:
     today = datetime.now().date()
     year = parse_year_param((qs.get("year") or [""])[0], default_year=today.year)
@@ -811,4 +811,3 @@ def query_fire_progress(
             "remaining_to_goal_yuan": cents_to_yuan_text(remaining_to_goal_cents),
         },
     }
-

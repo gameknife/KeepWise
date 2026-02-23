@@ -7,7 +7,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any, Protocol
 
-import m0_investment_analytics_service as investment_service
+import investment_analytics_service as investment_service
 
 
 class WealthConfigLike(Protocol):

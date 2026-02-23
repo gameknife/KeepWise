@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-APP_SCRIPT="$ROOT_DIR/scripts/m0_web_app.py"
+APP_SCRIPT="$ROOT_DIR/scripts/keepwise_web_app.py"
 
 if [[ ! -f "$APP_SCRIPT" ]]; then
   echo "未找到应用脚本: $APP_SCRIPT" >&2

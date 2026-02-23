@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import m0_web_app as app_mod
+import keepwise_web_app as app_mod
 
 
 def build_config(root: Path, db_path: Path | None) -> app_mod.AppConfig:

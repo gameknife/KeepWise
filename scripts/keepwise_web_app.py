@@ -29,11 +29,11 @@ import import_classified_to_ledger as ledger_import_mod
 import import_cmb_bank_pdf_transactions as cmb_bank_pdf_import_mod
 import import_youzhiyouxing_investments as yzxy_import_mod
 import migrate_ledger_db as migrate_mod
-import m0_http_route_tables as http_routes
-import m0_investment_analytics_service as investment_service
-import m0_m4_analytics_service as m4_service
-import m0_rules_service as rules_service
-import m0_wealth_analytics_service as wealth_service
+import http_route_tables as http_routes
+import investment_analytics_service as investment_service
+import budget_fire_analytics_service as budget_fire_service
+import rules_service as rules_service
+import wealth_analytics_service as wealth_service
 import parse_cmb_statements as parser_mod
 
 
@@ -1339,42 +1339,42 @@ def query_investment_curve(config: AppConfig, qs: dict[str, list[str]]) -> dict[
 
 def query_monthly_budget_items(config: AppConfig, qs: dict[str, list[str]]) -> dict[str, Any]:
     ensure_db(config)
-    return m4_service.query_monthly_budget_items(config, qs)
+    return budget_fire_service.query_monthly_budget_items(config, qs)
 
 
 def upsert_monthly_budget_item(config: AppConfig, payload: dict[str, Any]) -> dict[str, Any]:
     ensure_db(config)
-    return m4_service.upsert_monthly_budget_item(config, payload)
+    return budget_fire_service.upsert_monthly_budget_item(config, payload)
 
 
 def delete_monthly_budget_item(config: AppConfig, payload: dict[str, Any]) -> dict[str, Any]:
     ensure_db(config)
-    return m4_service.delete_monthly_budget_item(config, payload)
+    return budget_fire_service.delete_monthly_budget_item(config, payload)
 
 
 def query_budget_overview(config: AppConfig, qs: dict[str, list[str]]) -> dict[str, Any]:
     ensure_db(config)
-    return m4_service.query_budget_overview(config, qs)
+    return budget_fire_service.query_budget_overview(config, qs)
 
 
 def query_budget_monthly_review(config: AppConfig, qs: dict[str, list[str]]) -> dict[str, Any]:
     ensure_db(config)
-    return m4_service.query_budget_monthly_review(config, qs)
+    return budget_fire_service.query_budget_monthly_review(config, qs)
 
 
 def query_consumption_report(config: AppConfig, qs: dict[str, list[str]]) -> dict[str, Any]:
     ensure_db(config)
-    return m4_service.query_consumption_report(config, qs)
+    return budget_fire_service.query_consumption_report(config, qs)
 
 
 def query_salary_income_overview(config: AppConfig, qs: dict[str, list[str]]) -> dict[str, Any]:
     ensure_db(config)
-    return m4_service.query_salary_income_overview(config, qs)
+    return budget_fire_service.query_salary_income_overview(config, qs)
 
 
 def query_fire_progress(config: AppConfig, qs: dict[str, list[str]]) -> dict[str, Any]:
     ensure_db(config)
-    return m4_service.query_fire_progress(config, qs, wealth_overview_query=query_wealth_overview)
+    return budget_fire_service.query_fire_progress(config, qs, wealth_overview_query=query_wealth_overview)
 
 
 def query_wealth_overview(config: AppConfig, qs: dict[str, list[str]]) -> dict[str, Any]:
@@ -1707,7 +1707,7 @@ POST_API_ROUTES = http_routes.build_post_api_routes(
 )
 
 
-class M0Handler(BaseHTTPRequestHandler):
+class KeepWiseHandler(BaseHTTPRequestHandler):
     config: AppConfig
     session_store: SessionStore
 
@@ -1780,7 +1780,7 @@ class M0Handler(BaseHTTPRequestHandler):
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run KeepWise M0 local web app")
+    parser = argparse.ArgumentParser(description="Run KeepWise local web app")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", default=8081, type=int)
     parser.add_argument("--root", default=Path("."), type=Path)
@@ -1807,14 +1807,14 @@ def main() -> None:
     ensure_db(config)
     session_store = SessionStore(config.session_dir)
 
-    class BoundHandler(M0Handler):
+    class BoundHandler(KeepWiseHandler):
         pass
 
     BoundHandler.config = config
     BoundHandler.session_store = session_store
 
     server = ThreadingHTTPServer((args.host, args.port), BoundHandler)
-    print(f"M0 app running: http://{args.host}:{args.port}")
+    print(f"KeepWise app running: http://{args.host}:{args.port}")
     print(f"Database: {config.db_path}")
     server.serve_forever()
 

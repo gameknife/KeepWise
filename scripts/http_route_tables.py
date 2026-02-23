@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""HTTP route table builders for KeepWise M0 web app."""
+"""HTTP route table builders for KeepWise local web app."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from urllib.parse import parse_qs
 
 def build_get_page_file_routes() -> dict[str, str]:
     return {
-        "/": "m0_app.html",
+        "/": "workbench.html",
         "/consumption": "consumption_dashboard.html",
         "/consumption/": "consumption_dashboard.html",
         "/rules": "rules_admin.html",
@@ -21,7 +21,7 @@ def build_get_page_file_routes() -> dict[str, str]:
 
 def build_get_text_asset_routes() -> dict[str, tuple[str, str]]:
     return {
-        "/assets/m0_app.css": ("m0_app.css", "text/css"),
+        "/assets/workbench.css": ("workbench.css", "text/css"),
         "/assets/consumption_report.css": ("consumption_report.css", "text/css"),
         "/assets/rules_admin.css": ("rules_admin.css", "text/css"),
     }

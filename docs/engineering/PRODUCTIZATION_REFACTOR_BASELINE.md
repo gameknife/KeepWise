@@ -14,7 +14,7 @@
   - 消费分析（已整合到工作台）
   - EML / 有知有行 / 招行 PDF 导入
 - 主要架构风险集中在：
-  - `scripts/m0_web_app.py` 单文件过大（历史累计，路由 + 领域逻辑 + 数据访问混合）
+  - `scripts/keepwise_web_app.py` 单文件过大（历史累计，路由 + 领域逻辑 + 数据访问混合）
   - 前端页面脚本内联较多（功能可用，但后续迭代成本上升）
   - 领域逻辑和 HTTP 层耦合较紧（不利于技术栈切换）
 
@@ -28,7 +28,7 @@
 
 ## 当前代码结构（梳理结果）
 
-- `scripts/m0_web_app.py`
+- `scripts/keepwise_web_app.py`
   - 本地 Web 入口
   - HTTP 路由（GET/POST）
   - 数据库 CRUD
@@ -50,7 +50,7 @@
 
 新增：
 
-- `scripts/m0_rules_service.py`
+- `scripts/rules_service.py`
 
 职责：
 
@@ -60,7 +60,7 @@
 
 收益：
 
-- `m0_web_app.py` 中“规则管理 + 白名单 + 商户建议”领域逻辑已从 HTTP 文件中移出
+- `keepwise_web_app.py` 中“规则管理 + 白名单 + 商户建议”领域逻辑已从 HTTP 文件中移出
 - 规则逻辑形成可复用服务模块，后续技术栈切换时可直接复用
 - 路由层保持兼容（通过别名接入），前端无需改动
 
@@ -68,7 +68,7 @@
 
 新增：
 
-- `scripts/m0_m4_analytics_service.py`
+- `scripts/budget_fire_analytics_service.py`
 
 职责：
 
@@ -80,8 +80,8 @@
 
 当前处理策略（务实）：
 
-- `m0_web_app.py` 保留 `ensure_db(...)` 与对外函数名（wrapper）
-- wrapper 内调用 `m0_m4_analytics_service.py`
+- `keepwise_web_app.py` 保留 `ensure_db(...)` 与对外函数名（wrapper）
+- wrapper 内调用 `budget_fire_analytics_service.py`
 - 保持现有 API 路径与返回结构不变
 
 收益：
@@ -89,15 +89,15 @@
 - M4 高频迭代逻辑已与 HTTP 路由文件解耦
 - 预算/消费/收入口径可以独立测试与迁移
 - FIRE 口径已并入同一服务模块，M4 领域边界更完整
-- `m0_web_app.py` 已进一步收敛到约 `1823` 行（继续降低中）
+- `keepwise_web_app.py` 已进一步收敛到约 `1823` 行（继续降低中）
 
 ### 3) 抽离投资与财富聚合服务模块（Phase 3）
 
 新增：
 
-- `scripts/m0_investment_analytics_service.py`
-- `scripts/m0_wealth_analytics_service.py`
-- `scripts/m0_http_route_tables.py`（Phase 4 中新增）
+- `scripts/investment_analytics_service.py`
+- `scripts/wealth_analytics_service.py`
+- `scripts/http_route_tables.py`（Phase 4 中新增）
 
 职责（当前已拆）：
 
@@ -111,7 +111,7 @@
 
 当前处理策略（务实）：
 
-- `m0_web_app.py` 保留原函数名，通过服务别名接入
+- `keepwise_web_app.py` 保留原函数名，通过服务别名接入
 - 所有上层调用点保持不变（收益分析/曲线/回归无需改）
 
 收益：
@@ -131,7 +131,7 @@
 
 目标：
 
-- 把以下函数从 `m0_web_app.py` 抽到独立模块（如 `m0_m4_analytics_service.py`）：
+- 把以下函数从 `keepwise_web_app.py` 抽到独立模块（如 `budget_fire_analytics_service.py`）：
   - `query_monthly_budget_items`
   - `upsert_monthly_budget_item`
   - `delete_monthly_budget_item`
@@ -143,8 +143,8 @@
 
 结果：
 
-- M4 预算/消费/收入/FIRE 的核心聚合逻辑已集中在 `scripts/m0_m4_analytics_service.py`
-- `m0_web_app.py` 中对应函数保留为薄 wrapper，API 对外行为不变
+- M4 预算/消费/收入/FIRE 的核心聚合逻辑已集中在 `scripts/budget_fire_analytics_service.py`
+- `keepwise_web_app.py` 中对应函数保留为薄 wrapper，API 对外行为不变
 - 回归脚本验证通过（预算/FIRE/消费分析/收入分析）
 
 ### Phase 3：投资收益与财富聚合抽离（含 FIRE 依赖收口）
@@ -167,7 +167,7 @@
 
 状态：
 
-- 已完成（本轮）：`GET` / `POST` 路由已改为注册表分发，并抽离到 `scripts/m0_http_route_tables.py`
+- 已完成（本轮）：`GET` / `POST` 路由已改为注册表分发，并抽离到 `scripts/http_route_tables.py`
 - 待完成：按 domain 进一步拆分路由表（可选优化，不阻塞产品化）
 
 目标：
@@ -183,7 +183,7 @@
 
 目标：
 
-- 将 `m0_app.html` 内联脚本逐步拆为 `assets/js/*.js`
+- 将 `workbench.html` 内联脚本逐步拆为 `assets/js/*.js`
 - 保持当前原生 JS，不先引入前端框架
 
 收益：
