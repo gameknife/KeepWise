@@ -768,6 +768,7 @@ def _write_import_csv(path: Path, rows: list[dict[str, str]]) -> None:
 def preview_file(
     pdf_path: Path,
     *,
+    transfer_whitelist: set[str] | None = None,
     merchant_map: dict[str, tuple[str, float, str]] | None = None,
     category_rules: list[parser_mod.ClassificationRule] | None = None,
     review_threshold: float = 0.70,
@@ -776,6 +777,7 @@ def preview_file(
     classified_rows, preview = classify_transactions(
         header,
         records,
+        transfer_whitelist=transfer_whitelist,
         merchant_map=merchant_map,
         category_rules=category_rules,
         review_threshold=review_threshold,
@@ -796,6 +798,7 @@ def import_file(
     pdf_path: Path,
     *,
     source_type: str = "cmb_bank_pdf",
+    transfer_whitelist: set[str] | None = None,
     merchant_map: dict[str, tuple[str, float, str]] | None = None,
     category_rules: list[parser_mod.ClassificationRule] | None = None,
     review_threshold: float = 0.70,
@@ -804,6 +807,7 @@ def import_file(
     classified_rows, preview = classify_transactions(
         header,
         records,
+        transfer_whitelist=transfer_whitelist,
         merchant_map=merchant_map,
         category_rules=category_rules,
         review_threshold=review_threshold,

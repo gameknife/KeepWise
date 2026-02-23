@@ -28,6 +28,7 @@
       <button class="pill-tab active" data-view="suggestions">商户建议</button>
       <button class="pill-tab" data-view="merchant_map">商户映射</button>
       <button class="pill-tab" data-view="keyword_rules">关键词规则</button>
+      <button class="pill-tab" data-view="bank_transfer_whitelist">转账白名单</button>
     </div>
 
     <main class="layout">
@@ -107,6 +108,34 @@
             </table>
           </div>
         </div>
+
+        <div id="viewBankTransferWhitelist" class="view-panel hidden">
+          <div class="filters">
+            <div>
+              <label>关键字</label>
+              <input id="bwKeyword" type="text" placeholder="姓名 / 备注">
+            </div>
+            <div>
+              <label>返回条数</label>
+              <input id="bwLimit" type="number" value="200" min="1" max="500">
+            </div>
+            <div class="checkbox-wrap">
+              <input id="bwActiveOnly" type="checkbox">
+              <label for="bwActiveOnly">仅启用项</label>
+            </div>
+            <div class="filter-actions">
+              <button id="bwLoadBtn" class="btn secondary">刷新白名单</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>姓名</th><th>启用</th><th>备注</th><th>操作</th></tr>
+              </thead>
+              <tbody id="bwBody"></tbody>
+            </table>
+          </div>
+        </div>
       </section>
 
       <aside class="panel form-panel">
@@ -148,6 +177,23 @@
             <button id="kResetBtn" class="btn ghost">清空表单</button>
           </div>
         </div>
+
+        <div id="whitelistFormCard" class="hidden">
+          <h3>银行卡个人转账白名单编辑</h3>
+          <div class="form-grid">
+            <div><label>姓名</label><input id="bwName" type="text" placeholder="徐凯"></div>
+            <div class="checkbox-wrap" style="align-self:end; margin-bottom:6px;">
+              <input id="bwIsActive" type="checkbox" checked>
+              <label for="bwIsActive">启用</label>
+            </div>
+            <div class="full"><label>备注</label><input id="bwNote" type="text" placeholder="银行卡个人转账计入消费白名单"></div>
+          </div>
+          <div class="actions">
+            <button id="bwSaveBtn" class="btn primary">保存白名单</button>
+            <button id="bwResetBtn" class="btn ghost">清空表单</button>
+          </div>
+          <p class="hint">仅影响招商银行流水 PDF 导入中的“银行卡个人转账”计入消费判断。</p>
+        </div>
       </aside>
     </main>
   </div>
@@ -160,6 +206,7 @@
       suggestionRows: [],
       merchantRows: [],
       keywordRows: [],
+      bankTransferWhitelistRows: [],
       privacyMaskAmounts: false,
     };
 
@@ -257,8 +304,10 @@
       document.getElementById("viewSuggestions").classList.toggle("hidden", view !== "suggestions");
       document.getElementById("viewMerchantMap").classList.toggle("hidden", view !== "merchant_map");
       document.getElementById("viewKeywordRules").classList.toggle("hidden", view !== "keyword_rules");
-      document.getElementById("merchantFormCard").classList.toggle("hidden", view === "keyword_rules");
+      document.getElementById("viewBankTransferWhitelist").classList.toggle("hidden", view !== "bank_transfer_whitelist");
+      document.getElementById("merchantFormCard").classList.toggle("hidden", !["suggestions", "merchant_map"].includes(view));
       document.getElementById("keywordFormCard").classList.toggle("hidden", view !== "keyword_rules");
+      document.getElementById("whitelistFormCard").classList.toggle("hidden", view !== "bank_transfer_whitelist");
     }
 
     function fillMerchantForm(merchant, category = "") {
@@ -275,6 +324,13 @@
       document.getElementById("kConfidence").value = row.confidence || "0.70";
       document.getElementById("kNote").value = row.note || "";
       setView("keyword_rules");
+    }
+
+    function fillBankTransferWhitelistForm(row = {}) {
+      document.getElementById("bwName").value = row.name || "";
+      document.getElementById("bwIsActive").checked = Number(row.is_active ?? 1) === 1;
+      document.getElementById("bwNote").value = row.note || "";
+      setView("bank_transfer_whitelist");
     }
 
     function renderSuggestionRows(rows) {
@@ -346,6 +402,25 @@
       `).join("");
     }
 
+    function renderBankTransferWhitelistRows(rows) {
+      const tbody = document.getElementById("bwBody");
+      if (!rows || rows.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="4">暂无白名单规则</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = rows.map(row => `
+        <tr>
+          <td>${escapeHtml(row.name || "")}</td>
+          <td>${Number(row.is_active || 0) === 1 ? "是" : "否"}</td>
+          <td>${escapeHtml(row.note || "")}</td>
+          <td class="actions-cell">
+            <button class="btn secondary small edit-bw-btn" data-row="${encodeURIComponent(JSON.stringify(row))}">编辑</button>
+            <button class="btn danger small del-bw-btn" data-name="${encodeURIComponent(row.name || "")}">删除</button>
+          </td>
+        </tr>
+      `).join("");
+    }
+
     async function loadSuggestions(options = {}) {
       const { silent = false } = options;
       const params = new URLSearchParams({
@@ -401,6 +476,25 @@
       if (!silent) setStatus(true, `关键词规则已更新：${data.summary.count} 条`);
     }
 
+    async function loadBankTransferWhitelist(options = {}) {
+      const { silent = false } = options;
+      const params = new URLSearchParams({
+        keyword: document.getElementById("bwKeyword").value.trim(),
+        limit: document.getElementById("bwLimit").value.trim() || "200",
+        active_only: document.getElementById("bwActiveOnly").checked ? "true" : "false",
+      });
+      const data = await api(`/api/rules/bank-transfer-whitelist?${params.toString()}`);
+      state.bankTransferWhitelistRows = data.rows || [];
+      renderBankTransferWhitelistRows(state.bankTransferWhitelistRows);
+      showMetrics([
+        { k: "转账白名单", v: data.summary.count },
+        { k: "启用项", v: data.summary.active_count },
+        { k: "关键字", v: data.summary.keyword || "-" },
+        { k: "数据文件", v: "bank_transfer_whitelist.csv" },
+      ]);
+      if (!silent) setStatus(true, `转账白名单已更新：${data.summary.count} 条`);
+    }
+
     async function saveMerchantRule() {
       const payload = {
         merchant_normalized: document.getElementById("mMerchant").value.trim(),
@@ -430,6 +524,17 @@
       setStatus(true, `${data.updated ? "已更新" : "已新增"}关键词规则：${data.row.pattern}`);
     }
 
+    async function saveBankTransferWhitelistRule() {
+      const payload = {
+        name: document.getElementById("bwName").value.trim(),
+        is_active: document.getElementById("bwIsActive").checked,
+        note: document.getElementById("bwNote").value.trim(),
+      };
+      const data = await api("/api/rules/bank-transfer-whitelist/upsert", "POST", payload);
+      await loadBankTransferWhitelist({ silent: true });
+      setStatus(true, `${data.updated ? "已更新" : "已新增"}转账白名单：${data.row.name}`);
+    }
+
     function resetMerchantForm() {
       document.getElementById("mMerchant").value = "";
       document.getElementById("mCategory").value = "";
@@ -446,6 +551,12 @@
       document.getElementById("kNote").value = "";
     }
 
+    function resetBankTransferWhitelistForm() {
+      document.getElementById("bwName").value = "";
+      document.getElementById("bwIsActive").checked = true;
+      document.getElementById("bwNote").value = "";
+    }
+
     function bindEvents() {
       Array.from(document.querySelectorAll("#ruleTabs .pill-tab")).forEach(btn => {
         btn.addEventListener("click", () => {
@@ -459,6 +570,7 @@
             loadSuggestions({ silent: true }),
             loadMerchantMap({ silent: true }),
             loadKeywordRules({ silent: true }),
+            loadBankTransferWhitelist({ silent: true }),
           ]);
           setStatus(true, "规则数据已全部刷新");
         } catch (err) {
@@ -469,10 +581,13 @@
       document.getElementById("sugLoadBtn").addEventListener("click", () => loadSuggestions().catch(err => setStatus(false, err.message || String(err))));
       document.getElementById("mapLoadBtn").addEventListener("click", () => loadMerchantMap().catch(err => setStatus(false, err.message || String(err))));
       document.getElementById("kwLoadBtn").addEventListener("click", () => loadKeywordRules().catch(err => setStatus(false, err.message || String(err))));
+      document.getElementById("bwLoadBtn").addEventListener("click", () => loadBankTransferWhitelist().catch(err => setStatus(false, err.message || String(err))));
       document.getElementById("mSaveBtn").addEventListener("click", () => saveMerchantRule().catch(err => setStatus(false, err.message || String(err))));
       document.getElementById("kSaveBtn").addEventListener("click", () => saveKeywordRule().catch(err => setStatus(false, err.message || String(err))));
+      document.getElementById("bwSaveBtn").addEventListener("click", () => saveBankTransferWhitelistRule().catch(err => setStatus(false, err.message || String(err))));
       document.getElementById("mResetBtn").addEventListener("click", resetMerchantForm);
       document.getElementById("kResetBtn").addEventListener("click", resetKeywordForm);
+      document.getElementById("bwResetBtn").addEventListener("click", resetBankTransferWhitelistForm);
 
       document.getElementById("sugBody").addEventListener("click", async (event) => {
         const target = event.target;
@@ -566,6 +681,34 @@
           }
         }
       });
+
+      document.getElementById("bwBody").addEventListener("click", async (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) return;
+
+        if (target.classList.contains("edit-bw-btn")) {
+          const raw = decodeURIComponent(target.getAttribute("data-row") || "{}");
+          try {
+            fillBankTransferWhitelistForm(JSON.parse(raw));
+          } catch {
+            setStatus(false, "白名单数据解析失败");
+          }
+          return;
+        }
+
+        if (target.classList.contains("del-bw-btn")) {
+          const name = decodeURIComponent(target.getAttribute("data-name") || "");
+          if (!name) return;
+          if (!window.confirm(`确认删除转账白名单：${name} ?`)) return;
+          try {
+            await api("/api/rules/bank-transfer-whitelist/delete", "POST", { name });
+            await loadBankTransferWhitelist({ silent: true });
+            setStatus(true, `已删除转账白名单：${name}`);
+          } catch (err) {
+            setStatus(false, err.message || String(err));
+          }
+        }
+      });
     }
 
     async function init() {
@@ -576,6 +719,7 @@
         loadSuggestions({ silent: true }),
         loadMerchantMap({ silent: true }),
         loadKeywordRules({ silent: true }),
+        loadBankTransferWhitelist({ silent: true }),
       ]);
       setStatus(true, "规则数据已加载");
     }

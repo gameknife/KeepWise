@@ -566,6 +566,80 @@ def assert_cmb_bank_pdf_debit_merchant_classification() -> None:
             f"got={import_rows[0].get('merchant_normalized')}"
         )
 
+    tx_whitelist = cmb_bank_pdf_mod.BankPdfTransaction(
+        page=1,
+        date="2026-01-16",
+        currency="CNY",
+        amount_text="-200.00",
+        balance_text="800.00",
+        raw_detail="转账汇款 徐凯 622500000000",
+        summary="转账汇款",
+        counterparty="徐凯 622500000000",
+    )
+    tx_non_whitelist = cmb_bank_pdf_mod.BankPdfTransaction(
+        page=1,
+        date="2026-01-17",
+        currency="CNY",
+        amount_text="-300.00",
+        balance_text="500.00",
+        raw_detail="转账汇款 张三 622500000001",
+        summary="转账汇款",
+        counterparty="张三 622500000001",
+    )
+    rows2, _ = cmb_bank_pdf_mod.classify_transactions(
+        header,
+        [tx_whitelist, tx_non_whitelist],
+        transfer_whitelist={"徐凯"},
+        merchant_map={},
+        category_rules=[],
+        review_threshold=0.70,
+    )
+    if len(rows2) != 2:
+        raise AssertionError(f"CMB bank PDF whitelist classify row count mismatch: got={len(rows2)}")
+    if rows2[0].rule_tag != "bank_transfer_whitelist" or not rows2[0].include_in_import:
+        raise AssertionError(f"CMB bank PDF whitelist include mismatch: got={rows2[0].rule_tag}")
+    if rows2[1].rule_tag != "skip_bank_transfer_non_whitelist" or rows2[1].include_in_import:
+        raise AssertionError(f"CMB bank PDF non-whitelist skip mismatch: got={rows2[1].rule_tag}")
+
+
+def assert_bank_transfer_whitelist_rule_api(root: Path, tmp_dir: Path) -> None:
+    cfg = app_mod.AppConfig(
+        root_dir=root,
+        work_dir=tmp_dir / "work",
+        rules_dir=tmp_dir / "rules",
+        db_path=tmp_dir / "dummy.db",
+        migrations_dir=root / "db" / "migrations",
+        assets_dir=root / "scripts" / "assets",
+        session_dir=tmp_dir / "sessions",
+    )
+    initial = app_mod.query_bank_transfer_whitelist_rules(cfg, {"limit": ["50"]})
+    initial_names = {str(row["name"]) for row in initial["rows"]}
+    if "徐凯" not in initial_names:
+        raise AssertionError("Bank transfer whitelist defaults should include 徐凯")
+
+    saved = app_mod.upsert_bank_transfer_whitelist_rule(
+        cfg,
+        {"name": "王五", "is_active": False, "note": "regression"},
+    )
+    if not (saved["row"]["name"] == "王五" and int(saved["row"]["is_active"]) == 0):
+        raise AssertionError(f"Bank transfer whitelist upsert mismatch: got={saved}")
+
+    active_only = app_mod.query_bank_transfer_whitelist_rules(cfg, {"active_only": ["true"], "limit": ["50"]})
+    if any(str(row["name"]) == "王五" for row in active_only["rows"]):
+        raise AssertionError("Inactive whitelist row should not appear when active_only=true")
+
+    app_mod.upsert_bank_transfer_whitelist_rule(
+        cfg,
+        {"name": "王五", "is_active": True, "note": "regression2"},
+    )
+    names = app_mod.load_bank_transfer_whitelist_names(cfg)
+    if "王五" not in names:
+        raise AssertionError("Active whitelist name should be loaded by load_bank_transfer_whitelist_names")
+
+    deleted = app_mod.delete_bank_transfer_whitelist_rule(cfg, {"name": "王五"})
+    if not bool(deleted["deleted"]):
+        raise AssertionError("Bank transfer whitelist delete should return deleted=true")
+
 
 def run_regression(root: Path) -> dict[str, Any]:
     manual_rows, manual_errors, _ = yzxy_mod.parse_manual_rows(
@@ -608,6 +682,7 @@ def run_regression(root: Path) -> dict[str, Any]:
         tmp_path = Path(tmp_dir)
         assert_incremental_eml_import_dedupe(root, tmp_path)
         assert_import_csv_explicit_fields(root, tmp_path)
+        assert_bank_transfer_whitelist_rule_api(root, tmp_path)
 
         db_path = Path(tmp_dir) / "ledger_regression.db"
         migrate_mod.apply_migrations(db_path, root / "db" / "migrations")
@@ -1742,6 +1817,7 @@ def run_regression(root: Path) -> dict[str, Any]:
             "eml_incremental_dedupe_ok": True,
             "salary_income_overview_ok": True,
             "consumption_report_ok": True,
+            "bank_transfer_whitelist_rules_ok": True,
         }
 
 
@@ -1787,6 +1863,7 @@ def main() -> None:
     print(f"  eml_incremental_dedupe_ok: {result['eml_incremental_dedupe_ok']}")
     print(f"  salary_income_overview_ok: {result['salary_income_overview_ok']}")
     print(f"  consumption_report_ok: {result['consumption_report_ok']}")
+    print(f"  bank_transfer_whitelist_rules_ok: {result['bank_transfer_whitelist_rules_ok']}")
 
 
 if __name__ == "__main__":
