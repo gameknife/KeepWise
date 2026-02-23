@@ -13,6 +13,10 @@ from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
 
+VALID_TX_DIRECTIONS = {"expense", "income", "transfer", "other"}
+VALID_ACCOUNT_TYPES = {"bank", "credit_card", "investment", "cash", "wallet", "other", "liability", "real_estate"}
+MANUAL_TX_EXCLUDE_REASON_PREFIX = "[manual_tx_exclude]"
+
 
 def parse_amount_to_cents(raw: str) -> int:
     text = (raw or "").strip().replace(",", "")
@@ -62,6 +66,29 @@ def account_id_from_last4(last4: str) -> str:
 def account_name_from_last4(last4: str) -> str:
     clean = (last4 or "").strip()
     return f"招行信用卡尾号{clean}" if clean else "招行信用卡"
+
+
+def normalize_direction(raw: str | None, *, fallback_statement_category: str) -> str:
+    text = (raw or "").strip().lower()
+    if text in VALID_TX_DIRECTIONS:
+        return text
+    if text:
+        raise ValueError(f"direction 不支持: {raw}")
+    return direction_from_statement_category(fallback_statement_category)
+
+
+def normalize_currency(raw: str | None) -> str:
+    text = (raw or "").strip().upper()
+    return text or "CNY"
+
+
+def normalize_account_type(raw: str | None) -> str:
+    text = (raw or "").strip()
+    if not text:
+        return "credit_card"
+    if text not in VALID_ACCOUNT_TYPES:
+        raise ValueError(f"account_type 不支持: {raw}")
+    return text
 
 
 def category_id_from_name(name: str) -> str:
@@ -118,16 +145,23 @@ def ensure_schema_ready(conn: sqlite3.Connection) -> None:
         raise RuntimeError(f"数据库缺少必要表: {', '.join(sorted(missing))}。请先运行 migrate_ledger_db.py")
 
 
-def upsert_account(conn: sqlite3.Connection, account_id: str, account_name: str) -> None:
+def upsert_account(
+    conn: sqlite3.Connection,
+    account_id: str,
+    account_name: str,
+    *,
+    account_type: str = "credit_card",
+) -> None:
     conn.execute(
         """
         INSERT INTO accounts(id, name, account_type, currency, initial_balance_cents)
-        VALUES (?, ?, 'credit_card', 'CNY', 0)
+        VALUES (?, ?, ?, 'CNY', 0)
         ON CONFLICT(id) DO UPDATE SET
             name=excluded.name,
+            account_type=excluded.account_type,
             updated_at=datetime('now')
         """,
-        (account_id, account_name),
+        (account_id, account_name, account_type),
     )
 
 
@@ -157,8 +191,11 @@ def upsert_transaction(
 ) -> None:
     amount_cents = parse_amount_to_cents(row.get("amount_rmb") or "")
     description = (row.get("description") or "").strip()
-    merchant_normalized = (row.get("merchant_normalized") or "").strip()
+    merchant = (row.get("merchant") or "").strip() or description
+    merchant_normalized = (row.get("merchant_normalized") or "").strip() or merchant
     statement_category = (row.get("statement_category") or "").strip()
+    currency = normalize_currency(row.get("currency"))
+    direction = normalize_direction(row.get("direction"), fallback_statement_category=statement_category)
 
     conn.execute(
         """
@@ -167,13 +204,14 @@ def upsert_transaction(
             description, merchant, merchant_normalized, statement_category, category_id, account_id,
             source_type, source_file, import_job_id, confidence, needs_review, excluded_in_analysis, exclude_reason
         )
-        VALUES (?, ?, ?, ?, ?, ?, 'CNY', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
             external_ref=excluded.external_ref,
             occurred_at=excluded.occurred_at,
             posted_at=excluded.posted_at,
             month_key=excluded.month_key,
             amount_cents=excluded.amount_cents,
+            currency=excluded.currency,
             direction=excluded.direction,
             description=excluded.description,
             merchant=excluded.merchant,
@@ -186,8 +224,18 @@ def upsert_transaction(
             import_job_id=excluded.import_job_id,
             confidence=excluded.confidence,
             needs_review=excluded.needs_review,
-            excluded_in_analysis=excluded.excluded_in_analysis,
-            exclude_reason=excluded.exclude_reason,
+            excluded_in_analysis=CASE
+                WHEN transactions.excluded_in_analysis = 1
+                     AND SUBSTR(COALESCE(transactions.exclude_reason, ''), 1, 19) = '[manual_tx_exclude]'
+                THEN 1
+                ELSE excluded.excluded_in_analysis
+            END,
+            exclude_reason=CASE
+                WHEN transactions.excluded_in_analysis = 1
+                     AND SUBSTR(COALESCE(transactions.exclude_reason, ''), 1, 19) = '[manual_tx_exclude]'
+                THEN transactions.exclude_reason
+                ELSE excluded.exclude_reason
+            END,
             updated_at=datetime('now')
         """,
         (
@@ -197,9 +245,10 @@ def upsert_transaction(
             (row.get("post_date") or "").strip() or None,
             resolve_month_key(row),
             amount_cents,
-            direction_from_statement_category(statement_category),
+            currency,
+            direction,
             description,
-            description,
+            merchant,
             merchant_normalized,
             statement_category,
             category_id,
@@ -265,15 +314,21 @@ def import_csv(
                 try:
                     category_name = (row.get("expense_category") or "").strip() or "待分类"
                     category_id = category_id_from_name(category_name)
-                    card_last4 = (row.get("card_last4") or "").strip()
-                    account_id = account_id_from_last4(card_last4)
-                    account_name = account_name_from_last4(card_last4)
+                    account_id = (row.get("account_id") or "").strip()
+                    account_name = (row.get("account_name") or "").strip()
+                    account_type = normalize_account_type(row.get("account_type"))
+                    if not account_id or not account_name:
+                        card_last4 = (row.get("card_last4") or "").strip()
+                        account_id = account_id or account_id_from_last4(card_last4)
+                        account_name = account_name or account_name_from_last4(card_last4)
+                    else:
+                        card_last4 = (row.get("card_last4") or "").strip()
                     identity_base = transaction_identity_base(row)
                     occurrence_index = occurrence_counters.get(identity_base, 0) + 1
                     occurrence_counters[identity_base] = occurrence_index
 
                     with conn:
-                        upsert_account(conn, account_id, account_name)
+                        upsert_account(conn, account_id, account_name, account_type=account_type)
                         upsert_category(conn, category_id, category_name)
                         tx_id = transaction_id(
                             row,

@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 import import_classified_to_ledger as ledger_import_mod
+import import_cmb_bank_pdf_transactions as cmb_bank_pdf_mod
 import import_youzhiyouxing_investments as yzxy_mod
 import m0_web_app as app_mod
 import migrate_ledger_db as migrate_mod
@@ -107,11 +108,13 @@ def build_sample_dataset(conn: sqlite3.Connection) -> dict[str, str]:
     cash_account_id = "acct_cash_regression"
     re_account_id = "acct_re_regression"
     tx_account_id = "acct_tx_regression"
+    bank_income_account_id = "acct_bank_income_regression"
 
     insert_account(conn, inv_account_id, "回归测试投资账户", "investment")
     insert_account(conn, cash_account_id, "回归测试现金账户", "cash")
     insert_account(conn, re_account_id, "回归测试不动产账户", "other")
     insert_account(conn, tx_account_id, "回归测试信用卡", "credit_card")
+    insert_account(conn, bank_income_account_id, "回归测试银行卡", "bank")
 
     # Fixed sample for Modified Dietz checks.
     insert_investment(
@@ -203,6 +206,73 @@ def build_sample_dataset(conn: sqlite3.Connection) -> dict[str, str]:
         """,
         (tx_account_id,),
     )
+    conn.execute(
+        """
+        INSERT INTO categories(id, name, level, budget_enabled, is_active)
+        VALUES (?, '工资收入', 1, 1, 1)
+        ON CONFLICT(id) DO UPDATE SET name='工资收入', updated_at=datetime('now')
+        """,
+        (ledger_import_mod.category_id_from_name("工资收入"),),
+    )
+    conn.execute(
+        """
+        INSERT INTO categories(id, name, level, budget_enabled, is_active)
+        VALUES (?, '公积金收入', 1, 1, 1)
+        ON CONFLICT(id) DO UPDATE SET name='公积金收入', updated_at=datetime('now')
+        """,
+        (ledger_import_mod.category_id_from_name("公积金收入"),),
+    )
+    conn.execute(
+        """
+        INSERT INTO transactions(
+            id, external_ref, occurred_at, posted_at, month_key, amount_cents, currency, direction,
+            description, merchant, merchant_normalized, statement_category, category_id, account_id,
+            source_type, source_file, import_job_id, confidence, needs_review, excluded_in_analysis, exclude_reason
+        )
+        VALUES (
+            'tx_income_salary_1', 'cmb_bank_pdf:tx_income_salary_1', '2026-01-10', '2026-01-10', '2026-01',
+            5000000, 'CNY', 'income',
+            '代发工资 测试公司A 123456789012', '测试公司A', '测试公司A', '代发工资', ?, ?,
+            'cmb_bank_pdf', 'bank_stmt.pdf', NULL, 0.99, 0, 0, ''
+        )
+        ON CONFLICT(id) DO UPDATE SET amount_cents=excluded.amount_cents, updated_at=datetime('now')
+        """,
+        (ledger_import_mod.category_id_from_name("工资收入"), bank_income_account_id),
+    )
+    conn.execute(
+        """
+        INSERT INTO transactions(
+            id, external_ref, occurred_at, posted_at, month_key, amount_cents, currency, direction,
+            description, merchant, merchant_normalized, statement_category, category_id, account_id,
+            source_type, source_file, import_job_id, confidence, needs_review, excluded_in_analysis, exclude_reason
+        )
+        VALUES (
+            'tx_income_salary_2', 'cmb_bank_pdf:tx_income_salary_2', '2026-02-10', '2026-02-10', '2026-02',
+            5100000, 'CNY', 'income',
+            '代发工资 测试公司A 123456789012', '测试公司A', '测试公司A', '代发工资', ?, ?,
+            'cmb_bank_pdf', 'bank_stmt.pdf', NULL, 0.99, 0, 0, ''
+        )
+        ON CONFLICT(id) DO UPDATE SET amount_cents=excluded.amount_cents, updated_at=datetime('now')
+        """,
+        (ledger_import_mod.category_id_from_name("工资收入"), bank_income_account_id),
+    )
+    conn.execute(
+        """
+        INSERT INTO transactions(
+            id, external_ref, occurred_at, posted_at, month_key, amount_cents, currency, direction,
+            description, merchant, merchant_normalized, statement_category, category_id, account_id,
+            source_type, source_file, import_job_id, confidence, needs_review, excluded_in_analysis, exclude_reason
+        )
+        VALUES (
+            'tx_income_hf_1', 'cmb_bank_pdf:tx_income_hf_1', '2026-02-11', '2026-02-11', '2026-02',
+            700000, 'CNY', 'income',
+            '代发住房公积金 公积金中心 123456789012', '公积金中心', '公积金中心', '代发住房公积金', ?, ?,
+            'cmb_bank_pdf', 'bank_stmt.pdf', NULL, 0.99, 0, 0, ''
+        )
+        ON CONFLICT(id) DO UPDATE SET amount_cents=excluded.amount_cents, updated_at=datetime('now')
+        """,
+        (ledger_import_mod.category_id_from_name("公积金收入"), bank_income_account_id),
+    )
 
     return {
         "investment_account_id": inv_account_id,
@@ -247,6 +317,13 @@ def write_classified_csv(path: Path, rows: list[dict[str, str]]) -> None:
         "excluded_in_analysis",
         "exclude_reason",
     ]
+    extra_fields: list[str] = []
+    base_fieldnames = set(fieldnames)
+    for row in rows:
+        for key in row.keys():
+            if key not in base_fieldnames and key not in extra_fields:
+                extra_fields.append(key)
+    fieldnames.extend(extra_fields)
     with path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
@@ -311,6 +388,27 @@ def assert_incremental_eml_import_dedupe(root: Path, tmp_dir: Path) -> None:
         source_type="cmb_eml",
         replace_existing_source_transactions=False,
     )
+    conn = sqlite3.connect(db_path)
+    try:
+        tx_id = conn.execute(
+            "SELECT id FROM transactions WHERE source_type='cmb_eml' AND description='测试交易A' LIMIT 1"
+        ).fetchone()
+        if not tx_id:
+            raise AssertionError("Incremental EML dedupe setup failed: missing 测试交易A after first import")
+        conn.execute(
+            """
+            UPDATE transactions
+            SET excluded_in_analysis = 1,
+                exclude_reason = ?,
+                updated_at = datetime('now')
+            WHERE id = ?
+            """,
+            (f"{ledger_import_mod.MANUAL_TX_EXCLUDE_REASON_PREFIX} regression_manual_exclude", str(tx_id[0])),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
     ledger_import_mod.import_csv(
         db_path,
         csv_two,
@@ -339,8 +437,134 @@ def assert_incremental_eml_import_dedupe(root: Path, tmp_dir: Path) -> None:
         )
         if dup_count != 0:
             raise AssertionError(f"Incremental EML import dedupe failed: duplicate groups={dup_count}")
+        preserved = conn.execute(
+            """
+            SELECT excluded_in_analysis, exclude_reason
+            FROM transactions
+            WHERE source_type='cmb_eml' AND description='测试交易A'
+            LIMIT 1
+            """
+        ).fetchone()
+        if not preserved or int(preserved[0]) != 1:
+            raise AssertionError("Manual exclusion state was not preserved across duplicate import")
+        if not str(preserved[1] or "").startswith(ledger_import_mod.MANUAL_TX_EXCLUDE_REASON_PREFIX):
+            raise AssertionError("Manual exclusion reason prefix lost across duplicate import")
     finally:
         conn.close()
+
+
+def assert_import_csv_explicit_fields(root: Path, tmp_dir: Path) -> None:
+    db_path = tmp_dir / "import_explicit_fields.db"
+    migrate_mod.apply_migrations(db_path, root / "db" / "migrations")
+
+    csv_path = tmp_dir / "classified_bank_income.csv"
+    write_classified_csv(
+        csv_path,
+        [
+            {
+                "source_file": "cmb_bank_statement_9258_2026-01-01_2026-01-31.pdf",
+                "source_path": "cmb_bank_statement_9258_2026-01-01_2026-01-31.pdf",
+                "statement_year": "2026",
+                "statement_month": "1",
+                "statement_category": "代发工资",
+                "trans_date": "2026-01-10",
+                "post_date": "2026-01-10",
+                "description": "代发工资 测试公司A 123456789012",
+                "merchant": "测试公司A",
+                "merchant_normalized": "测试公司A",
+                "amount_rmb": "12345.67",
+                "card_last4": "9258",
+                "original_amount": "",
+                "country_area": "",
+                "expense_category": "工资收入",
+                "classify_source": "test",
+                "confidence": "0.99",
+                "needs_review": "0",
+                "excluded_in_analysis": "0",
+                "exclude_reason": "",
+                "direction": "income",
+                "currency": "CNY",
+                "account_id": "acct_cmb_debit_9258",
+                "account_name": "招行借记卡尾号9258",
+                "account_type": "bank",
+            }
+        ],
+    )
+    ledger_import_mod.import_csv(
+        db_path,
+        csv_path,
+        source_type="cmb_bank_pdf",
+        replace_existing_source_transactions=False,
+    )
+
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        row = conn.execute(
+            """
+            SELECT t.direction, t.currency, t.amount_cents, a.account_type, a.name
+            FROM transactions t
+            JOIN accounts a ON a.id = t.account_id
+            WHERE t.source_type = 'cmb_bank_pdf'
+            LIMIT 1
+            """
+        ).fetchone()
+        if not row:
+            raise AssertionError("Explicit field import regression failed: no transaction imported")
+        if str(row["direction"]) != "income":
+            raise AssertionError(f"Explicit field import direction mismatch: got={row['direction']}")
+        if str(row["currency"]) != "CNY":
+            raise AssertionError(f"Explicit field import currency mismatch: got={row['currency']}")
+        if int(row["amount_cents"]) != 1_234_567:
+            raise AssertionError(f"Explicit field import amount mismatch: got={row['amount_cents']}")
+        if str(row["account_type"]) != "bank":
+            raise AssertionError(f"Explicit field import account_type mismatch: got={row['account_type']}")
+    finally:
+        conn.close()
+
+
+def assert_cmb_bank_pdf_debit_merchant_classification() -> None:
+    header = cmb_bank_pdf_mod.PdfHeader(
+        account_no="1234567890123456",
+        account_last4="3456",
+        range_start="2026-01-01",
+        range_end="2026-01-31",
+    )
+    tx = cmb_bank_pdf_mod.BankPdfTransaction(
+        page=1,
+        date="2026-01-15",
+        currency="CNY",
+        amount_text="-88.00",
+        balance_text="1000.00",
+        raw_detail="快捷支付 财付通-肯德基",
+        summary="快捷支付",
+        counterparty="财付通-肯德基",
+    )
+    rows, _preview = cmb_bank_pdf_mod.classify_transactions(
+        header,
+        [tx],
+        merchant_map={"肯德基": ("餐饮", 0.98, "test")},
+        category_rules=[],
+        review_threshold=0.70,
+    )
+    if len(rows) != 1:
+        raise AssertionError(f"CMB bank PDF classify row count mismatch: got={len(rows)}")
+    row = rows[0]
+    if row.expense_category != "餐饮":
+        raise AssertionError(
+            "CMB bank PDF debit merchant category mismatch: "
+            f"expected=餐饮, got={row.expense_category}"
+        )
+    if int(row.needs_review) != 0:
+        raise AssertionError(f"CMB bank PDF debit merchant needs_review mismatch: got={row.needs_review}")
+    import_rows = cmb_bank_pdf_mod._build_import_rows(header, rows)  # noqa: SLF001
+    if len(import_rows) != 1:
+        raise AssertionError(f"CMB bank PDF import row count mismatch: got={len(import_rows)}")
+    if str(import_rows[0].get("merchant_normalized")) != "肯德基":
+        raise AssertionError(
+            "CMB bank PDF merchant_normalized mismatch: "
+            f"got={import_rows[0].get('merchant_normalized')}"
+        )
 
 
 def run_regression(root: Path) -> dict[str, Any]:
@@ -378,9 +602,12 @@ def run_regression(root: Path) -> dict[str, Any]:
             f"got={[int(row.total_assets_cents) for row in summary_rows]}"
         )
 
+    assert_cmb_bank_pdf_debit_merchant_classification()
+
     with tempfile.TemporaryDirectory(prefix="keepwise-m1-regression-") as tmp_dir:
         tmp_path = Path(tmp_dir)
         assert_incremental_eml_import_dedupe(root, tmp_path)
+        assert_import_csv_explicit_fields(root, tmp_path)
 
         db_path = Path(tmp_dir) / "ledger_regression.db"
         migrate_mod.apply_migrations(db_path, root / "db" / "migrations")
@@ -1284,6 +1511,73 @@ def run_regression(root: Path) -> dict[str, Any]:
                 f"expected={expected_custom_required_assets_cents}, "
                 f"got={fire_progress_custom_rate['metrics']['required_assets_cents']}"
             )
+        income_overview = app_mod.query_salary_income_overview(cfg, {"year": ["2026"]})
+        if int(income_overview["summary"]["salary_total_cents"]) != 10_100_000:
+            raise AssertionError(
+                "Salary income overview salary total mismatch: "
+                f"got={income_overview['summary']['salary_total_cents']}"
+            )
+        if int(income_overview["summary"]["housing_fund_total_cents"]) != 700_000:
+            raise AssertionError(
+                "Salary income overview housing fund total mismatch: "
+                f"got={income_overview['summary']['housing_fund_total_cents']}"
+            )
+        if int(income_overview["summary"]["employer_count"]) != 1:
+            raise AssertionError(
+                "Salary income overview employer_count mismatch: "
+                f"got={income_overview['summary']['employer_count']}"
+            )
+        feb_income_row = next((row for row in income_overview["rows"] if str(row["month_key"]) == "2026-02"), None)
+        if not feb_income_row or int(feb_income_row["total_income_cents"]) != 5_800_000:
+            raise AssertionError(
+                "Salary income overview monthly row mismatch for 2026-02: "
+                f"row={feb_income_row}"
+            )
+
+        tx_query_sorted = app_mod.query_transactions(
+            cfg,
+            {
+                "month_key": ["2026-01"],
+                "sort": ["amount_desc"],
+                "limit": ["20"],
+            },
+        )
+        tx_rows_202601 = tx_query_sorted["rows"]
+        if not tx_rows_202601:
+            raise AssertionError("Transaction query should return rows for 2026-01")
+        if abs(int(tx_rows_202601[0]["amount_cents"])) < abs(int(tx_rows_202601[-1]["amount_cents"])):
+            raise AssertionError("Transaction query amount_desc sorting mismatch")
+
+        exclusion_update = app_mod.update_transaction_analysis_exclusion(
+            cfg,
+            {
+                "id": "tx_reg_1",
+                "action": "exclude",
+                "reason": "regression anomaly",
+            },
+        )
+        if not bool(exclusion_update["manual_excluded"]):
+            raise AssertionError("Transaction manual exclusion update should mark manual_excluded=true")
+        tx_query_after_exclude = app_mod.query_transactions(
+            cfg,
+            {
+                "month_key": ["2026-01"],
+                "keyword": ["回归测试餐饮消费"],
+                "limit": ["10"],
+            },
+        )
+        if not tx_query_after_exclude["rows"]:
+            raise AssertionError("Transaction query should still return manually excluded row")
+        row_after_exclude = tx_query_after_exclude["rows"][0]
+        if int(row_after_exclude["excluded_in_analysis"]) != 1 or not bool(row_after_exclude["manual_excluded"]):
+            raise AssertionError("Transaction query should reflect manual exclusion state")
+        app_mod.update_transaction_analysis_exclusion(
+            cfg,
+            {
+                "id": "tx_reg_1",
+                "action": "restore",
+            },
+        )
         app_mod.delete_monthly_budget_item(cfg, {"id": custom_budget_item["id"]})
 
         conn = sqlite3.connect(db_path)
@@ -1420,6 +1714,7 @@ def run_regression(root: Path) -> dict[str, Any]:
             "admin_reset_deleted_rows": reset_result["summary"]["deleted_rows"],
             "admin_transaction_reset_ok": True,
             "eml_incremental_dedupe_ok": True,
+            "salary_income_overview_ok": True,
         }
 
 
@@ -1463,6 +1758,7 @@ def main() -> None:
     print(f"  admin_reset_deleted_rows: {result['admin_reset_deleted_rows']}")
     print(f"  admin_transaction_reset_ok: {result['admin_transaction_reset_ok']}")
     print(f"  eml_incremental_dedupe_ok: {result['eml_incremental_dedupe_ok']}")
+    print(f"  salary_income_overview_ok: {result['salary_income_overview_ok']}")
 
 
 if __name__ == "__main__":

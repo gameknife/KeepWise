@@ -23,6 +23,7 @@
         <button class="tab-btn" data-tab="tab-return">收益分析</button>
         <button class="tab-btn" data-tab="tab-wealth">财富总览</button>
         <button class="tab-btn" data-tab="tab-budget">预算与FIRE</button>
+        <button class="tab-btn" data-tab="tab-income">收入分析</button>
         <button class="tab-btn" data-tab="tab-query">基础查询</button>
         <button class="tab-btn" data-tab="tab-admin">高级管理</button>
       </div>
@@ -30,7 +31,7 @@
 
     <section id="tab-import" class="panel">
       <h2>导入中心</h2>
-      <p class="hint">先预览再确认导入。EML 支持多文件；有知有行支持 CSV / XLSX。</p>
+      <p class="hint">先预览再确认导入。支持 EML、多资产文件，以及招商银行银行流水 PDF（补充房贷/借记卡消费/工资）。</p>
 
       <h3>EML 导入</h3>
       <div class="row">
@@ -74,6 +75,27 @@
         <table>
           <thead><tr><th>错误信息</th></tr></thead>
           <tbody id="yzxyErrorsBody"></tbody>
+        </table>
+      </div>
+
+      <h3 style="margin-top:16px">招商银行银行流水 PDF（补充消费/收入）</h3>
+      <div class="row">
+        <div>
+          <label>选择流水 PDF 文件</label>
+          <input id="cmbBankPdfFile" type="file" accept=".pdf,application/pdf">
+        </div>
+        <div></div>
+      </div>
+      <div class="actions">
+        <button id="cmbBankPdfPreviewBtn" class="btn secondary">预览 PDF</button>
+        <button id="cmbBankPdfImportBtn" class="btn primary">确认导入 PDF</button>
+      </div>
+      <div id="cmbBankPdfStatus" class="status hidden"></div>
+      <div id="cmbBankPdfMetrics" class="grid-metrics hidden"></div>
+      <div class="table-wrap hidden" id="cmbBankPdfSamplesWrap">
+        <table>
+          <thead><tr><th>样本类型</th><th>日期</th><th>金额</th><th>对手信息</th></tr></thead>
+          <tbody id="cmbBankPdfSamplesBody"></tbody>
         </table>
       </div>
     </section>
@@ -371,6 +393,53 @@
       </div>
     </section>
 
+    <section id="tab-income" class="panel hidden">
+      <h2>收入分析（工资 / 公积金）</h2>
+      <p class="hint">基于招商银行银行流水 PDF 导入结果，展示工资与公积金收入的年内汇总、月度分布与工资来源。</p>
+
+      <div class="row-3">
+        <div>
+          <label>统计年度</label>
+          <input id="incomeYear" type="number" min="2000" max="2100" step="1">
+        </div>
+        <div></div>
+        <div></div>
+      </div>
+      <div class="actions">
+        <button id="incomeRefreshBtn" class="btn primary" type="button">刷新收入分析</button>
+      </div>
+
+      <div id="incomeStatus" class="status hidden"></div>
+      <div id="incomeMetrics" class="grid-metrics hidden"></div>
+
+      <h3 style="margin-top:14px">月度收入（工资 / 公积金）</h3>
+      <div class="table-wrap hidden" id="incomeMonthlyWrap">
+        <table>
+          <thead>
+            <tr>
+              <th>月份</th>
+              <th>工资(元)</th>
+              <th>工资笔数</th>
+              <th>公积金(元)</th>
+              <th>公积金笔数</th>
+              <th>合计收入(元)</th>
+            </tr>
+          </thead>
+          <tbody id="incomeMonthlyBody"></tbody>
+        </table>
+      </div>
+
+      <h3 style="margin-top:14px">工资来源（雇主）</h3>
+      <div class="table-wrap hidden" id="incomeEmployerWrap">
+        <table>
+          <thead>
+            <tr><th>雇主</th><th>工资收入(元)</th><th>笔数</th></tr>
+          </thead>
+          <tbody id="incomeEmployerBody"></tbody>
+        </table>
+      </div>
+    </section>
+
     <section id="tab-query" class="panel hidden">
       <h2>基础查询</h2>
       <p class="hint">提供交易、投资、非投资资产记录的筛选与列表。</p>
@@ -467,6 +536,15 @@
           </select>
         </div>
         <div><label>关键词</label><input id="qTxKeyword" type="text"></div>
+        <div>
+          <label>排序</label>
+          <select id="qTxSort">
+            <option value="date_desc">按日期（新到旧）</option>
+            <option value="amount_desc">按金额（绝对值降序）</option>
+            <option value="amount_asc">按金额（绝对值升序）</option>
+            <option value="date_asc">按日期（旧到新）</option>
+          </select>
+        </div>
         <div><label>limit</label><input id="qTxLimit" type="number" value="100"></div>
       </div>
       <div class="actions">
@@ -475,7 +553,7 @@
       <div id="qTxMetrics" class="grid-metrics hidden"></div>
       <div class="table-wrap hidden" id="qTxWrap">
         <table>
-          <thead><tr><th>日期</th><th>商户</th><th>摘要</th><th>金额(元)</th><th>分类</th><th>来源</th></tr></thead>
+          <thead><tr><th>日期</th><th>商户</th><th>摘要</th><th>金额(元)</th><th>分类</th><th>来源</th><th>统计状态</th><th>操作</th></tr></thead>
           <tbody id="qTxBody"></tbody>
         </table>
       </div>
@@ -558,10 +636,10 @@
 
       <div class="actions">
         <button id="adminLoadStatsBtn" class="btn secondary">查看数据库数据量</button>
-        <button id="adminResetTxBtn" class="btn danger">仅清理交易数据（EML）</button>
+        <button id="adminResetTxBtn" class="btn danger">仅清理交易数据（EML/PDF）</button>
         <button id="adminResetDbBtn" class="btn danger">清空全部数据库数据</button>
       </div>
-      <p class="hint">“仅清理交易数据”会清空交易流水、对账记录，以及交易相关导入任务（`cmb_eml`），不会影响投资/资产/预算数据。</p>
+      <p class="hint">“仅清理交易数据”会清空交易流水、对账记录，以及交易相关导入任务（`cmb_eml` / `cmb_bank_pdf`），不会影响投资/资产/预算数据。</p>
       <div id="adminStatus" class="status hidden"></div>
       <div id="adminMetrics" class="grid-metrics hidden"></div>
       <div class="table-wrap hidden" id="adminRowsWrap">
@@ -585,12 +663,15 @@
     const state = {
       emlPreviewToken: "",
       yzxyPreviewToken: "",
+      cmbBankPdfPreviewToken: "",
       investmentAccounts: [],
       accountCatalogRows: [],
       refreshReturnAnalytics: null,
       refreshReturnBatchAnalytics: null,
       refreshWealthAnalytics: null,
       refreshBudgetAnalytics: null,
+      refreshIncomeAnalytics: null,
+      refreshTransactionQuery: null,
       refreshInvestmentQuery: null,
       refreshAssetQuery: null,
       renderAccountCatalog: null,
@@ -1739,6 +1820,98 @@
           setStatus(yzxyStatus, false, err.message || String(err));
         }
       });
+
+      const cmbBankPdfFile = document.getElementById("cmbBankPdfFile");
+      const cmbBankPdfStatus = document.getElementById("cmbBankPdfStatus");
+      const cmbBankPdfMetrics = document.getElementById("cmbBankPdfMetrics");
+      const cmbBankPdfSamplesWrap = document.getElementById("cmbBankPdfSamplesWrap");
+      const cmbBankPdfSamplesBody = document.getElementById("cmbBankPdfSamplesBody");
+
+      function renderBankPdfPreview(preview) {
+        const summary = preview?.summary || {};
+        const ruleCounts = preview?.rule_counts || {};
+        showMetrics(cmbBankPdfMetrics, [
+          { k: "总记录数", v: summary.total_records ?? "-" },
+          { k: "可导入记录", v: summary.import_rows_count ?? "-" },
+          { k: "支出记录", v: summary.expense_rows_count ?? "-" },
+          { k: "收入记录", v: summary.income_rows_count ?? "-" },
+          { k: "工资规则命中", v: ruleCounts.salary ?? 0 },
+          { k: "房贷固定月供", v: ruleCounts.mortgage_fixed ?? 0 },
+          { k: "微信转账/红包", v: ruleCounts.wechat_transfer_redpacket ?? 0 },
+          { k: "非人民币忽略", v: ruleCounts.skip_non_cny ?? 0 },
+        ]);
+
+        const sampleRows = [];
+        for (const [kind, rows] of Object.entries(preview?.samples || {})) {
+          for (const row of (rows || [])) {
+            sampleRows.push({
+              kind,
+              date: row.date || "-",
+              amount: row.amount || "-",
+              counterparty: row.counterparty || "-",
+            });
+          }
+        }
+        if (sampleRows.length > 0) {
+          cmbBankPdfSamplesWrap.classList.remove("hidden");
+          cmbBankPdfSamplesBody.innerHTML = sampleRows.map(row => `
+            <tr>
+              <td>${escapeHtml(row.kind)}</td>
+              <td>${escapeHtml(row.date)}</td>
+              <td>${renderAmountValue(row.amount)}</td>
+              <td>${escapeHtml(row.counterparty)}</td>
+            </tr>
+          `).join("");
+          applyAmountMaskInDom(cmbBankPdfSamplesWrap);
+        } else {
+          hide(cmbBankPdfSamplesWrap);
+        }
+      }
+
+      document.getElementById("cmbBankPdfPreviewBtn").addEventListener("click", async () => {
+        try {
+          const files = await collectFiles(cmbBankPdfFile);
+          if (files.length !== 1) throw new Error("请只选择一个招商银行流水 PDF 文件");
+          const data = await api("/api/cmb-bank-pdf/preview", "POST", { file: files[0] });
+          state.cmbBankPdfPreviewToken = data.preview_token;
+          renderBankPdfPreview(data.preview);
+          const info = data.preview?.file || {};
+          const header = data.preview?.header || {};
+          setStatus(
+            cmbBankPdfStatus,
+            true,
+            `PDF 预览完成：尾号${header.account_last4 || "-"}，区间 ${header.range_start || "-"} ~ ${header.range_end || "-"}，稳定源ID ${info.stable_source_name || "-"}`
+          );
+        } catch (err) {
+          setStatus(cmbBankPdfStatus, false, err.message || String(err));
+          hide(cmbBankPdfMetrics);
+          hide(cmbBankPdfSamplesWrap);
+        }
+      });
+
+      document.getElementById("cmbBankPdfImportBtn").addEventListener("click", async () => {
+        try {
+          if (!state.cmbBankPdfPreviewToken) throw new Error("请先预览 PDF。");
+          const data = await api("/api/cmb-bank-pdf/import", "POST", {
+            preview_token: state.cmbBankPdfPreviewToken,
+          });
+          renderBankPdfPreview(data.preview || {});
+          setStatus(
+            cmbBankPdfStatus,
+            true,
+            `银行流水 PDF 导入成功：记录 ${data.imported_count} 条，失败 ${data.import_error_count} 条，任务ID ${data.import_job_id}`
+          );
+          await refreshAccountCatalog();
+          if (typeof state.refreshBudgetAnalytics === "function") {
+            await state.refreshBudgetAnalytics({ silent: true });
+          }
+          if (typeof state.refreshIncomeAnalytics === "function") {
+            await state.refreshIncomeAnalytics({ silent: true });
+          }
+        } catch (err) {
+          setStatus(cmbBankPdfStatus, false, err.message || String(err));
+        }
+      });
     }
 
     function initRecordActions() {
@@ -2683,6 +2856,92 @@
       refreshBudgetAnalytics({ silent: true });
     }
 
+    function initIncome() {
+      const incomeYear = document.getElementById("incomeYear");
+      const incomeRefreshBtn = document.getElementById("incomeRefreshBtn");
+      const incomeStatus = document.getElementById("incomeStatus");
+      const incomeMetrics = document.getElementById("incomeMetrics");
+      const incomeMonthlyWrap = document.getElementById("incomeMonthlyWrap");
+      const incomeMonthlyBody = document.getElementById("incomeMonthlyBody");
+      const incomeEmployerWrap = document.getElementById("incomeEmployerWrap");
+      const incomeEmployerBody = document.getElementById("incomeEmployerBody");
+
+      if (!incomeYear || !incomeRefreshBtn) return;
+      if (!incomeYear.value) incomeYear.value = String(new Date().getFullYear());
+
+      function selectedYear() {
+        const n = Number(String(incomeYear.value || "").trim());
+        if (!Number.isFinite(n) || n < 2000 || n > 2100) return new Date().getFullYear();
+        return Math.trunc(n);
+      }
+
+      async function refreshIncomeAnalytics(options = {}) {
+        const { silent = true } = options;
+        try {
+          const year = selectedYear();
+          const data = await api(`/api/analytics/salary-income?year=${encodeURIComponent(year)}`);
+          const s = data.summary || {};
+          showMetrics(incomeMetrics, [
+            { k: "统计年度", v: data.year, amount: false },
+            { k: "工资收入(元)", v: s.salary_total_yuan || "0.00" },
+            { k: "公积金收入(元)", v: s.housing_fund_total_yuan || "0.00" },
+            { k: "收入合计(元)", v: s.total_income_yuan || "0.00" },
+            { k: "工资笔数", v: s.salary_tx_count || 0, amount: false },
+            { k: "公积金笔数", v: s.housing_fund_tx_count || 0, amount: false },
+            { k: "工资月份数", v: s.months_with_salary || 0, amount: false },
+            { k: "雇主数", v: s.employer_count || 0, amount: false },
+          ]);
+
+          const monthlyRows = data.rows || [];
+          incomeMonthlyWrap.classList.remove("hidden");
+          incomeMonthlyBody.innerHTML = monthlyRows.map(row => `
+            <tr>
+              <td>${escapeHtml(row.month_key || "-")}</td>
+              <td>${renderAmountValue(row.salary_yuan || "0.00")}</td>
+              <td>${escapeHtml(String(row.salary_tx_count || 0))}</td>
+              <td>${renderAmountValue(row.housing_fund_yuan || "0.00")}</td>
+              <td>${escapeHtml(String(row.housing_fund_tx_count || 0))}</td>
+              <td>${renderAmountValue(row.total_income_yuan || "0.00")}</td>
+            </tr>
+          `).join("");
+          applyAmountMaskInDom(incomeMonthlyWrap);
+
+          const employerRows = data.employers || [];
+          if (employerRows.length > 0) {
+            incomeEmployerWrap.classList.remove("hidden");
+            incomeEmployerBody.innerHTML = employerRows.map(row => `
+              <tr>
+                <td>${escapeHtml(row.employer || "-")}</td>
+                <td>${renderAmountValue(row.amount_yuan || "0.00")}</td>
+                <td>${escapeHtml(String(row.tx_count || 0))}</td>
+              </tr>
+            `).join("");
+            applyAmountMaskInDom(incomeEmployerWrap);
+          } else {
+            hide(incomeEmployerWrap);
+            incomeEmployerBody.innerHTML = "";
+          }
+
+          if (!silent) {
+            setStatus(incomeStatus, true, `收入分析已更新（${data.year}年，来源：招商银行流水 PDF）`);
+          }
+        } catch (err) {
+          hide(incomeMetrics);
+          hide(incomeMonthlyWrap);
+          hide(incomeEmployerWrap);
+          incomeMonthlyBody.innerHTML = "";
+          incomeEmployerBody.innerHTML = "";
+          setStatus(incomeStatus, false, err.message || String(err));
+        }
+      }
+
+      state.refreshIncomeAnalytics = refreshIncomeAnalytics;
+      incomeRefreshBtn.addEventListener("click", () => refreshIncomeAnalytics({ silent: false }));
+      incomeYear.addEventListener("change", () => refreshIncomeAnalytics({ silent: true }));
+
+      refreshIncomeAnalytics({ silent: true });
+    }
+
     function initAccountManagement() {
       const acctStatus = document.getElementById("acctStatus");
       const acctMetrics = document.getElementById("acctMetrics");
@@ -2880,33 +3139,108 @@
       const qTxMetrics = document.getElementById("qTxMetrics");
       const qTxWrap = document.getElementById("qTxWrap");
       const qTxBody = document.getElementById("qTxBody");
-      document.getElementById("qTxBtn").addEventListener("click", async () => {
+      let transactionRowsCache = [];
+
+      async function loadTransactionQuery() {
         const params = new URLSearchParams({
           month_key: document.getElementById("qMonthKey").value.trim(),
           source_type: document.getElementById("qTxSourceType").value.trim(),
           account_id: document.getElementById("qTxAccountId").value.trim(),
           keyword: document.getElementById("qTxKeyword").value.trim(),
+          sort: document.getElementById("qTxSort").value.trim() || "date_desc",
           limit: document.getElementById("qTxLimit").value.trim() || "100",
         });
         const data = await api(`/api/query/transactions?${params.toString()}`);
+        transactionRowsCache = data.rows || [];
         showMetrics(qTxMetrics, [
           { k: "总笔数", v: data.summary.count },
           { k: "总金额(元)", v: data.summary.total_amount_yuan },
-          { k: "返回条数", v: data.rows.length },
+          { k: "返回条数", v: transactionRowsCache.length },
+          { k: "已剔除(返回行)", v: data.summary.excluded_count_in_rows ?? 0, amount: false },
+          { k: "剔除金额(元)", v: data.summary.excluded_total_abs_yuan_in_rows || "0.00" },
           { k: "来源", v: data.summary.source_type || "-" },
+          { k: "排序", v: data.summary.sort || "-", amount: false },
         ]);
         qTxWrap.classList.remove("hidden");
-        qTxBody.innerHTML = data.rows.map(row => `
+        qTxBody.innerHTML = transactionRowsCache.map(row => {
+          const excluded = Number(row.excluded_in_analysis || 0) === 1;
+          const manualExcluded = !!row.manual_excluded;
+          let statusText = "计入统计";
+          if (excluded && manualExcluded) {
+            statusText = `手动剔除${row.manual_exclude_reason ? `（${row.manual_exclude_reason}）` : ""}`;
+          } else if (excluded) {
+            statusText = `规则剔除${row.exclude_reason ? `（${row.exclude_reason}）` : ""}`;
+          }
+          const actionHtml = manualExcluded
+            ? `<button class="btn secondary q-tx-restore-btn" data-id="${encodeURIComponent(row.id || "")}" type="button">恢复</button>`
+            : (excluded
+              ? `<span class="hint">规则剔除</span>`
+              : `<button class="btn danger q-tx-exclude-btn" data-id="${encodeURIComponent(row.id || "")}" type="button">剔除</button>`);
+          return `
           <tr>
-            <td>${row.posted_at || row.occurred_at || ""}</td>
-            <td>${row.merchant_normalized || ""}</td>
-            <td>${row.description || ""}</td>
+            <td>${escapeHtml(row.posted_at || row.occurred_at || "")}</td>
+            <td>${escapeHtml(row.merchant_normalized || row.merchant || "")}</td>
+            <td>${escapeHtml(row.description || "")}</td>
             <td>${renderAmountValue(money(row.amount_cents))}</td>
-            <td>${row.expense_category || row.statement_category || ""}</td>
-            <td>${row.source_type || ""}</td>
+            <td>${escapeHtml(row.expense_category || row.statement_category || "")}</td>
+            <td>${escapeHtml(row.source_type || "")}</td>
+            <td>${escapeHtml(statusText)}</td>
+            <td>${actionHtml}</td>
           </tr>
-        `).join("");
+        `;
+        }).join("");
         applyAmountMaskInDom(qTxWrap);
+      }
+
+      state.refreshTransactionQuery = loadTransactionQuery;
+      document.getElementById("qTxBtn").addEventListener("click", loadTransactionQuery);
+
+      qTxBody.addEventListener("click", async (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) return;
+        const encodedId = target.getAttribute("data-id") || "";
+        const txId = decodeURIComponent(encodedId);
+        if (!txId) return;
+
+        if (target.classList.contains("q-tx-exclude-btn")) {
+          if (!window.confirm("确认将该交易从统计中剔除？（不会删除原始记录）")) return;
+          try {
+            await api("/api/transactions/exclusion", "POST", {
+              id: txId,
+              action: "exclude",
+              reason: "查询页手动剔除",
+            });
+            await loadTransactionQuery();
+            if (typeof state.refreshBudgetAnalytics === "function") {
+              state.refreshBudgetAnalytics({ silent: true }).catch(() => {});
+            }
+            if (typeof state.refreshIncomeAnalytics === "function") {
+              state.refreshIncomeAnalytics({ silent: true }).catch(() => {});
+            }
+          } catch (err) {
+            window.alert(err.message || String(err));
+          }
+          return;
+        }
+
+        if (target.classList.contains("q-tx-restore-btn")) {
+          if (!window.confirm("确认恢复该交易进入统计？")) return;
+          try {
+            await api("/api/transactions/exclusion", "POST", {
+              id: txId,
+              action: "restore",
+            });
+            await loadTransactionQuery();
+            if (typeof state.refreshBudgetAnalytics === "function") {
+              state.refreshBudgetAnalytics({ silent: true }).catch(() => {});
+            }
+            if (typeof state.refreshIncomeAnalytics === "function") {
+              state.refreshIncomeAnalytics({ silent: true }).catch(() => {});
+            }
+          } catch (err) {
+            window.alert(err.message || String(err));
+          }
+        }
       });
 
       const qInvMetrics = document.getElementById("qInvMetrics");
@@ -3336,7 +3670,7 @@
             clear_import_sessions: true,
           });
           showMetrics(adminMetrics, [
-            { k: "清理范围", v: "交易数据（EML）" },
+            { k: "清理范围", v: "交易数据（EML/PDF）" },
             { k: "清理前总行数", v: payload.summary.total_rows_before },
             { k: "清理后总行数", v: payload.summary.total_rows_after },
             { k: "已删除行数", v: payload.summary.deleted_rows },
@@ -3345,11 +3679,17 @@
           setStatus(
             adminStatus,
             true,
-            `交易数据已清理，可重新导入 EML（清理会话目录 ${payload.cleared_preview_sessions || 0} 个）`
+            `交易数据已清理，可重新导入 EML/PDF（清理会话目录 ${payload.cleared_preview_sessions || 0} 个）`
           );
           adminConfirmText.value = "";
           if (typeof state.refreshBudgetAnalytics === "function") {
             state.refreshBudgetAnalytics().catch(() => {});
+          }
+          if (typeof state.refreshTransactionQuery === "function") {
+            state.refreshTransactionQuery().catch(() => {});
+          }
+          if (typeof state.refreshIncomeAnalytics === "function") {
+            state.refreshIncomeAnalytics().catch(() => {});
           }
           if (typeof state.refreshInvestmentQuery === "function") {
             state.refreshInvestmentQuery().catch(() => {});
@@ -3382,6 +3722,12 @@
           );
           adminConfirmText.value = "";
           await refreshInvestmentAccounts();
+          if (typeof state.refreshTransactionQuery === "function") {
+            state.refreshTransactionQuery().catch(() => {});
+          }
+          if (typeof state.refreshIncomeAnalytics === "function") {
+            state.refreshIncomeAnalytics().catch(() => {});
+          }
         } catch (err) {
           setStatus(adminStatus, false, err.message || String(err));
         }
@@ -3404,6 +3750,7 @@
       initReturnAnalytics();
       initWealth();
       initBudget();
+      initIncome();
       initAccountManagement();
       initQuery();
       initAdmin();

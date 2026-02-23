@@ -27,6 +27,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 import import_classified_to_ledger as ledger_import_mod
+import import_cmb_bank_pdf_transactions as cmb_bank_pdf_import_mod
 import import_youzhiyouxing_investments as yzxy_import_mod
 import migrate_ledger_db as migrate_mod
 import parse_cmb_statements as parser_mod
@@ -166,10 +167,12 @@ ADMIN_DATA_TABLES = [
 MERCHANT_MAP_HEADERS = ["merchant_normalized", "expense_category", "confidence", "note"]
 CATEGORY_RULE_HEADERS = ["priority", "match_type", "pattern", "expense_category", "confidence", "note"]
 DEFAULT_FIRE_WITHDRAWAL_RATE = 0.04
+TRANSACTION_IMPORT_SOURCE_TYPES = ("cmb_eml", "cmb_bank_pdf")
+MANUAL_TX_EXCLUDE_REASON_PREFIX = ledger_import_mod.MANUAL_TX_EXCLUDE_REASON_PREFIX
 ADMIN_TRANSACTION_RESET_SCOPES = (
     "transactions",
     "reconciliations",
-    "import_jobs:cmb_eml",
+    "import_jobs:transaction_sources",
 )
 
 
@@ -294,9 +297,12 @@ def build_admin_transaction_scope_counts(conn: sqlite3.Connection) -> list[dict[
     )
     if import_jobs_exists:
         cmb_jobs_count = int(
-            conn.execute("SELECT COUNT(*) FROM import_jobs WHERE source_type = 'cmb_eml'").fetchone()[0]
+            conn.execute(
+                "SELECT COUNT(*) FROM import_jobs WHERE source_type IN (?, ?)",
+                TRANSACTION_IMPORT_SOURCE_TYPES,
+            ).fetchone()[0]
         )
-        rows.append({"table": "import_jobs(cmb_eml)", "row_count": cmb_jobs_count})
+        rows.append({"table": "import_jobs(transaction_sources)", "row_count": cmb_jobs_count})
     return rows
 
 
@@ -357,7 +363,10 @@ def reset_admin_transaction_data(config: AppConfig, *, confirm_text: str) -> dic
             if conn.execute(
                 "SELECT 1 FROM sqlite_master WHERE type='table' AND name='import_jobs' LIMIT 1"
             ).fetchone():
-                conn.execute("DELETE FROM import_jobs WHERE source_type = 'cmb_eml'")
+                conn.execute(
+                    "DELETE FROM import_jobs WHERE source_type IN (?, ?)",
+                    TRANSACTION_IMPORT_SOURCE_TYPES,
+                )
         after_rows = build_admin_transaction_scope_counts(conn)
     finally:
         conn.close()
@@ -923,6 +932,41 @@ def run_eml_import(config: AppConfig, input_dir: Path, review_threshold: float) 
 
     return {
         "parse_result": parse_result,
+        "imported_count": imported_count,
+        "import_error_count": import_error_count,
+        "import_job_id": import_job_id,
+        "db_path": str(config.db_path),
+    }
+
+
+def preview_cmb_bank_pdf(config: AppConfig, pdf_path: Path) -> dict[str, Any]:
+    merchant_map_path, category_rules_path, _ = ensure_rules_files(config)
+    merchant_map = parser_mod.load_merchant_map(merchant_map_path)
+    category_rules = parser_mod.load_category_rules(category_rules_path)
+    preview = cmb_bank_pdf_import_mod.preview_file(
+        pdf_path,
+        merchant_map=merchant_map,
+        category_rules=category_rules,
+        review_threshold=0.70,
+    )
+    return preview
+
+
+def run_cmb_bank_pdf_import(config: AppConfig, pdf_path: Path) -> dict[str, Any]:
+    ensure_db(config)
+    merchant_map_path, category_rules_path, _ = ensure_rules_files(config)
+    merchant_map = parser_mod.load_merchant_map(merchant_map_path)
+    category_rules = parser_mod.load_category_rules(category_rules_path)
+    imported_count, import_error_count, import_job_id, preview = cmb_bank_pdf_import_mod.import_file(
+        config.db_path,
+        pdf_path,
+        source_type="cmb_bank_pdf",
+        merchant_map=merchant_map,
+        category_rules=category_rules,
+        review_threshold=0.70,
+    )
+    return {
+        "preview": preview,
         "imported_count": imported_count,
         "import_error_count": import_error_count,
         "import_job_id": import_job_id,
@@ -2969,6 +3013,162 @@ def query_budget_monthly_review(config: AppConfig, qs: dict[str, list[str]]) -> 
     }
 
 
+def query_salary_income_overview(config: AppConfig, qs: dict[str, list[str]]) -> dict[str, Any]:
+    ensure_db(config)
+    today = datetime.now().date()
+    year = parse_year_param((qs.get("year") or [""])[0], default_year=today.year)
+    month_start = f"{year:04d}-01"
+    month_end = f"{year:04d}-12"
+
+    conn = sqlite3.connect(config.db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        monthly_rows = conn.execute(
+            """
+            SELECT
+                month_key,
+                statement_category,
+                COUNT(*) AS tx_count,
+                COALESCE(SUM(amount_cents), 0) AS amount_cents
+            FROM transactions
+            WHERE source_type = 'cmb_bank_pdf'
+              AND direction = 'income'
+              AND month_key >= ?
+              AND month_key <= ?
+              AND statement_category IN ('代发工资', '代发住房公积金')
+            GROUP BY month_key, statement_category
+            ORDER BY month_key ASC, statement_category ASC
+            """,
+            (month_start, month_end),
+        ).fetchall()
+        employer_rows = conn.execute(
+            """
+            SELECT
+                COALESCE(NULLIF(TRIM(merchant_normalized), ''), NULLIF(TRIM(merchant), ''), '未知来源') AS employer,
+                COUNT(*) AS tx_count,
+                COALESCE(SUM(amount_cents), 0) AS amount_cents
+            FROM transactions
+            WHERE source_type = 'cmb_bank_pdf'
+              AND direction = 'income'
+              AND month_key >= ?
+              AND month_key <= ?
+              AND statement_category = '代发工资'
+            GROUP BY employer
+            ORDER BY amount_cents DESC, employer ASC
+            """,
+            (month_start, month_end),
+        ).fetchall()
+        totals_row = conn.execute(
+            """
+            SELECT
+                COALESCE(SUM(CASE WHEN statement_category = '代发工资' THEN amount_cents ELSE 0 END), 0) AS salary_cents,
+                COALESCE(SUM(CASE WHEN statement_category = '代发住房公积金' THEN amount_cents ELSE 0 END), 0) AS housing_fund_cents,
+                COALESCE(SUM(CASE WHEN statement_category = '代发工资' THEN 1 ELSE 0 END), 0) AS salary_count,
+                COALESCE(SUM(CASE WHEN statement_category = '代发住房公积金' THEN 1 ELSE 0 END), 0) AS housing_fund_count
+            FROM transactions
+            WHERE source_type = 'cmb_bank_pdf'
+              AND direction = 'income'
+              AND month_key >= ?
+              AND month_key <= ?
+              AND statement_category IN ('代发工资', '代发住房公积金')
+            """,
+            (month_start, month_end),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    month_map: dict[str, dict[str, Any]] = {}
+    for row in monthly_rows:
+        month_key = str(row["month_key"])
+        bucket = month_map.setdefault(
+            month_key,
+            {
+                "salary_cents": 0,
+                "salary_tx_count": 0,
+                "housing_fund_cents": 0,
+                "housing_fund_tx_count": 0,
+            },
+        )
+        stmt = str(row["statement_category"] or "")
+        amount_cents = int(row["amount_cents"] or 0)
+        tx_count = int(row["tx_count"] or 0)
+        if stmt == "代发工资":
+            bucket["salary_cents"] += amount_cents
+            bucket["salary_tx_count"] += tx_count
+        elif stmt == "代发住房公积金":
+            bucket["housing_fund_cents"] += amount_cents
+            bucket["housing_fund_tx_count"] += tx_count
+
+    rows: list[dict[str, Any]] = []
+    months_with_salary = 0
+    months_with_housing_fund = 0
+    for month in range(1, 13):
+        month_key = f"{year:04d}-{month:02d}"
+        item = month_map.get(
+            month_key,
+            {
+                "salary_cents": 0,
+                "salary_tx_count": 0,
+                "housing_fund_cents": 0,
+                "housing_fund_tx_count": 0,
+            },
+        )
+        salary_cents = int(item["salary_cents"])
+        housing_fund_cents = int(item["housing_fund_cents"])
+        if salary_cents > 0:
+            months_with_salary += 1
+        if housing_fund_cents > 0:
+            months_with_housing_fund += 1
+        total_cents = salary_cents + housing_fund_cents
+        rows.append(
+            {
+                "month_key": month_key,
+                "salary_cents": salary_cents,
+                "salary_yuan": cents_to_yuan_text(salary_cents),
+                "salary_tx_count": int(item["salary_tx_count"]),
+                "housing_fund_cents": housing_fund_cents,
+                "housing_fund_yuan": cents_to_yuan_text(housing_fund_cents),
+                "housing_fund_tx_count": int(item["housing_fund_tx_count"]),
+                "total_income_cents": total_cents,
+                "total_income_yuan": cents_to_yuan_text(total_cents),
+            }
+        )
+
+    salary_total_cents = int(totals_row["salary_cents"] or 0) if totals_row else 0
+    housing_fund_total_cents = int(totals_row["housing_fund_cents"] or 0) if totals_row else 0
+    salary_tx_count = int(totals_row["salary_count"] or 0) if totals_row else 0
+    housing_fund_tx_count = int(totals_row["housing_fund_count"] or 0) if totals_row else 0
+
+    return {
+        "year": year,
+        "as_of_date": today.isoformat(),
+        "source_type": "cmb_bank_pdf",
+        "summary": {
+            "salary_total_cents": salary_total_cents,
+            "salary_total_yuan": cents_to_yuan_text(salary_total_cents),
+            "salary_tx_count": salary_tx_count,
+            "housing_fund_total_cents": housing_fund_total_cents,
+            "housing_fund_total_yuan": cents_to_yuan_text(housing_fund_total_cents),
+            "housing_fund_tx_count": housing_fund_tx_count,
+            "total_income_cents": salary_total_cents + housing_fund_total_cents,
+            "total_income_yuan": cents_to_yuan_text(salary_total_cents + housing_fund_total_cents),
+            "months_with_salary": months_with_salary,
+            "months_with_housing_fund": months_with_housing_fund,
+            "employer_count": len(employer_rows),
+        },
+        "employers": [
+            {
+                "employer": str(row["employer"]),
+                "tx_count": int(row["tx_count"] or 0),
+                "amount_cents": int(row["amount_cents"] or 0),
+                "amount_yuan": cents_to_yuan_text(int(row["amount_cents"] or 0)),
+            }
+            for row in employer_rows
+        ],
+        "rows": rows,
+    }
+
+
 def query_fire_progress(config: AppConfig, qs: dict[str, list[str]]) -> dict[str, Any]:
     today = datetime.now().date()
     year = parse_year_param((qs.get("year") or [""])[0], default_year=today.year)
@@ -3489,6 +3689,15 @@ def query_transactions(config: AppConfig, qs: dict[str, list[str]]) -> dict[str,
     source_type = (qs.get("source_type") or [""])[0].strip()
     account_id = (qs.get("account_id") or [""])[0].strip()
     keyword = (qs.get("keyword") or [""])[0].strip()
+    sort_key = (qs.get("sort") or ["date_desc"])[0].strip() or "date_desc"
+    sort_sql_map = {
+        "date_desc": "COALESCE(t.posted_at, t.occurred_at) DESC, t.id DESC",
+        "date_asc": "COALESCE(t.posted_at, t.occurred_at) ASC, t.id ASC",
+        "amount_desc": "ABS(t.amount_cents) DESC, COALESCE(t.posted_at, t.occurred_at) DESC, t.id DESC",
+        "amount_asc": "ABS(t.amount_cents) ASC, COALESCE(t.posted_at, t.occurred_at) DESC, t.id DESC",
+    }
+    if sort_key not in sort_sql_map:
+        raise ValueError(f"sort 不支持: {sort_key}")
 
     conditions: list[str] = []
     params: list[Any] = []
@@ -3512,19 +3721,24 @@ def query_transactions(config: AppConfig, qs: dict[str, list[str]]) -> dict[str,
         rows = conn.execute(
             f"""
             SELECT
+                t.id,
                 t.posted_at,
                 t.occurred_at,
+                t.direction,
+                t.merchant,
                 t.merchant_normalized,
                 t.description,
                 t.amount_cents,
                 t.statement_category,
                 t.source_type,
                 t.category_id,
+                t.excluded_in_analysis,
+                t.exclude_reason,
                 COALESCE(c.name, '待分类') AS expense_category
             FROM transactions t
             LEFT JOIN categories c ON c.id = t.category_id
             {where}
-            ORDER BY COALESCE(t.posted_at, t.occurred_at) DESC, t.id DESC
+            ORDER BY {sort_sql_map[sort_key]}
             LIMIT ?
             """,
             [*params, limit],
@@ -3542,14 +3756,117 @@ def query_transactions(config: AppConfig, qs: dict[str, list[str]]) -> dict[str,
     finally:
         conn.close()
 
+    result_rows: list[dict[str, Any]] = []
+    excluded_count = 0
+    excluded_total_cents = 0
+    for row in rows:
+        item = dict(row)
+        excluded = bool(int(item.get("excluded_in_analysis") or 0))
+        reason = str(item.get("exclude_reason") or "")
+        manual_excluded = excluded and reason.startswith(MANUAL_TX_EXCLUDE_REASON_PREFIX)
+        item["excluded_in_analysis"] = 1 if excluded else 0
+        item["manual_excluded"] = manual_excluded
+        if manual_excluded:
+            item["manual_exclude_reason"] = reason[len(MANUAL_TX_EXCLUDE_REASON_PREFIX) :].lstrip(" :")
+        else:
+            item["manual_exclude_reason"] = ""
+        result_rows.append(item)
+        if excluded:
+            excluded_count += 1
+            excluded_total_cents += abs(int(item.get("amount_cents") or 0))
+
     return {
         "summary": {
             "count": int(summary_row["count"]),
             "total_amount_cents": int(summary_row["total_cents"]),
             "total_amount_yuan": f"{int(summary_row['total_cents']) / 100:.2f}",
             "source_type": source_type,
+            "excluded_count_in_rows": excluded_count,
+            "excluded_total_abs_cents_in_rows": excluded_total_cents,
+            "excluded_total_abs_yuan_in_rows": f"{excluded_total_cents / 100:.2f}",
+            "sort": sort_key,
         },
-        "rows": [dict(r) for r in rows],
+        "rows": result_rows,
+    }
+
+
+def update_transaction_analysis_exclusion(config: AppConfig, payload: dict[str, Any]) -> dict[str, Any]:
+    ensure_db(config)
+    tx_id = str(payload.get("id", "")).strip()
+    if not tx_id:
+        raise ValueError("id 必填")
+    action = str(payload.get("action", "")).strip() or ("exclude" if bool(payload.get("excluded_in_analysis")) else "restore")
+    if action not in {"exclude", "restore"}:
+        raise ValueError("action 必须是 exclude 或 restore")
+    user_reason = str(payload.get("reason", "")).strip()
+
+    conn = sqlite3.connect(config.db_path)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    try:
+        row = conn.execute(
+            """
+            SELECT id, amount_cents, description, merchant_normalized, excluded_in_analysis, exclude_reason
+            FROM transactions
+            WHERE id = ?
+            """,
+            (tx_id,),
+        ).fetchone()
+        if not row:
+            raise ValueError("未找到交易记录")
+
+        current_excluded = bool(int(row["excluded_in_analysis"] or 0))
+        current_reason = str(row["exclude_reason"] or "")
+        current_manual = current_excluded and current_reason.startswith(MANUAL_TX_EXCLUDE_REASON_PREFIX)
+
+        if action == "exclude":
+            suffix = user_reason or "手动剔除（查询页）"
+            new_reason = f"{MANUAL_TX_EXCLUDE_REASON_PREFIX} {suffix}"
+            with conn:
+                conn.execute(
+                    """
+                    UPDATE transactions
+                    SET excluded_in_analysis = 1,
+                        exclude_reason = ?,
+                        updated_at = datetime('now')
+                    WHERE id = ?
+                    """,
+                    (new_reason, tx_id),
+                )
+            excluded = True
+            manual_excluded = True
+            reason = new_reason
+        else:
+            if not current_manual:
+                raise ValueError("该交易不是“手动剔除”状态，无法在此处恢复")
+            with conn:
+                conn.execute(
+                    """
+                    UPDATE transactions
+                    SET excluded_in_analysis = 0,
+                        exclude_reason = '',
+                        updated_at = datetime('now')
+                    WHERE id = ?
+                    """,
+                    (tx_id,),
+                )
+            excluded = False
+            manual_excluded = False
+            reason = ""
+    finally:
+        conn.close()
+
+    return {
+        "id": tx_id,
+        "excluded_in_analysis": 1 if excluded else 0,
+        "manual_excluded": manual_excluded,
+        "exclude_reason": reason,
+        "manual_exclude_reason": (
+            reason[len(MANUAL_TX_EXCLUDE_REASON_PREFIX) :].lstrip(" :")
+            if manual_excluded and reason.startswith(MANUAL_TX_EXCLUDE_REASON_PREFIX)
+            else ""
+        ),
+        "action": action,
     }
 
 
@@ -3748,6 +4065,10 @@ class M0Handler(BaseHTTPRequestHandler):
                 payload = query_budget_monthly_review(self.config, parse_qs(parsed.query))
                 self._json(HTTPStatus.OK, payload)
                 return
+            if parsed.path == "/api/analytics/salary-income":
+                payload = query_salary_income_overview(self.config, parse_qs(parsed.query))
+                self._json(HTTPStatus.OK, payload)
+                return
             if parsed.path == "/api/analytics/fire-progress":
                 payload = query_fire_progress(self.config, parse_qs(parsed.query))
                 self._json(HTTPStatus.OK, payload)
@@ -3812,6 +4133,28 @@ class M0Handler(BaseHTTPRequestHandler):
                 )
                 return
 
+            if self.path == "/api/cmb-bank-pdf/preview":
+                body = self._read_json()
+                item = body.get("file")
+                if not isinstance(item, dict):
+                    raise ValueError("请上传招商银行流水 PDF 文件")
+                session = self.session_store.create_single_file_session(
+                    "cmb_bank_pdf",
+                    item,
+                    (".pdf",),
+                )
+                preview = preview_cmb_bank_pdf(self.config, session.file_path or Path("."))
+                self._json(HTTPStatus.OK, {"preview_token": session.token, "preview": preview})
+                return
+
+            if self.path == "/api/cmb-bank-pdf/import":
+                body = self._read_json()
+                token = str(body.get("preview_token", "")).strip()
+                session = self.session_store.get(token, kind="cmb_bank_pdf")
+                result = run_cmb_bank_pdf_import(self.config, session.file_path or Path("."))
+                self._json(HTTPStatus.OK, result)
+                return
+
             if self.path == "/api/investments/manual":
                 body = self._read_json()
                 payload = upsert_manual_investment(self.config, body)
@@ -3845,6 +4188,12 @@ class M0Handler(BaseHTTPRequestHandler):
             if self.path == "/api/assets/delete":
                 body = self._read_json()
                 payload = delete_asset_valuation(self.config, body)
+                self._json(HTTPStatus.OK, payload)
+                return
+
+            if self.path == "/api/transactions/exclusion":
+                body = self._read_json()
+                payload = update_transaction_analysis_exclusion(self.config, body)
                 self._json(HTTPStatus.OK, payload)
                 return
 
