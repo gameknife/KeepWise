@@ -190,6 +190,10 @@ def cents_to_yuan_text(cents: int) -> str:
     return f"{cents / 100:.2f}"
 
 
+def cents_to_yuan_value(cents: int) -> float:
+    return round(cents / 100.0, 2)
+
+
 def parse_preset(raw: str) -> str:
     preset = (raw or "ytd").strip().lower() or "ytd"
     if preset not in SUPPORTED_PRESETS:
@@ -3013,6 +3017,182 @@ def query_budget_monthly_review(config: AppConfig, qs: dict[str, list[str]]) -> 
     }
 
 
+def query_consumption_report(config: AppConfig, _qs: dict[str, list[str]]) -> dict[str, Any]:
+    ensure_db(config)
+    conn = sqlite3.connect(config.db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        tx_rows = conn.execute(
+            """
+            SELECT
+                t.id,
+                t.month_key,
+                t.posted_at,
+                t.occurred_at,
+                t.amount_cents,
+                t.description,
+                t.merchant_normalized,
+                t.source_file,
+                t.source_type,
+                t.confidence,
+                t.needs_review,
+                t.excluded_in_analysis,
+                COALESCE(c.name, '待分类') AS expense_category
+            FROM transactions t
+            LEFT JOIN categories c ON c.id = t.category_id
+            WHERE t.direction = 'expense'
+              AND t.currency = 'CNY'
+            ORDER BY COALESCE(t.posted_at, t.occurred_at) DESC, t.id DESC
+            """
+        ).fetchall()
+        failed_jobs_count = 0
+        if conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='import_jobs' LIMIT 1"
+        ).fetchone():
+            failed_jobs_count = int(
+                conn.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM import_jobs
+                    WHERE source_type IN (?, ?)
+                      AND status = 'failed'
+                    """,
+                    TRANSACTION_IMPORT_SOURCE_TYPES,
+                ).fetchone()[0]
+            )
+    finally:
+        conn.close()
+
+    all_consume_rows: list[dict[str, Any]] = []
+    for row in tx_rows:
+        amount_cents_abs = abs(int(row["amount_cents"] or 0))
+        tx_date = str(row["posted_at"] or row["occurred_at"] or "")
+        month_key = str(row["month_key"] or "") or (tx_date[:7] if len(tx_date) >= 7 else "")
+        source_file = str(row["source_file"] or "")
+        source_type = str(row["source_type"] or "")
+        all_consume_rows.append(
+            {
+                "id": str(row["id"]),
+                "month": month_key,
+                "date": tx_date or (f"{month_key}-01" if len(month_key) == 7 else ""),
+                "merchant": str(row["merchant_normalized"] or "").strip() or str(row["description"] or "").strip(),
+                "description": str(row["description"] or ""),
+                "category": str(row["expense_category"] or "待分类"),
+                "amount_cents_abs": amount_cents_abs,
+                "amount": cents_to_yuan_value(amount_cents_abs),
+                "needs_review": bool(int(row["needs_review"] or 0)),
+                "confidence": round(float(row["confidence"] or 0.0), 2),
+                "source_path": source_file or f"{source_type}:{row['id']}",
+                "excluded_in_analysis": bool(int(row["excluded_in_analysis"] or 0)),
+            }
+        )
+
+    excluded_rows = [r for r in all_consume_rows if r["excluded_in_analysis"]]
+    consume_rows = [r for r in all_consume_rows if not r["excluded_in_analysis"]]
+    consumption_total_cents = sum(int(r["amount_cents_abs"]) for r in consume_rows)
+    excluded_total_cents = sum(int(r["amount_cents_abs"]) for r in excluded_rows)
+    review_count = sum(1 for r in consume_rows if r["needs_review"])
+
+    by_expense: dict[str, dict[str, int]] = {}
+    by_month: dict[str, dict[str, int]] = {}
+    by_merchant: dict[str, dict[str, Any]] = {}
+    transactions: list[dict[str, Any]] = []
+
+    for rec in consume_rows:
+        category = str(rec["category"])
+        month = str(rec["month"])
+        merchant = str(rec["merchant"])
+
+        exp_bucket = by_expense.setdefault(category, {"amount_cents": 0, "count": 0, "review_count": 0})
+        exp_bucket["amount_cents"] += int(rec["amount_cents_abs"])
+        exp_bucket["count"] += 1
+        exp_bucket["review_count"] += 1 if rec["needs_review"] else 0
+
+        month_bucket = by_month.setdefault(month, {"amount_cents": 0, "count": 0, "review_count": 0})
+        month_bucket["amount_cents"] += int(rec["amount_cents_abs"])
+        month_bucket["count"] += 1
+        month_bucket["review_count"] += 1 if rec["needs_review"] else 0
+
+        merchant_bucket = by_merchant.setdefault(
+            merchant,
+            {"amount_cents": 0, "count": 0, "category": category},
+        )
+        merchant_bucket["amount_cents"] += int(rec["amount_cents_abs"])
+        merchant_bucket["count"] += 1
+
+        transactions.append(
+            {
+                "month": month,
+                "date": str(rec["date"]),
+                "merchant": merchant,
+                "description": str(rec["description"]),
+                "category": category,
+                "amount": float(rec["amount"]),
+                "needs_review": bool(rec["needs_review"]),
+                "confidence": float(rec["confidence"]),
+                "source_path": str(rec["source_path"]),
+            }
+        )
+
+    categories = [
+        {
+            "category": cat,
+            "amount": cents_to_yuan_value(int(stat["amount_cents"])),
+            "count": int(stat["count"]),
+            "review_count": int(stat["review_count"]),
+        }
+        for cat, stat in sorted(by_expense.items(), key=lambda x: x[1]["amount_cents"], reverse=True)
+    ]
+    months = [
+        {
+            "month": month,
+            "amount": cents_to_yuan_value(int(stat["amount_cents"])),
+            "count": int(stat["count"]),
+            "review_count": int(stat["review_count"]),
+        }
+        for month, stat in sorted(by_month.items(), key=lambda x: x[0])
+        if month
+    ]
+    merchants = [
+        {
+            "merchant": merchant,
+            "amount": cents_to_yuan_value(int(stat["amount_cents"])),
+            "count": int(stat["count"]),
+            "category": str(stat["category"]),
+        }
+        for merchant, stat in sorted(by_merchant.items(), key=lambda x: x[1]["amount_cents"], reverse=True)[:80]
+    ]
+
+    transactions.sort(key=lambda x: (str(x["date"]), float(x["amount"])), reverse=True)
+    top_expense_categories = [
+        {"expense_category": item["category"], "amount": f"{float(item['amount']):.2f}"}
+        for item in categories[:10]
+    ]
+    source_files = {str(r["source_path"]) for r in all_consume_rows if str(r["source_path"]).strip()}
+
+    return {
+        "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "input_files_count": len(source_files),
+        "failed_files_count": failed_jobs_count,
+        "consumption_count": len(consume_rows),
+        "consumption_total": cents_to_yuan_text(consumption_total_cents),
+        "consumption_total_value": cents_to_yuan_value(consumption_total_cents),
+        "needs_review_count": int(review_count),
+        "needs_review_ratio": round(review_count / len(consume_rows), 4) if consume_rows else 0,
+        "excluded_consumption_count": len(excluded_rows),
+        "excluded_consumption_total": cents_to_yuan_text(excluded_total_cents),
+        "excluded_consumption_total_value": cents_to_yuan_value(excluded_total_cents),
+        "raw_consumption_count": len(all_consume_rows),
+        "raw_consumption_total": cents_to_yuan_text(consumption_total_cents + excluded_total_cents),
+        "raw_consumption_total_value": cents_to_yuan_value(consumption_total_cents + excluded_total_cents),
+        "top_expense_categories": top_expense_categories,
+        "categories": categories,
+        "months": months,
+        "merchants": merchants,
+        "transactions": transactions,
+    }
+
+
 def query_salary_income_overview(config: AppConfig, qs: dict[str, list[str]]) -> dict[str, Any]:
     ensure_db(config)
     today = datetime.now().date()
@@ -3982,12 +4162,20 @@ class M0Handler(BaseHTTPRequestHandler):
                 html = (self.config.assets_dir / "m0_app.html").read_text(encoding="utf-8")
                 self._text(HTTPStatus.OK, "text/html", html)
                 return
+            if parsed.path in {"/consumption", "/consumption/"}:
+                html = (self.config.assets_dir / "consumption_dashboard.html").read_text(encoding="utf-8")
+                self._text(HTTPStatus.OK, "text/html", html)
+                return
             if parsed.path in {"/rules", "/rules/"}:
                 html = (self.config.assets_dir / "rules_admin.html").read_text(encoding="utf-8")
                 self._text(HTTPStatus.OK, "text/html", html)
                 return
             if parsed.path == "/assets/m0_app.css":
                 css = (self.config.assets_dir / "m0_app.css").read_text(encoding="utf-8")
+                self._text(HTTPStatus.OK, "text/css", css)
+                return
+            if parsed.path == "/assets/consumption_report.css":
+                css = (self.config.assets_dir / "consumption_report.css").read_text(encoding="utf-8")
                 self._text(HTTPStatus.OK, "text/css", css)
                 return
             if parsed.path == "/assets/rules_admin.css":
@@ -4063,6 +4251,10 @@ class M0Handler(BaseHTTPRequestHandler):
                 return
             if parsed.path == "/api/analytics/budget-monthly-review":
                 payload = query_budget_monthly_review(self.config, parse_qs(parsed.query))
+                self._json(HTTPStatus.OK, payload)
+                return
+            if parsed.path == "/api/analytics/consumption-report":
+                payload = query_consumption_report(self.config, parse_qs(parsed.query))
                 self._json(HTTPStatus.OK, payload)
                 return
             if parsed.path == "/api/analytics/salary-income":

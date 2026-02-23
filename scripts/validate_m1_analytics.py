@@ -1533,6 +1533,32 @@ def run_regression(root: Path) -> dict[str, Any]:
                 "Salary income overview monthly row mismatch for 2026-02: "
                 f"row={feb_income_row}"
             )
+        consumption_report = app_mod.query_consumption_report(cfg, {})
+        if int(consumption_report["consumption_count"]) != 1:
+            raise AssertionError(
+                "Consumption report count mismatch: "
+                f"got={consumption_report['consumption_count']}"
+            )
+        if not approx_equal(float(consumption_report["consumption_total_value"]), 123.45, tol=1e-6):
+            raise AssertionError(
+                "Consumption report total mismatch: "
+                f"got={consumption_report['consumption_total_value']}"
+            )
+        if not consumption_report["transactions"]:
+            raise AssertionError("Consumption report transactions should not be empty")
+        tx0 = consumption_report["transactions"][0]
+        if str(tx0["category"]) != "餐饮":
+            raise AssertionError(
+                "Consumption report transaction category mismatch: "
+                f"got={tx0['category']}"
+            )
+        if str(tx0["month"]) != "2026-01":
+            raise AssertionError(
+                "Consumption report transaction month mismatch: "
+                f"got={tx0['month']}"
+            )
+        if not any(str(item["category"]) == "餐饮" for item in consumption_report["categories"]):
+            raise AssertionError("Consumption report category aggregation missing 餐饮")
 
         tx_query_sorted = app_mod.query_transactions(
             cfg,
@@ -1715,6 +1741,7 @@ def run_regression(root: Path) -> dict[str, Any]:
             "admin_transaction_reset_ok": True,
             "eml_incremental_dedupe_ok": True,
             "salary_income_overview_ok": True,
+            "consumption_report_ok": True,
         }
 
 
@@ -1759,6 +1786,7 @@ def main() -> None:
     print(f"  admin_transaction_reset_ok: {result['admin_transaction_reset_ok']}")
     print(f"  eml_incremental_dedupe_ok: {result['eml_incremental_dedupe_ok']}")
     print(f"  salary_income_overview_ok: {result['salary_income_overview_ok']}")
+    print(f"  consumption_report_ok: {result['consumption_report_ok']}")
 
 
 if __name__ == "__main__":

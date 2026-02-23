@@ -24,6 +24,7 @@
         <button class="tab-btn" data-tab="tab-wealth">财富总览</button>
         <button class="tab-btn" data-tab="tab-budget">预算与FIRE</button>
         <button class="tab-btn" data-tab="tab-income">收入分析</button>
+        <button class="tab-btn" data-tab="tab-consumption">消费分析</button>
         <button class="tab-btn" data-tab="tab-query">基础查询</button>
         <button class="tab-btn" data-tab="tab-admin">高级管理</button>
       </div>
@@ -438,6 +439,22 @@
           <tbody id="incomeEmployerBody"></tbody>
         </table>
       </div>
+    </section>
+
+    <section id="tab-consumption" class="panel hidden">
+      <h2>消费分析</h2>
+      <p class="hint">整合旧版消费分析交互（筛选/图表/排序）。统计粒度以“年度”为上限，支持按月份细看。</p>
+      <div class="actions">
+        <button id="consumptionFrameReloadBtn" class="btn secondary" type="button">刷新消费分析</button>
+        <a class="btn ghost" href="/rules" rel="noopener">交易规则管理</a>
+      </div>
+      <iframe
+        id="consumptionFrame"
+        title="消费分析"
+        loading="lazy"
+        src="/consumption"
+        style="width:100%; min-height:1600px; border:1px solid var(--line, #dce5df); border-radius:14px; background:#fff;"
+      ></iframe>
     </section>
 
     <section id="tab-query" class="panel hidden">
@@ -908,6 +925,21 @@
       };
       selectEl.addEventListener("change", apply);
       apply();
+    }
+
+    function initConsumptionEmbed() {
+      const frame = document.getElementById("consumptionFrame");
+      const reloadBtn = document.getElementById("consumptionFrameReloadBtn");
+      if (!frame || !reloadBtn) return;
+      reloadBtn.addEventListener("click", () => {
+        try {
+          if (frame.contentWindow && frame.contentWindow.location) {
+            frame.contentWindow.location.reload();
+            return;
+          }
+        } catch {}
+        frame.setAttribute("src", "/consumption");
+      });
     }
 
     function accountKindLabel(kind) {
@@ -3751,6 +3783,7 @@
       initWealth();
       initBudget();
       initIncome();
+      initConsumptionEmbed();
       initAccountManagement();
       initQuery();
       initAdmin();
