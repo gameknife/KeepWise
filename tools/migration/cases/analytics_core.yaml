@@ -1,0 +1,894 @@
+# KeepWise Tauri migration diff cases (Phase 1 - analytics core)
+# Purpose:
+# - Drive Python vs Rust differential regression for core analytics endpoints.
+# - Freeze success/error semantics and invariant checks before Rust rewrites expand.
+#
+# Notes:
+# - This file is a case manifest; the runner implementation is introduced separately.
+# - `${fixture.xxx}` placeholders are resolved from the selected dataset's fixture map.
+# - Paths use dot notation; array indexes support `[-1]` for last item in runner design.
+
+schema_version: 1
+
+suite:
+  id: analytics_core
+  name: Analytics Core Diff Regression
+  phase: Migrate-P1
+  status: active
+  description: >
+    Core analytics contract freeze + differential regression suite for investment return,
+    investment curve, wealth overview, and wealth curve.
+  owners:
+    - app
+    - migration
+  tags:
+    - p1
+    - analytics
+    - contract-freeze
+    - diff-test
+
+execution:
+  python_adapter_status: active
+  rust_adapter_status: pending
+  allow_python_only_baseline: true
+  stop_on_first_failure: false
+
+datasets:
+  - ref: m1_analytics_minimal
+    status: planned
+    source_hint: scripts/validate_m1_analytics.py
+    description: >
+      Small deterministic seeded SQLite dataset covering investment + wealth baseline paths.
+    fixture_keys:
+      - inv_account_id
+      - inv_account_id_alt
+      - cash_account_id
+      - real_estate_account_id
+      - liability_account_id
+      - latest_snapshot_date
+      - history_snapshot_date
+      - custom_from_date
+      - custom_to_date
+      - no_data_future_from
+      - no_data_future_to
+  - ref: m1_analytics_edge_cases
+    status: planned
+    source_hint: tests/golden/datasets/m1_analytics_edge_cases
+    description: >
+      Edge-case dataset for insufficient snapshots / missing rows / invalid range checks.
+    fixture_keys:
+      - sparse_inv_account_id
+      - sparse_from_date
+      - sparse_to_date
+
+endpoint_profiles:
+  investment_return_v1:
+    method: GET
+    path: /api/analytics/investment-return
+    contract: tests/contracts/analytics/investment-return.contract.md
+    compare:
+      float_abs_tol: 1.0e-8
+      exact_paths:
+        - account_id
+        - account_name
+        - account_count
+        - range.preset
+        - range.requested_from
+        - range.requested_to
+        - range.effective_from
+        - range.effective_to
+        - range.interval_days
+        - metrics.begin_assets_cents
+        - metrics.end_assets_cents
+        - metrics.net_flow_cents
+        - metrics.profit_cents
+        - metrics.net_growth_cents
+        - metrics.weighted_capital_cents
+        - cash_flows[*].snapshot_date
+        - cash_flows[*].transfer_amount_cents
+      approx_paths:
+        - metrics.return_rate
+        - metrics.annualized_rate
+        - cash_flows[*].weight
+      format_paths:
+        - metrics.begin_assets_yuan
+        - metrics.end_assets_yuan
+        - metrics.net_flow_yuan
+        - metrics.profit_yuan
+        - metrics.net_growth_yuan
+        - metrics.weighted_capital_yuan
+        - metrics.return_rate_pct
+        - metrics.annualized_rate_pct
+        - cash_flows[*].transfer_amount_yuan
+      weak_text_paths:
+        - metrics.note
+      optional_paths:
+        - account_count
+        - cash_flows[*].weighted_days
+        - cash_flows[*].weight
+      ordered_arrays:
+        - cash_flows
+  investment_curve_v1:
+    method: GET
+    path: /api/analytics/investment-curve
+    contract: tests/contracts/analytics/investment-curve.contract.md
+    compare:
+      float_abs_tol: 1.0e-8
+      exact_paths:
+        - account_id
+        - account_name
+        - account_count
+        - range.preset
+        - range.requested_from
+        - range.requested_to
+        - range.effective_from
+        - range.effective_to
+        - summary.count
+        - summary.start_assets_cents
+        - summary.end_assets_cents
+        - summary.change_cents
+        - summary.end_net_growth_cents
+        - rows[*].snapshot_date
+        - rows[*].effective_snapshot_date
+        - rows[*].total_assets_cents
+        - rows[*].transfer_amount_cents
+        - rows[*].cumulative_net_growth_cents
+      approx_paths:
+        - summary.change_pct
+        - summary.end_cumulative_return_rate
+        - rows[*].cumulative_return_rate
+        - rows[*].cumulative_return_pct
+      format_paths:
+        - summary.start_assets_yuan
+        - summary.end_assets_yuan
+        - summary.change_yuan
+        - summary.change_pct_text
+        - summary.end_net_growth_yuan
+        - summary.end_cumulative_return_pct_text
+        - rows[*].total_assets_yuan
+        - rows[*].transfer_amount_yuan
+        - rows[*].cumulative_net_growth_yuan
+        - rows[*].cumulative_return_pct_text
+      optional_paths:
+        - account_count
+      ordered_arrays:
+        - rows
+  wealth_overview_v1:
+    method: GET
+    path: /api/analytics/wealth-overview
+    contract: tests/contracts/analytics/wealth-overview.contract.md
+    compare:
+      float_abs_tol: 1.0e-8
+      exact_paths:
+        - as_of
+        - requested_as_of
+        - filters.include_investment
+        - filters.include_cash
+        - filters.include_real_estate
+        - filters.include_liability
+        - summary.investment_total_cents
+        - summary.cash_total_cents
+        - summary.real_estate_total_cents
+        - summary.liability_total_cents
+        - summary.wealth_total_cents
+        - summary.gross_assets_total_cents
+        - summary.net_asset_total_cents
+        - summary.selected_rows_total_cents
+        - summary.selected_rows_assets_total_cents
+        - summary.selected_rows_liability_total_cents
+        - summary.reconciliation_delta_cents
+        - summary.reconciliation_ok
+        - summary.stale_account_count
+        - rows[*].asset_class
+        - rows[*].account_id
+        - rows[*].account_name
+        - rows[*].snapshot_date
+        - rows[*].value_cents
+        - rows[*].stale_days
+      format_paths:
+        - summary.investment_total_yuan
+        - summary.cash_total_yuan
+        - summary.real_estate_total_yuan
+        - summary.liability_total_yuan
+        - summary.wealth_total_yuan
+        - summary.gross_assets_total_yuan
+        - summary.net_asset_total_yuan
+        - summary.selected_rows_total_yuan
+        - summary.selected_rows_assets_total_yuan
+        - summary.selected_rows_liability_total_yuan
+        - summary.reconciliation_delta_yuan
+        - rows[*].value_yuan
+      unordered_arrays:
+        - rows
+      unordered_array_keys:
+        rows:
+          - asset_class
+          - account_id
+          - snapshot_date
+  wealth_curve_v1:
+    method: GET
+    path: /api/analytics/wealth-curve
+    contract: tests/contracts/analytics/wealth-curve.contract.md
+    compare:
+      float_abs_tol: 1.0e-8
+      exact_paths:
+        - range.preset
+        - range.requested_from
+        - range.requested_to
+        - range.effective_from
+        - range.effective_to
+        - range.points
+        - filters.include_investment
+        - filters.include_cash
+        - filters.include_real_estate
+        - filters.include_liability
+        - summary.start_wealth_cents
+        - summary.end_wealth_cents
+        - summary.change_cents
+        - summary.net_growth_cents
+        - summary.start_liability_cents
+        - summary.end_liability_cents
+        - summary.liability_net_growth_cents
+        - summary.start_net_asset_cents
+        - summary.end_net_asset_cents
+        - summary.net_asset_change_cents
+        - summary.start_investment_cents
+        - summary.end_investment_cents
+        - summary.investment_net_growth_cents
+        - summary.start_cash_cents
+        - summary.end_cash_cents
+        - summary.cash_net_growth_cents
+        - summary.start_real_estate_cents
+        - summary.end_real_estate_cents
+        - summary.real_estate_net_growth_cents
+        - rows[*].snapshot_date
+        - rows[*].investment_total_cents
+        - rows[*].cash_total_cents
+        - rows[*].real_estate_total_cents
+        - rows[*].liability_total_cents
+        - rows[*].wealth_total_cents
+        - rows[*].net_asset_total_cents
+        - rows[*].wealth_net_growth_cents
+        - rows[*].liability_net_growth_cents
+        - rows[*].net_asset_net_growth_cents
+        - rows[*].investment_net_growth_cents
+        - rows[*].cash_net_growth_cents
+        - rows[*].real_estate_net_growth_cents
+      approx_paths:
+        - summary.change_pct
+        - summary.liability_change_pct
+        - summary.net_asset_change_pct
+        - summary.investment_change_pct
+        - summary.cash_change_pct
+        - summary.real_estate_change_pct
+      format_paths:
+        - summary.start_wealth_yuan
+        - summary.end_wealth_yuan
+        - summary.change_yuan
+        - summary.net_growth_yuan
+        - summary.change_pct_text
+        - summary.start_liability_yuan
+        - summary.end_liability_yuan
+        - summary.liability_net_growth_yuan
+        - summary.liability_change_pct_text
+        - summary.start_net_asset_yuan
+        - summary.end_net_asset_yuan
+        - summary.net_asset_change_yuan
+        - summary.net_asset_net_growth_yuan
+        - summary.net_asset_change_pct_text
+        - summary.start_investment_yuan
+        - summary.end_investment_yuan
+        - summary.investment_net_growth_yuan
+        - summary.investment_change_pct_text
+        - summary.start_cash_yuan
+        - summary.end_cash_yuan
+        - summary.cash_net_growth_yuan
+        - summary.cash_change_pct_text
+        - summary.start_real_estate_yuan
+        - summary.end_real_estate_yuan
+        - summary.real_estate_net_growth_yuan
+        - summary.real_estate_change_pct_text
+        - rows[*].wealth_total_yuan
+        - rows[*].net_asset_total_yuan
+        - rows[*].wealth_net_growth_yuan
+      ordered_arrays:
+        - rows
+
+invariant_library:
+  inv_return_core_consistency:
+    type: path_equals
+    left: metrics.net_growth_cents
+    right: metrics.profit_cents
+  inv_return_positive_interval:
+    type: path_gt
+    path: range.interval_days
+    value: 0
+  inv_curve_count_matches_rows:
+    type: path_equals_derived
+    left: summary.count
+    right_expr: len(rows)
+  inv_curve_rows_sorted:
+    type: array_sorted_by
+    path: rows
+    key: snapshot_date
+    order: asc
+  inv_curve_summary_end_matches_last_row_assets:
+    type: path_equals_derived
+    left: summary.end_assets_cents
+    right_expr: rows[-1].total_assets_cents
+    when: rows_non_empty
+  inv_curve_summary_end_matches_last_row_return:
+    type: path_approx_equals_derived
+    left: summary.end_cumulative_return_rate
+    right_expr: rows[-1].cumulative_return_rate
+    abs_tol: 1.0e-8
+    when: rows_non_empty
+  wealth_overview_reconciliation_flag:
+    type: boolean_matches_expression
+    path: summary.reconciliation_ok
+    expr: summary.reconciliation_delta_cents == 0
+  wealth_overview_stale_count:
+    type: path_equals_derived
+    left: summary.stale_account_count
+    right_expr: count(rows[*] where stale_days > 0)
+  wealth_overview_selected_rows_balance:
+    type: expression_true
+    expr: summary.selected_rows_assets_total_cents - summary.selected_rows_liability_total_cents == summary.selected_rows_total_cents
+  wealth_curve_points_match_rows:
+    type: path_equals_derived
+    left: range.points
+    right_expr: len(rows)
+  wealth_curve_rows_sorted:
+    type: array_sorted_by
+    path: rows
+    key: snapshot_date
+    order: asc
+  wealth_curve_summary_start_matches_first_row:
+    type: path_equals_derived
+    left: summary.start_wealth_cents
+    right_expr: rows[0].wealth_total_cents
+    when: rows_non_empty
+  wealth_curve_summary_end_matches_last_row:
+    type: path_equals_derived
+    left: summary.end_wealth_cents
+    right_expr: rows[-1].wealth_total_cents
+    when: rows_non_empty
+  wealth_curve_change_matches_delta:
+    type: expression_true
+    expr: summary.change_cents == (summary.end_wealth_cents - summary.start_wealth_cents)
+  wealth_curve_net_growth_alias:
+    type: path_equals
+    left: summary.net_growth_cents
+    right: summary.change_cents
+
+cases:
+  # ------------------------------------------------------------
+  # investment-return (success)
+  # ------------------------------------------------------------
+  - id: inv_return_single_ytd
+    endpoint_profile: investment_return_v1
+    dataset_ref: m1_analytics_minimal
+    tags: [p1-a, success, investment-return, single]
+    status:
+      python: active
+      rust: active
+    query:
+      account_id: ${fixture.inv_account_id}
+      preset: ytd
+    expected:
+      outcome: success
+    invariants:
+      - inv_return_core_consistency
+      - inv_return_positive_interval
+
+  - id: inv_return_single_1y
+    endpoint_profile: investment_return_v1
+    dataset_ref: m1_analytics_minimal
+    tags: [p1-a, success, investment-return, single]
+    status:
+      python: active
+      rust: active
+    query:
+      account_id: ${fixture.inv_account_id}
+      preset: 1y
+    expected:
+      outcome: success
+    invariants:
+      - inv_return_core_consistency
+      - inv_return_positive_interval
+
+  - id: inv_return_single_custom
+    endpoint_profile: investment_return_v1
+    dataset_ref: m1_analytics_minimal
+    tags: [p1-a, success, investment-return, single, custom-range]
+    status:
+      python: active
+      rust: active
+    query:
+      account_id: ${fixture.inv_account_id}
+      preset: custom
+      from: ${fixture.custom_from_date}
+      to: ${fixture.custom_to_date}
+    expected:
+      outcome: success
+    invariants:
+      - inv_return_core_consistency
+      - inv_return_positive_interval
+
+  - id: inv_return_portfolio_ytd
+    endpoint_profile: investment_return_v1
+    dataset_ref: m1_analytics_minimal
+    tags: [p1-a, success, investment-return, portfolio]
+    status:
+      python: active
+      rust: active
+    query:
+      account_id: __portfolio__
+      preset: ytd
+    expected:
+      outcome: success
+      required_paths:
+        - account_count
+    invariants:
+      - inv_return_core_consistency
+      - inv_return_positive_interval
+
+  # ------------------------------------------------------------
+  # investment-return (error)
+  # ------------------------------------------------------------
+  - id: inv_return_error_missing_account_id
+    endpoint_profile: investment_return_v1
+    dataset_ref: m1_analytics_minimal
+    tags: [p1-a, error, investment-return, validation]
+    status:
+      python: active
+      rust: active
+    query:
+      preset: ytd
+    expected:
+      outcome: error
+      category: VALIDATION_ERROR
+      message_keywords:
+        - account_id
+        - 必填
+
+  - id: inv_return_error_invalid_custom_from
+    endpoint_profile: investment_return_v1
+    dataset_ref: m1_analytics_minimal
+    tags: [p1-a, error, investment-return, validation]
+    status:
+      python: active
+      rust: active
+    query:
+      account_id: ${fixture.inv_account_id}
+      preset: custom
+      from: 2026-13-40
+      to: ${fixture.custom_to_date}
+    expected:
+      outcome: error
+      category: VALIDATION_ERROR
+      message_keywords:
+        - from
+
+  - id: inv_return_error_insufficient_snapshot
+    endpoint_profile: investment_return_v1
+    dataset_ref: m1_analytics_edge_cases
+    tags: [p1-a, error, investment-return, no-data]
+    status:
+      python: active
+      rust: active
+    query:
+      account_id: ${fixture.sparse_inv_account_id}
+      preset: custom
+      from: ${fixture.sparse_from_date}
+      to: ${fixture.sparse_to_date}
+    expected:
+      outcome: error
+      category: NO_DATA_ERROR
+      message_keywords_any:
+        - 期初资产记录
+        - 期末资产记录
+        - 有效快照不足
+
+  # ------------------------------------------------------------
+  # investment-curve (success)
+  # ------------------------------------------------------------
+  - id: inv_curve_single_1y
+    endpoint_profile: investment_curve_v1
+    dataset_ref: m1_analytics_minimal
+    tags: [p1-a, success, investment-curve, single]
+    status:
+      python: active
+      rust: active
+    query:
+      account_id: ${fixture.inv_account_id}
+      preset: 1y
+    expected:
+      outcome: success
+    invariants:
+      - inv_curve_count_matches_rows
+      - inv_curve_rows_sorted
+      - inv_curve_summary_end_matches_last_row_assets
+      - inv_curve_summary_end_matches_last_row_return
+
+  - id: inv_curve_single_custom
+    endpoint_profile: investment_curve_v1
+    dataset_ref: m1_analytics_minimal
+    tags: [p1-a, success, investment-curve, single, custom-range]
+    status:
+      python: active
+      rust: active
+    query:
+      account_id: ${fixture.inv_account_id}
+      preset: custom
+      from: ${fixture.custom_from_date}
+      to: ${fixture.custom_to_date}
+    expected:
+      outcome: success
+    invariants:
+      - inv_curve_count_matches_rows
+      - inv_curve_rows_sorted
+      - inv_curve_summary_end_matches_last_row_assets
+      - inv_curve_summary_end_matches_last_row_return
+
+  - id: inv_curve_portfolio_ytd
+    endpoint_profile: investment_curve_v1
+    dataset_ref: m1_analytics_minimal
+    tags: [p1-a, success, investment-curve, portfolio]
+    status:
+      python: active
+      rust: active
+    query:
+      account_id: __portfolio__
+      preset: ytd
+    expected:
+      outcome: success
+      required_paths:
+        - account_count
+    invariants:
+      - inv_curve_count_matches_rows
+      - inv_curve_rows_sorted
+      - inv_curve_summary_end_matches_last_row_assets
+      - inv_curve_summary_end_matches_last_row_return
+
+  # ------------------------------------------------------------
+  # investment-curve (error)
+  # ------------------------------------------------------------
+  - id: inv_curve_error_missing_account_id
+    endpoint_profile: investment_curve_v1
+    dataset_ref: m1_analytics_minimal
+    tags: [p1-a, error, investment-curve, validation]
+    status:
+      python: active
+      rust: active
+    query:
+      preset: 1y
+    expected:
+      outcome: error
+      category: VALIDATION_ERROR
+      message_keywords:
+        - account_id
+        - 必填
+
+  - id: inv_curve_error_no_snapshots
+    endpoint_profile: investment_curve_v1
+    dataset_ref: m1_analytics_minimal
+    tags: [p1-a, error, investment-curve, no-data]
+    status:
+      python: active
+      rust: active
+    query:
+      account_id: ${fixture.inv_account_id}
+      preset: custom
+      from: ${fixture.no_data_future_from}
+      to: ${fixture.no_data_future_to}
+    expected:
+      outcome: error
+      category: INVALID_RANGE_ERROR
+      message_keywords_any:
+        - 起始日期晚于结束日期
+        - 结束日期早于最早可用记录
+
+  # ------------------------------------------------------------
+  # wealth-overview (success)
+  # ------------------------------------------------------------
+  - id: wealth_overview_default
+    endpoint_profile: wealth_overview_v1
+    dataset_ref: m1_analytics_minimal
+    tags: [p1-a, success, wealth-overview, default]
+    status:
+      python: active
+      rust: active
+    query: {}
+    expected:
+      outcome: success
+    invariants:
+      - wealth_overview_reconciliation_flag
+      - wealth_overview_stale_count
+      - wealth_overview_selected_rows_balance
+
+  - id: wealth_overview_history_asof
+    endpoint_profile: wealth_overview_v1
+    dataset_ref: m1_analytics_minimal
+    tags: [p1-a, success, wealth-overview, asof]
+    status:
+      python: active
+      rust: active
+    query:
+      as_of: ${fixture.history_snapshot_date}
+    expected:
+      outcome: success
+    invariants:
+      - wealth_overview_reconciliation_flag
+      - wealth_overview_stale_count
+      - wealth_overview_selected_rows_balance
+
+  - id: wealth_overview_future_asof_clamp
+    endpoint_profile: wealth_overview_v1
+    dataset_ref: m1_analytics_minimal
+    tags: [p1-a, success, wealth-overview, asof, clamp]
+    status:
+      python: active
+      rust: active
+    query:
+      as_of: 2099-12-31
+    expected:
+      outcome: success
+      path_equals:
+        - left: as_of
+          right: ${fixture.latest_snapshot_date}
+    invariants:
+      - wealth_overview_reconciliation_flag
+      - wealth_overview_stale_count
+      - wealth_overview_selected_rows_balance
+
+  - id: wealth_overview_without_investment
+    endpoint_profile: wealth_overview_v1
+    dataset_ref: m1_analytics_minimal
+    tags: [p1-a, success, wealth-overview, filters]
+    status:
+      python: active
+      rust: active
+    query:
+      include_investment: "false"
+      include_cash: "true"
+      include_real_estate: "true"
+      include_liability: "true"
+    expected:
+      outcome: success
+    invariants:
+      - wealth_overview_reconciliation_flag
+      - wealth_overview_stale_count
+      - wealth_overview_selected_rows_balance
+
+  - id: wealth_overview_liability_only
+    endpoint_profile: wealth_overview_v1
+    dataset_ref: m1_analytics_minimal
+    tags: [p1-a, success, wealth-overview, filters, liability-only]
+    status:
+      python: active
+      rust: active
+    query:
+      include_investment: "false"
+      include_cash: "false"
+      include_real_estate: "false"
+      include_liability: "true"
+    expected:
+      outcome: success
+      path_equals:
+        - left: summary.selected_rows_assets_total_cents
+          right_value: 0
+    invariants:
+      - wealth_overview_reconciliation_flag
+      - wealth_overview_stale_count
+      - wealth_overview_selected_rows_balance
+
+  # ------------------------------------------------------------
+  # wealth-overview (error)
+  # ------------------------------------------------------------
+  - id: wealth_overview_error_all_filters_off
+    endpoint_profile: wealth_overview_v1
+    dataset_ref: m1_analytics_minimal
+    tags: [p1-a, error, wealth-overview, validation]
+    status:
+      python: active
+      rust: active
+    query:
+      include_investment: "false"
+      include_cash: "false"
+      include_real_estate: "false"
+      include_liability: "false"
+    expected:
+      outcome: error
+      category: VALIDATION_ERROR
+      message_keywords:
+        - 至少需要选择一个资产类型
+
+  - id: wealth_overview_error_invalid_bool
+    endpoint_profile: wealth_overview_v1
+    dataset_ref: m1_analytics_minimal
+    tags: [p1-a, error, wealth-overview, validation]
+    status:
+      python: active
+      rust: active
+    query:
+      include_cash: maybe
+    expected:
+      outcome: error
+      category: VALIDATION_ERROR
+      message_keywords:
+        - 布尔参数不合法
+
+  # ------------------------------------------------------------
+  # wealth-curve (success)
+  # ------------------------------------------------------------
+  - id: wealth_curve_default_1y
+    endpoint_profile: wealth_curve_v1
+    dataset_ref: m1_analytics_minimal
+    tags: [p1-a, success, wealth-curve, default]
+    status:
+      python: active
+      rust: active
+    query:
+      preset: 1y
+    expected:
+      outcome: success
+    invariants:
+      - wealth_curve_points_match_rows
+      - wealth_curve_rows_sorted
+      - wealth_curve_summary_start_matches_first_row
+      - wealth_curve_summary_end_matches_last_row
+      - wealth_curve_change_matches_delta
+      - wealth_curve_net_growth_alias
+
+  - id: wealth_curve_ytd
+    endpoint_profile: wealth_curve_v1
+    dataset_ref: m1_analytics_minimal
+    tags: [p1-a, success, wealth-curve, ytd]
+    status:
+      python: active
+      rust: active
+    query:
+      preset: ytd
+    expected:
+      outcome: success
+    invariants:
+      - wealth_curve_points_match_rows
+      - wealth_curve_rows_sorted
+      - wealth_curve_summary_start_matches_first_row
+      - wealth_curve_summary_end_matches_last_row
+      - wealth_curve_change_matches_delta
+      - wealth_curve_net_growth_alias
+
+  - id: wealth_curve_custom
+    endpoint_profile: wealth_curve_v1
+    dataset_ref: m1_analytics_minimal
+    tags: [p1-a, success, wealth-curve, custom-range]
+    status:
+      python: active
+      rust: active
+    query:
+      preset: custom
+      from: ${fixture.custom_from_date}
+      to: ${fixture.custom_to_date}
+    expected:
+      outcome: success
+    invariants:
+      - wealth_curve_points_match_rows
+      - wealth_curve_rows_sorted
+      - wealth_curve_summary_start_matches_first_row
+      - wealth_curve_summary_end_matches_last_row
+      - wealth_curve_change_matches_delta
+      - wealth_curve_net_growth_alias
+
+  - id: wealth_curve_without_investment
+    endpoint_profile: wealth_curve_v1
+    dataset_ref: m1_analytics_minimal
+    tags: [p1-a, success, wealth-curve, filters]
+    status:
+      python: active
+      rust: active
+    query:
+      preset: 1y
+      include_investment: "false"
+      include_cash: "true"
+      include_real_estate: "true"
+      include_liability: "true"
+    expected:
+      outcome: success
+    invariants:
+      - wealth_curve_points_match_rows
+      - wealth_curve_rows_sorted
+      - wealth_curve_summary_start_matches_first_row
+      - wealth_curve_summary_end_matches_last_row
+      - wealth_curve_change_matches_delta
+      - wealth_curve_net_growth_alias
+
+  - id: wealth_curve_without_liability
+    endpoint_profile: wealth_curve_v1
+    dataset_ref: m1_analytics_minimal
+    tags: [p1-a, success, wealth-curve, filters]
+    status:
+      python: active
+      rust: active
+    query:
+      preset: 1y
+      include_investment: "true"
+      include_cash: "true"
+      include_real_estate: "true"
+      include_liability: "false"
+    expected:
+      outcome: success
+    invariants:
+      - wealth_curve_points_match_rows
+      - wealth_curve_rows_sorted
+      - wealth_curve_summary_start_matches_first_row
+      - wealth_curve_summary_end_matches_last_row
+      - wealth_curve_change_matches_delta
+      - wealth_curve_net_growth_alias
+
+  # ------------------------------------------------------------
+  # wealth-curve (error)
+  # ------------------------------------------------------------
+  - id: wealth_curve_error_all_filters_off
+    endpoint_profile: wealth_curve_v1
+    dataset_ref: m1_analytics_minimal
+    tags: [p1-a, error, wealth-curve, validation]
+    status:
+      python: active
+      rust: active
+    query:
+      include_investment: "false"
+      include_cash: "false"
+      include_real_estate: "false"
+      include_liability: "false"
+    expected:
+      outcome: error
+      category: VALIDATION_ERROR
+      message_keywords:
+        - 至少需要选择一个资产类型
+
+cross_case_checks:
+  - id: inv_curve_end_return_matches_single_custom
+    status: active
+    depends_on:
+      - inv_curve_single_custom
+      - inv_return_single_custom
+    type: path_approx_equal_between_cases
+    left_case: inv_curve_single_custom
+    left_path: summary.end_cumulative_return_rate
+    right_case: inv_return_single_custom
+    right_path: metrics.return_rate
+    abs_tol: 1.0e-8
+
+  - id: inv_curve_end_return_matches_portfolio_ytd
+    status: active
+    depends_on:
+      - inv_curve_portfolio_ytd
+      - inv_return_portfolio_ytd
+    type: path_approx_equal_between_cases
+    left_case: inv_curve_portfolio_ytd
+    left_path: summary.end_cumulative_return_rate
+    right_case: inv_return_portfolio_ytd
+    right_path: metrics.return_rate
+    abs_tol: 1.0e-8
+
+reporting:
+  emit:
+    - text_summary
+    - json_report
+  include:
+    - case_id
+    - endpoint
+    - dataset_ref
+    - outcome
+    - diff_count
+    - invariant_failures
+    - error_category_match
+  fail_levels:
+    exact_mismatch: fail
+    approx_mismatch: fail
+    invariant_failure: fail
+    weak_text_mismatch: warn
+    format_mismatch: warn
+    error_message_keyword_mismatch: warn

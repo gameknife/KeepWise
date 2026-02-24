@@ -1,0 +1,5 @@
+{
+  "rust-analyzer.linkedProjects": [
+    "apps/keepwise-tauri/src-tauri/Cargo.toml"
+  ]
+}
