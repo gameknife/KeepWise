@@ -3,6 +3,9 @@
   --kw-accent: #34c6ad;
   --kw-accent-strong: #2fb59f;
   --kw-accent-text: #a9f3e7;
+  --kw-scroll-track: rgba(255, 255, 255, 0.035);
+  --kw-scroll-thumb: rgba(161, 226, 214, 0.22);
+  --kw-scroll-thumb-hover: rgba(161, 226, 214, 0.36);
   font-family:
     "Avenir Next", "SF Pro Display", "Segoe UI", "PingFang SC", "Hiragino Sans GB",
     "Microsoft YaHei", sans-serif;
@@ -19,6 +22,7 @@
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   -webkit-text-size-adjust: 100%;
+  color-scheme: dark;
 }
 
 * {
@@ -31,6 +35,7 @@ body {
   min-height: 100vh;
   height: 100vh;
   overflow: hidden;
+  scrollbar-color: var(--kw-scroll-thumb) var(--kw-scroll-track);
 }
 
 #root {
@@ -44,6 +49,45 @@ input,
 textarea,
 select {
   font: inherit;
+}
+
+select {
+  color-scheme: dark;
+}
+
+select option,
+select optgroup {
+  background: #171c22;
+  color: #f4efe4;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--kw-scroll-thumb) var(--kw-scroll-track);
+}
+
+*::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+
+*::-webkit-scrollbar-track {
+  background: var(--kw-scroll-track);
+  border-radius: 10px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--kw-scroll-thumb);
+  border-radius: 10px;
+  border: 2px solid rgba(11, 19, 25, 0.65);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--kw-scroll-thumb-hover);
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 .app-shell {
