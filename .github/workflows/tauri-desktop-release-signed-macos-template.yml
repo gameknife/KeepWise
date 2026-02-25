@@ -50,6 +50,9 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Install diff regression Python deps
+        run: python3 -m pip install --user pyyaml
+
       - name: Install frontend deps
         working-directory: apps/keepwise-tauri
         run: npm ci
