@@ -185,13 +185,13 @@ type ProductTabDef = {
 };
 
 const PRODUCT_TABS: ProductTabDef[] = [
-  { key: "import-center", icon: "⇩", label: "导入中心", subtitle: "YZXY / EML / CMB PDF", status: "ready" },
-  { key: "manual-entry", icon: "✎", label: "手动录入", subtitle: "记录修正与手工录入", status: "partial" },
-  { key: "return-analysis", icon: "↗", label: "收益分析", subtitle: "投资收益率与收益曲线", status: "ready" },
+  { key: "manual-entry", icon: "✎", label: "更新收益", subtitle: "快捷录入投资快照", status: "partial" },
   { key: "wealth-overview", icon: "◔", label: "财富总览", subtitle: "总览与财富曲线", status: "ready" },
-  { key: "budget-fire", icon: "◎", label: "预算与FIRE", subtitle: "预算、复盘与 FIRE 进度", status: "partial" },
+  { key: "return-analysis", icon: "↗", label: "投资收益", subtitle: "投资收益率与收益曲线", status: "ready" },
+  { key: "budget-fire", icon: "◎", label: "FIRE进度", subtitle: "FIRE 进度、预算与复盘", status: "partial" },
   { key: "income-analysis", icon: "¥", label: "收入分析", subtitle: "工资/公积金收入结构与趋势", status: "partial" },
   { key: "consumption-analysis", icon: "¤", label: "消费分析", subtitle: "交易筛选与排除规则", status: "partial" },
+  { key: "import-center", icon: "⇩", label: "导入中心", subtitle: "YZXY / EML / CMB PDF", status: "ready" },
   { key: "admin", icon: "⚙", label: "高级管理", subtitle: "调试、健康检查、管理操作", status: "ready" },
 ];
 
@@ -472,6 +472,7 @@ function readArray(root: unknown, path: string): unknown[] {
 let amountPrivacyMaskedGlobal = false;
 let gainLossColorSchemeGlobal: GainLossColorScheme = "cn_red_up_green_down";
 const APP_SETTINGS_STORAGE_KEY = "keepwise.desktop.app-settings.v1";
+const QUICK_MANUAL_INV_LAST_ACCOUNT_ID_STORAGE_KEY = "keepwise.desktop.quick-manual-investment.last-account-id.v1";
 
 function isAmountPrivacyMasked(): boolean {
   return amountPrivacyMaskedGlobal;
@@ -487,6 +488,19 @@ function signedMetricTone(value?: number): "default" | "good" | "warn" {
     return value > 0 ? "warn" : "good";
   }
   return value > 0 ? "good" : "warn";
+}
+
+function getTodayDateInputValueLocal(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function getCurrentMonthDateRangeLocal(): { from: string; to: string } {
+  const to = getTodayDateInputValueLocal();
+  return { from: `${to.slice(0, 7)}-01`, to };
 }
 
 function parseStoredAppSettings(raw: string | null): AppSettings {
@@ -553,6 +567,18 @@ function formatCentsShort(cents?: number): string {
   );
 }
 
+function formatSignedDeltaCentsShort(cents?: number): string {
+  if (typeof cents !== "number" || !Number.isFinite(cents)) return "-";
+  const base = formatCentsShort(cents);
+  if (base === "-") return base;
+  return cents > 0 ? `+${base}` : base;
+}
+
+function formatCentsInputValue(cents?: number): string {
+  if (typeof cents !== "number" || !Number.isFinite(cents)) return "";
+  return (cents / 100).toFixed(2);
+}
+
 function formatRatePct(rate?: number): string {
   if (typeof rate !== "number" || !Number.isFinite(rate)) return "-";
   return `${(rate * 100).toFixed(2)}%`;
@@ -561,6 +587,51 @@ function formatRatePct(rate?: number): string {
 function formatPct(value?: number): string {
   if (typeof value !== "number" || !Number.isFinite(value)) return "-";
   return `${(value * 100).toFixed(2)}%`;
+}
+
+function formatMonthDayLabel(dateIso?: string): string {
+  if (!dateIso || !/^\d{4}-\d{2}-\d{2}$/.test(dateIso)) return "-";
+  const month = Number(dateIso.slice(5, 7));
+  const day = Number(dateIso.slice(8, 10));
+  if (!Number.isFinite(month) || !Number.isFinite(day)) return "-";
+  return `${month}月${day}日`;
+}
+
+function computeMonthlyTotalAssetGrowthFromWealthCurve(data: unknown):
+  | { deltaCents: number; baselineDate: string; latestDate: string }
+  | undefined {
+  if (!isRecord(data)) return undefined;
+  const rows = readArray(data, "rows").filter(isRecord);
+  if (rows.length < 2) return undefined;
+  const points = rows
+    .map((row) => {
+      const snapshotDate = typeof row.snapshot_date === "string" ? row.snapshot_date : "";
+      if (!snapshotDate) return null;
+      const cash = typeof row.cash_total_cents === "number" ? row.cash_total_cents : 0;
+      const realEstate = typeof row.real_estate_total_cents === "number" ? row.real_estate_total_cents : 0;
+      const investment = typeof row.investment_total_cents === "number" ? row.investment_total_cents : 0;
+      return {
+        snapshotDate,
+        totalAssetsCents: cash + realEstate + investment,
+      };
+    })
+    .filter((v): v is { snapshotDate: string; totalAssetsCents: number } => v !== null)
+    .sort((a, b) => a.snapshotDate.localeCompare(b.snapshotDate));
+  if (points.length < 2) return undefined;
+  const curr = points[points.length - 1];
+  if (!curr) return undefined;
+  const latestDate = curr.snapshotDate;
+  if (!latestDate || latestDate.length < 7) return undefined;
+  const currentMonthStart = `${latestDate.slice(0, 7)}-01`;
+  const prevCandidates = points.filter((p) => p.snapshotDate < currentMonthStart);
+  const prev = prevCandidates[prevCandidates.length - 1];
+  if (!prev || !Number.isFinite(prev.totalAssetsCents)) return undefined;
+  if (!Number.isFinite(curr.totalAssetsCents)) return undefined;
+  return {
+    deltaCents: curr.totalAssetsCents - prev.totalAssetsCents,
+    baselineDate: prev.snapshotDate,
+    latestDate: curr.snapshotDate,
+  };
 }
 
 function formatPresetLabel(preset?: string): string {
@@ -1644,7 +1715,6 @@ function WealthSankeyDiagram({
           })}
         </svg>
       </div>
-      <p className="wealth-sankey-note">左侧为资产构成，中部为总资产，右侧展示净资产与负债关系。</p>
     </div>
   );
 }
@@ -1670,7 +1740,7 @@ function WealthOverviewPreview({
   const requestedAsOf = readString(data, "requested_as_of") ?? "-";
 
   return (
-    <div className="subcard preview-card">
+    <div className="wealth-section-block">
       <div className="preview-header">
         <h3>财富总览结果</h3>
         <div className="preview-subtle">
@@ -1724,9 +1794,13 @@ function WealthCurvePreview({
     .filter(
       (v): v is { label: string; cash: number; realEstate: number; investment: number; liability: number } => v !== null,
     );
+  const monthlyTotalAssetGrowth = computeMonthlyTotalAssetGrowthFromWealthCurve(data);
+  const monthlyTotalAssetGrowthLabel = monthlyTotalAssetGrowth?.baselineDate
+    ? `相比${formatMonthDayLabel(monthlyTotalAssetGrowth.baselineDate)}`
+    : "月度总资产增长（元）";
 
   return (
-    <div className="subcard preview-card">
+    <div className="wealth-section-block">
       <div className="preview-header">
         <h3>财富变化趋势</h3>
         <div className="preview-subtle">
@@ -1737,9 +1811,14 @@ function WealthCurvePreview({
         <PreviewStat label="期末财富总额（元）" value={formatCentsShort(endWealth)} />
         <PreviewStat label="期末净资产（元）" value={formatCentsShort(endNetAsset)} />
         <PreviewStat label="区间变化率" value={formatPct(changePct)} tone={signedMetricTone(changePct)} />
+        <PreviewStat
+          label={monthlyTotalAssetGrowthLabel}
+          value={formatSignedDeltaCentsShort(monthlyTotalAssetGrowth?.deltaCents)}
+          tone={signedMetricTone(monthlyTotalAssetGrowth?.deltaCents)}
+        />
       </div>
       <div className="preview-chart-stack">
-        <div className="sparkline-card full-width-chart-panel">
+        <div className="wealth-trend-chart-block full-width-chart-panel">
           <div className="sparkline-title">财产趋势（堆叠）</div>
           <WealthStackedTrendChart rows={stackedRows} visibility={visibility} height={318} />
         </div>
@@ -3141,7 +3220,19 @@ function TransactionsPreview({ data }: { data: unknown }) {
   );
 }
 
-function InvestmentsListPreview({ data }: { data: unknown }) {
+function InvestmentsListPreview({
+  data,
+  deleteBusy = false,
+  deletingId = "",
+  onEditRow,
+  onDeleteRow,
+}: {
+  data: unknown;
+  deleteBusy?: boolean;
+  deletingId?: string;
+  onEditRow?: (row: Record<string, unknown>) => void;
+  onDeleteRow?: (id: string, row: Record<string, unknown>) => void;
+}) {
   const [sortKey, setSortKey] = useState<string>("snapshot_date");
   const [sortDir, setSortDir] = useState<TableSortDirection>("desc");
   if (!isRecord(data)) return null;
@@ -3194,10 +3285,12 @@ function InvestmentsListPreview({ data }: { data: unknown }) {
                 <th className="num"><SortableHeaderButton label="总资产" sortKey="total_assets_cents" activeSortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} /></th>
                 <th className="num"><SortableHeaderButton label="净转入" sortKey="transfer_amount_cents" activeSortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} /></th>
                 <th><SortableHeaderButton label="来源" sortKey="source_type" activeSortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} /></th>
+                {onEditRow || onDeleteRow ? <th>操作</th> : null}
               </tr>
             </thead>
             <tbody>
               {sortedRows.map((row, idx) => {
+                const rowId = typeof row.id === "string" ? row.id : "";
                 const date = typeof row.snapshot_date === "string" ? row.snapshot_date : "-";
                 const name =
                   (typeof row.account_name === "string" && row.account_name) ||
@@ -3212,6 +3305,32 @@ function InvestmentsListPreview({ data }: { data: unknown }) {
                     <td className="num">{assets}</td>
                     <td className="num">{transfer}</td>
                     <td>{source}</td>
+                    {onEditRow || onDeleteRow ? (
+                      <td>
+                        <div className="table-actions-inline">
+                          {onEditRow ? (
+                            <button
+                              type="button"
+                              className="secondary-btn table-inline-btn"
+                              onClick={() => onEditRow(row)}
+                              disabled={!rowId}
+                            >
+                              修正
+                            </button>
+                          ) : null}
+                          {onDeleteRow ? (
+                            <button
+                              type="button"
+                              className="danger-btn table-inline-btn"
+                              onClick={() => rowId && onDeleteRow(rowId, row)}
+                              disabled={!rowId || (deleteBusy && deletingId === rowId)}
+                            >
+                              {deleteBusy && deletingId === rowId ? "删除中..." : "删除"}
+                            </button>
+                          ) : null}
+                        </div>
+                      </td>
+                    ) : null}
                   </tr>
                 );
               })}
@@ -5296,7 +5415,7 @@ function App() {
   const [invListError, setInvListError] = useState("");
   const [invListResult, setInvListResult] = useState<QueryInvestmentsPayload | null>(null);
   const [invListQuery, setInvListQuery] = useState<QueryInvestmentsRequest>({
-    limit: 100,
+    limit: 30,
     from: "",
     to: "",
     source_type: "",
@@ -5306,7 +5425,7 @@ function App() {
   const [assetListError, setAssetListError] = useState("");
   const [assetListResult, setAssetListResult] = useState<QueryAssetValuationsPayload | null>(null);
   const [assetListQuery, setAssetListQuery] = useState<QueryAssetValuationsRequest>({
-    limit: 100,
+    limit: 30,
     from: "",
     to: "",
     asset_class: "",
@@ -5345,6 +5464,27 @@ function App() {
     total_assets: "",
     transfer_amount: "0",
   });
+  const [quickManualInvOpen, setQuickManualInvOpen] = useState(false);
+  const [quickManualInvBusy, setQuickManualInvBusy] = useState(false);
+  const [quickManualInvError, setQuickManualInvError] = useState("");
+  const [quickManualInvLastAccountId, setQuickManualInvLastAccountId] = useState<string>(() => {
+    if (typeof window === "undefined") return "";
+    try {
+      return window.localStorage.getItem(QUICK_MANUAL_INV_LAST_ACCOUNT_ID_STORAGE_KEY) ?? "";
+    } catch {
+      return "";
+    }
+  });
+  const [quickManualInvForm, setQuickManualInvForm] = useState<UpsertManualInvestmentRequest>({
+    snapshot_date: "",
+    account_id: "",
+    account_name: "",
+    total_assets: "",
+    transfer_amount: "0",
+  });
+  const [manualEntryTabMonthCountBusy, setManualEntryTabMonthCountBusy] = useState(false);
+  const [manualEntryTabMonthCount, setManualEntryTabMonthCount] = useState<number | null>(null);
+  const [invEditModalOpen, setInvEditModalOpen] = useState(false);
   const [updateInvBusy, setUpdateInvBusy] = useState(false);
   const [updateInvError, setUpdateInvError] = useState("");
   const [updateInvResult, setUpdateInvResult] = useState<InvestmentRecordMutationPayload | null>(null);
@@ -6015,7 +6155,7 @@ function App() {
 
   function buildInvestmentsListQueryRequest(): QueryInvestmentsRequest {
     const req: QueryInvestmentsRequest = {
-      limit: Number(invListQuery.limit ?? 20),
+      limit: Number(invListQuery.limit ?? 30),
     };
     const from = `${invListQuery.from ?? ""}`.trim();
     const to = `${invListQuery.to ?? ""}`.trim();
@@ -6030,7 +6170,7 @@ function App() {
 
   function buildAssetValuationsQueryRequest(): QueryAssetValuationsRequest {
     const req: QueryAssetValuationsRequest = {
-      limit: Number(assetListQuery.limit ?? 20),
+      limit: Number(assetListQuery.limit ?? 30),
     };
     const from = `${assetListQuery.from ?? ""}`.trim();
     const to = `${assetListQuery.to ?? ""}`.trim();
@@ -6300,12 +6440,68 @@ function App() {
     resetAccountCatalogCreateForm();
   }
 
+  function resetQuickManualInvestmentForm(nextAccountId = "") {
+    setQuickManualInvForm({
+      snapshot_date: getTodayDateInputValueLocal(),
+      account_id: nextAccountId,
+      account_name: "",
+      total_assets: "",
+      transfer_amount: "0",
+    });
+  }
+
+  function openQuickManualInvestmentModal() {
+    setQuickManualInvError("");
+    resetQuickManualInvestmentForm(quickManualInvLastAccountId);
+    void handleRefreshAccountSelectCatalog();
+    setQuickManualInvOpen(true);
+  }
+
+  function closeQuickManualInvestmentModal() {
+    if (quickManualInvBusy) return;
+    setQuickManualInvOpen(false);
+    setQuickManualInvError("");
+  }
+
+  function closeInvestmentEditModal() {
+    if (updateInvBusy) return;
+    setInvEditModalOpen(false);
+    setUpdateInvError("");
+  }
+
   function compactStringFields<T extends Record<string, unknown>>(input: T): T {
     const out = { ...input } as Record<string, unknown>;
     for (const [key, value] of Object.entries(out)) {
       if (typeof value === "string") out[key] = value.trim();
     }
     return out as T;
+  }
+
+  async function handleQuickManualInvestmentSubmit() {
+    setQuickManualInvBusy(true);
+    setQuickManualInvError("");
+    try {
+      const payload = await upsertManualInvestment(compactStringFields(quickManualInvForm));
+      startTransition(() => setManualInvResult(payload));
+      const accountId = `${quickManualInvForm.account_id ?? ""}`.trim();
+      if (accountId) setQuickManualInvLastAccountId(accountId);
+      void handleInvestmentsListQuery();
+      void handleMetaAccountsQuery();
+      void handleAccountCatalogQuery();
+      void handleRefreshAccountSelectCatalog();
+      void handleInvestmentReturnQuery();
+      void handleInvestmentCurveQuery();
+      void handleInvestmentReturnsQuery();
+      void handleWealthOverviewQuery();
+      void handleWealthCurveQuery();
+      void handleFireProgressQuery();
+      void handleRefreshManualEntryTabMonthCount();
+      setQuickManualInvOpen(false);
+    } catch (err) {
+      setQuickManualInvError(toErrorMessage(err));
+    } finally {
+      setQuickManualInvBusy(false);
+    }
   }
 
   async function handleUpsertManualInvestment() {
@@ -6318,6 +6514,7 @@ function App() {
       void handleMetaAccountsQuery();
       void handleAccountCatalogQuery();
       void handleRefreshAccountSelectCatalog();
+      void handleRefreshManualEntryTabMonthCount();
     } catch (err) {
       setManualInvError(toErrorMessage(err));
     } finally {
@@ -6331,10 +6528,18 @@ function App() {
     try {
       const payload = await updateInvestmentRecord(compactStringFields(updateInvForm));
       startTransition(() => setUpdateInvResult(payload));
+      setInvEditModalOpen(false);
       void handleInvestmentsListQuery();
       void handleMetaAccountsQuery();
       void handleAccountCatalogQuery();
       void handleRefreshAccountSelectCatalog();
+      void handleInvestmentReturnQuery();
+      void handleInvestmentCurveQuery();
+      void handleInvestmentReturnsQuery();
+      void handleWealthOverviewQuery();
+      void handleWealthCurveQuery();
+      void handleFireProgressQuery();
+      void handleRefreshManualEntryTabMonthCount();
     } catch (err) {
       setUpdateInvError(toErrorMessage(err));
     } finally {
@@ -6342,21 +6547,77 @@ function App() {
     }
   }
 
-  async function handleDeleteInvestmentRecordMutation() {
+  function prefillInvestmentUpdateFormFromRow(row: Record<string, unknown>) {
+    const id = typeof row.id === "string" ? row.id : "";
+    const snapshotDate = typeof row.snapshot_date === "string" ? row.snapshot_date : "";
+    const accountId = typeof row.account_id === "string" ? row.account_id : "";
+    const accountName = typeof row.account_name === "string" ? row.account_name : "";
+    const totalAssetsCents = typeof row.total_assets_cents === "number" ? row.total_assets_cents : undefined;
+    const transferAmountCents = typeof row.transfer_amount_cents === "number" ? row.transfer_amount_cents : undefined;
+    setUpdateInvError("");
+    setUpdateInvForm({
+      id,
+      snapshot_date: snapshotDate,
+      account_id: accountId,
+      account_name: accountName,
+      total_assets: formatCentsInputValue(totalAssetsCents),
+      transfer_amount: formatCentsInputValue(transferAmountCents ?? 0),
+    });
+    setInvEditModalOpen(true);
+  }
+
+  async function handleDeleteInvestmentRecordById(id: string) {
+    const targetId = id.trim();
+    if (!targetId) return;
+    setDeleteInvId(targetId);
     setDeleteInvBusy(true);
     setDeleteInvError("");
     try {
-      const payload = await deleteInvestmentRecord({ id: deleteInvId.trim() } satisfies DeleteByIdRequest);
+      const payload = await deleteInvestmentRecord({ id: targetId } satisfies DeleteByIdRequest);
       startTransition(() => setDeleteInvResult(payload));
       void handleInvestmentsListQuery();
       void handleMetaAccountsQuery();
       void handleAccountCatalogQuery();
       void handleRefreshAccountSelectCatalog();
+      void handleInvestmentReturnQuery();
+      void handleInvestmentCurveQuery();
+      void handleInvestmentReturnsQuery();
+      void handleWealthOverviewQuery();
+      void handleWealthCurveQuery();
+      void handleFireProgressQuery();
+      void handleRefreshManualEntryTabMonthCount();
     } catch (err) {
       setDeleteInvError(toErrorMessage(err));
     } finally {
       setDeleteInvBusy(false);
     }
+  }
+
+  async function handleRefreshManualEntryTabMonthCount() {
+    setManualEntryTabMonthCountBusy(true);
+    try {
+      const range = getCurrentMonthDateRangeLocal();
+      const payload = await queryInvestments({
+        limit: 500,
+        from: range.from,
+        to: range.to,
+        source_type: "manual",
+        account_id: "",
+      } satisfies QueryInvestmentsRequest);
+      const rows = readArray(payload, "rows").filter(isRecord);
+      const count = readNumber(payload, "summary.count");
+      startTransition(() => {
+        setManualEntryTabMonthCount(typeof count === "number" && Number.isFinite(count) ? count : rows.length);
+      });
+    } catch {
+      // Keep this quick metric best-effort only.
+    } finally {
+      setManualEntryTabMonthCountBusy(false);
+    }
+  }
+
+  async function handleDeleteInvestmentRecordMutation() {
+    await handleDeleteInvestmentRecordById(deleteInvId);
   }
 
   async function handleUpsertManualAssetValuationMutation() {
@@ -6854,7 +7115,7 @@ function App() {
     void Promise.all([refreshProbe(), refreshDbStatus()]);
   }, []);
 
-  const [activeTab, setActiveTab] = useState<ProductTabKey>("import-center");
+  const [activeTab, setActiveTab] = useState<ProductTabKey>("wealth-overview");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [appSettings, setAppSettings] = useState<AppSettings>(() => {
     if (typeof window === "undefined") {
@@ -6879,6 +7140,18 @@ function App() {
       // Ignore persistence errors (private mode / quota / disabled storage).
     }
   }, [appSettings]);
+
+  useEffect(() => {
+    try {
+      if (quickManualInvLastAccountId.trim()) {
+        window.localStorage.setItem(QUICK_MANUAL_INV_LAST_ACCOUNT_ID_STORAGE_KEY, quickManualInvLastAccountId.trim());
+      } else {
+        window.localStorage.removeItem(QUICK_MANUAL_INV_LAST_ACCOUNT_ID_STORAGE_KEY);
+      }
+    } catch {
+      // Ignore localStorage persistence errors.
+    }
+  }, [quickManualInvLastAccountId]);
   const isReady = status === "ready";
   const activeTabMeta = PRODUCT_TABS.find((tab) => tab.key === activeTab) ?? PRODUCT_TABS[0];
   const isTab = (...keys: ProductTabKey[]) => keys.includes(activeTab);
@@ -6895,7 +7168,27 @@ function App() {
     isAdminTab || isManualEntryTab || isReturnAnalysisTab || isConsumptionAnalysisTab;
   const accountSelectOptions = buildAccountSelectOptionsFromCatalog(accountSelectCatalogResult);
   const accountSelectOptionsLoading = accountSelectCatalogBusy && accountSelectOptions.length === 0;
-  const showQueryWorkbench = isManualEntryTab || isConsumptionAnalysisTab || isAdminVisibleWorkbench;
+  const returnTabAnnualizedRate = readNumber(invResult, "metrics.annualized_rate");
+  const returnTabAnnualizedText = formatRatePct(returnTabAnnualizedRate);
+  const returnTabAnnualizedTone = signedMetricTone(returnTabAnnualizedRate);
+  const wealthTabMonthlyGrowth = computeMonthlyTotalAssetGrowthFromWealthCurve(wealthCurveResult);
+  const wealthTabMonthlyGrowthText = formatSignedDeltaCentsShort(wealthTabMonthlyGrowth?.deltaCents);
+  const wealthTabMonthlyGrowthTone = signedMetricTone(wealthTabMonthlyGrowth?.deltaCents);
+  const wealthTabMonthlyGrowthLabel = wealthTabMonthlyGrowth?.baselineDate
+    ? `相比${formatMonthDayLabel(wealthTabMonthlyGrowth.baselineDate)}`
+    : "月度增长";
+  const fireTabFreedomText = readString(fireProgressResult, "metrics.freedom_ratio_pct_text")
+    ?? readString(fireProgressResult, "freedom_ratio_pct_text")
+    ?? "-";
+  const fireTabFreedomTone: "default" = "default";
+  const manualEntryTabMonthCountText = manualEntryTabMonthCountBusy && manualEntryTabMonthCount === null
+    ? "..."
+    : `${manualEntryTabMonthCount ?? 0}笔`;
+  const shouldPrefetchReturnTabQuickMetric = Boolean(dbStatus?.ready) && invResult === null && !invBusy;
+  const shouldPrefetchWealthTabQuickMetric = Boolean(dbStatus?.ready) && wealthCurveResult === null && !wealthCurveBusy;
+  const shouldPrefetchFireTabQuickMetric = Boolean(dbStatus?.ready) && fireProgressResult === null && !fireProgressBusy;
+  const shouldPrefetchManualEntryTabQuickMetric = Boolean(dbStatus?.ready) && manualEntryTabMonthCount === null && !manualEntryTabMonthCountBusy;
+  const showQueryWorkbench = isConsumptionAnalysisTab || isAdminVisibleWorkbench;
   const showDebugJson = showRawJson && isAdminDeveloperMode;
   const queryWorkbenchHeader = isManualEntryTab
     ? {
@@ -6909,7 +7202,7 @@ function App() {
         }
       : {
           title: "数据查询与维护",
-          description: "高级管理中的底层数据核查入口：账户元数据查询、投资记录查询、资产估值查询。",
+          description: "高级管理中的底层数据核查入口：账户元数据、投资记录与资产估值查询。",
         };
   const queryWorkbenchModules = isManualEntryTab
     ? ["投资记录维护", "资产估值维护"]
@@ -6920,12 +7213,13 @@ function App() {
     ? ["如需新增/维护账户目录，请切换到高级管理（开发者模式）", "执行写入/修改/删除", "回到收益分析或财富总览验证结果"]
     : isConsumptionAnalysisTab
       ? ["先刷新消费总览", "在交易查询中定位交易", "执行剔除/恢复并回看总览变化"]
-      : ["先刷新管理员数据库健康", "执行基础查询定位数据问题", "必要时切换到手动录入或业务 TAB 复查结果"];
+      : ["先刷新管理员数据库健康", "执行基础查询定位数据问题", "在查询表格内进行修正或删除后回到业务 TAB 复查结果"];
   const queryWorkbenchGridModeClass = isManualEntryTab
     ? "mode-manual"
     : isConsumptionAnalysisTab
       ? "mode-consumption"
       : "mode-base";
+  const showManualEntryWorkbench = false;
 
   useDebouncedAutoRun(
     handleRefreshAccountSelectCatalog,
@@ -6941,7 +7235,7 @@ function App() {
   useDebouncedAutoRun(
     handleInvestmentsListQuery,
     [
-      invListQuery.limit ?? 100,
+      invListQuery.limit ?? 30,
       invListQuery.from ?? "",
       invListQuery.to ?? "",
       invListQuery.source_type ?? "",
@@ -6952,7 +7246,7 @@ function App() {
   useDebouncedAutoRun(
     handleAssetValuationsQuery,
     [
-      assetListQuery.limit ?? 100,
+      assetListQuery.limit ?? 30,
       assetListQuery.from ?? "",
       assetListQuery.to ?? "",
       assetListQuery.asset_class ?? "",
@@ -6976,7 +7270,7 @@ function App() {
   useDebouncedAutoRun(
     handleInvestmentReturnQuery,
     [invQuery.account_id, invQuery.preset, invQuery.from, invQuery.to],
-    { enabled: isReturnAnalysisTab, delayMs: 260 },
+    { enabled: isReturnAnalysisTab || shouldPrefetchReturnTabQuickMetric, delayMs: 260 },
   );
   useDebouncedAutoRun(
     handleInvestmentCurveQuery,
@@ -7009,7 +7303,7 @@ function App() {
       wealthCurveQuery.include_real_estate ?? "true",
       wealthCurveQuery.include_liability ?? "true",
     ],
-    { enabled: isWealthOverviewTab, delayMs: 260 },
+    { enabled: isWealthOverviewTab || shouldPrefetchWealthTabQuickMetric, delayMs: 260 },
   );
   useDebouncedAutoRun(handleMonthlyBudgetItemsQuery, [], { enabled: isBudgetFireTab, delayMs: 220 });
   useDebouncedAutoRun(handleBudgetOverviewQuery, [budgetOverviewQuery.year ?? ""], { enabled: isBudgetFireTab, delayMs: 260 });
@@ -7017,9 +7311,10 @@ function App() {
   useDebouncedAutoRun(
     handleFireProgressQuery,
     [fireProgressQuery.withdrawal_rate ?? ""],
-    { enabled: isBudgetFireTab, delayMs: 260 },
+    { enabled: isBudgetFireTab || shouldPrefetchFireTabQuickMetric, delayMs: 260 },
   );
   useDebouncedAutoRun(handleSalaryIncomeOverviewQuery, [salaryIncomeQuery.year ?? ""], { enabled: isIncomeAnalysisTab, delayMs: 260 });
+  useDebouncedAutoRun(handleRefreshManualEntryTabMonthCount, [], { enabled: shouldPrefetchManualEntryTabQuickMetric, delayMs: 260 });
 
   const accountCatalogAdminPanel = isTab("admin") ? (
     <section className="card panel">
@@ -7213,8 +7508,7 @@ function App() {
                 <img src={keepwiseLogoSvg} alt="" />
               </div>
               <div className="workspace-brand-text">
-                <div className="workspace-brand-name">KeepWise</div>
-                <div className="workspace-brand-subtitle">Desktop</div>
+                <div className="workspace-brand-name">KeepWise | 知衡</div>
               </div>
             </div>
             <button
@@ -7229,22 +7523,74 @@ function App() {
             </button>
           </div>
           <nav className="tab-nav">
-            {PRODUCT_TABS.map((tab) => (
-              <button
-                key={tab.key}
-                type="button"
-                className={`tab-nav-btn ${activeTab === tab.key ? "active" : ""}`}
-                onClick={() => setActiveTab(tab.key)}
-                title={`${tab.label} · ${tab.subtitle}`}
-              >
-                <span className="tab-nav-main">
-                  <span className={`tab-nav-icon tab-status-${tab.status}`} aria-hidden="true">
-                    {tab.icon}
+            {PRODUCT_TABS.map((tab) => {
+              const isReturnTabButton = tab.key === "return-analysis";
+              const isWealthTabButton = tab.key === "wealth-overview";
+              const isFireTabButton = tab.key === "budget-fire";
+              const isManualEntryLauncherButton = tab.key === "manual-entry";
+              const isManualEntryTabButton = tab.key === "manual-entry";
+              const isFeaturedTabButton = (isManualEntryTabButton || isReturnTabButton || isWealthTabButton || isFireTabButton) && !sidebarCollapsed;
+              const quickMetricLabel = isManualEntryTabButton ? "本月已记" : isReturnTabButton ? "年化预估" : isWealthTabButton ? "月度增长" : isFireTabButton ? "自由度" : "";
+              const resolvedQuickMetricLabel = isWealthTabButton ? wealthTabMonthlyGrowthLabel : quickMetricLabel;
+              const quickMetricText = isReturnTabButton
+                ? returnTabAnnualizedText
+                : isManualEntryTabButton
+                  ? manualEntryTabMonthCountText
+                : isWealthTabButton
+                  ? wealthTabMonthlyGrowthText
+                  : isFireTabButton
+                    ? fireTabFreedomText
+                  : "-";
+              const quickMetricTone = isReturnTabButton
+                ? returnTabAnnualizedTone
+                : isManualEntryTabButton
+                  ? "default"
+                : isWealthTabButton
+                  ? wealthTabMonthlyGrowthTone
+                  : isFireTabButton
+                    ? fireTabFreedomTone
+                  : "default";
+              const quickMetricTextLen = quickMetricText.replace(/\s+/g, "").length;
+              const quickMetricSizeClass =
+                quickMetricTextLen >= 14 ? "size-xs" : quickMetricTextLen >= 11 ? "size-sm" : "size-md";
+              const titleSuffix = isReturnTabButton
+                ? ` · ${resolvedQuickMetricLabel} ${quickMetricText}`
+                : isManualEntryTabButton
+                  ? ` · ${resolvedQuickMetricLabel} ${quickMetricText}`
+                : isWealthTabButton
+                  ? ` · ${resolvedQuickMetricLabel} ${quickMetricText}`
+                  : isFireTabButton
+                    ? ` · ${resolvedQuickMetricLabel} ${quickMetricText}`
+                  : "";
+              return (
+                <button
+                  key={tab.key}
+                  type="button"
+                  className={`tab-nav-btn ${activeTab === tab.key ? "active" : ""} ${isFeaturedTabButton ? "tab-nav-btn-featured" : ""}`}
+                  onClick={() => {
+                    if (isManualEntryLauncherButton) {
+                      openQuickManualInvestmentModal();
+                      return;
+                    }
+                    setActiveTab(tab.key);
+                  }}
+                  title={`${tab.label} · ${tab.subtitle}${titleSuffix}`}
+                >
+                  <span className="tab-nav-main">
+                    <span className={`tab-nav-icon tab-status-${tab.status} tab-icon-${tab.key}`} aria-hidden="true">
+                      {tab.icon}
+                    </span>
+                    <span className="tab-nav-title">{tab.label}</span>
                   </span>
-                  <span className="tab-nav-title">{tab.label}</span>
-                </span>
-              </button>
-            ))}
+                  {isFeaturedTabButton ? (
+                    <span className={`tab-nav-quick-metric tone-${quickMetricTone}`} aria-hidden="true">
+                      <span className="tab-nav-quick-metric-label">{resolvedQuickMetricLabel}</span>
+                      <span className={`tab-nav-quick-metric-value ${quickMetricSizeClass}`}>{quickMetricText}</span>
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })}
           </nav>
           <div className="workspace-sidebar-footer">
             <button
@@ -7295,6 +7641,198 @@ function App() {
             </button>
           </div>
         </aside>
+
+        {quickManualInvOpen ? (
+          <div className="kw-modal-overlay" role="presentation" onClick={closeQuickManualInvestmentModal}>
+            <div
+              className="kw-modal-card"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="quick-manual-investment-modal-title"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="kw-modal-head">
+                <div>
+                  <p className="eyebrow">手动录入</p>
+                  <h3 id="quick-manual-investment-modal-title">投资快照录入</h3>
+                </div>
+                <button
+                  type="button"
+                  className="secondary-btn table-inline-btn"
+                  onClick={closeQuickManualInvestmentModal}
+                  disabled={quickManualInvBusy}
+                  aria-label="关闭"
+                  title="关闭"
+                >
+                  ×
+                </button>
+              </div>
+
+              <div className="query-form-grid query-form-grid-compact" onKeyDown={makeEnterToQueryHandler(handleQuickManualInvestmentSubmit)}>
+                <label className="field">
+                  <span>快照日期</span>
+                  <DateInput
+                    value={`${quickManualInvForm.snapshot_date ?? ""}`}
+                    onChange={(e) => setQuickManualInvForm((s) => ({ ...s, snapshot_date: e.target.value }))}
+                    type="date"
+                    placeholder="YYYY-MM-DD"
+                  />
+                </label>
+                <label className="field">
+                  <span>投资账户</span>
+                  <AccountIdSelect
+                    value={`${quickManualInvForm.account_id ?? ""}`}
+                    onChange={(value) => setQuickManualInvForm((s) => ({ ...s, account_id: value }))}
+                    options={accountSelectOptions}
+                    kinds={["investment"]}
+                    emptyLabel={accountSelectOptionsLoading ? "加载账户中..." : "请选择投资账户"}
+                    disabled={accountSelectOptionsLoading || quickManualInvBusy}
+                  />
+                </label>
+                <label className="field">
+                  <span>总资产（元）</span>
+                  <input
+                    value={`${quickManualInvForm.total_assets ?? ""}`}
+                    onChange={(e) => setQuickManualInvForm((s) => ({ ...s, total_assets: e.target.value }))}
+                    placeholder="10000.00"
+                  />
+                </label>
+                <label className="field">
+                  <span>净转入/转出（元）</span>
+                  <input
+                    value={`${quickManualInvForm.transfer_amount ?? ""}`}
+                    onChange={(e) => setQuickManualInvForm((s) => ({ ...s, transfer_amount: e.target.value }))}
+                    placeholder="转入为正，转出为负，默认 0"
+                  />
+                </label>
+              </div>
+
+              <p className="inline-hint">默认使用今天作为快照日期；账户会优先选中上次录入使用的投资账户。</p>
+
+              {quickManualInvError ? <div className="inline-error" role="alert">{quickManualInvError}</div> : null}
+
+              <div className="db-actions">
+                <button
+                  type="button"
+                  className="primary-btn"
+                  onClick={() => void handleQuickManualInvestmentSubmit()}
+                  disabled={
+                    quickManualInvBusy ||
+                    !`${quickManualInvForm.snapshot_date ?? ""}`.trim() ||
+                    !`${quickManualInvForm.account_id ?? ""}`.trim() ||
+                    !`${quickManualInvForm.total_assets ?? ""}`.trim()
+                  }
+                >
+                  {quickManualInvBusy ? "提交中..." : "提交录入"}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {invEditModalOpen ? (
+          <div className="kw-modal-overlay" role="presentation" onClick={closeInvestmentEditModal}>
+            <div
+              className="kw-modal-card"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="investment-edit-modal-title"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="kw-modal-head">
+                <div>
+                  <p className="eyebrow">投资记录查询</p>
+                  <h3 id="investment-edit-modal-title">修正投资记录</h3>
+                </div>
+                <button
+                  type="button"
+                  className="secondary-btn table-inline-btn"
+                  onClick={closeInvestmentEditModal}
+                  disabled={updateInvBusy}
+                  aria-label="关闭"
+                  title="关闭"
+                >
+                  ×
+                </button>
+              </div>
+
+              <div className="query-form-grid query-form-grid-compact" onKeyDown={makeEnterToQueryHandler(handleUpdateInvestmentRecordMutation)}>
+                <label className="field">
+                  <span>记录 ID</span>
+                  <input
+                    value={`${updateInvForm.id ?? ""}`}
+                    onChange={(e) => setUpdateInvForm((s) => ({ ...s, id: e.target.value }))}
+                    placeholder="investment record id"
+                    disabled={updateInvBusy}
+                  />
+                </label>
+                <label className="field">
+                  <span>快照日期</span>
+                  <DateInput
+                    value={`${updateInvForm.snapshot_date ?? ""}`}
+                    onChange={(e) => setUpdateInvForm((s) => ({ ...s, snapshot_date: e.target.value }))}
+                    type="date"
+                    placeholder="YYYY-MM-DD"
+                  />
+                </label>
+                <label className="field">
+                  <span>账户</span>
+                  <AccountIdSelect
+                    value={`${updateInvForm.account_id ?? ""}`}
+                    onChange={(value) => setUpdateInvForm((s) => ({ ...s, account_id: value }))}
+                    options={accountSelectOptions}
+                    kinds={["investment"]}
+                    emptyLabel={accountSelectOptionsLoading ? "加载账户中..." : "留空（按账户名称自动生成）"}
+                    disabled={accountSelectOptionsLoading || updateInvBusy}
+                  />
+                </label>
+                <label className="field">
+                  <span>账户名称（可选）</span>
+                  <input
+                    value={`${updateInvForm.account_name ?? ""}`}
+                    onChange={(e) => setUpdateInvForm((s) => ({ ...s, account_name: e.target.value }))}
+                    placeholder="当账户为空时用于自动生成账户"
+                    disabled={updateInvBusy}
+                  />
+                </label>
+                <label className="field">
+                  <span>总资产（元）</span>
+                  <input
+                    value={`${updateInvForm.total_assets ?? ""}`}
+                    onChange={(e) => setUpdateInvForm((s) => ({ ...s, total_assets: e.target.value }))}
+                    placeholder="10000.00"
+                    disabled={updateInvBusy}
+                  />
+                </label>
+                <label className="field">
+                  <span>净转入/转出（元）</span>
+                  <input
+                    value={`${updateInvForm.transfer_amount ?? ""}`}
+                    onChange={(e) => setUpdateInvForm((s) => ({ ...s, transfer_amount: e.target.value }))}
+                    placeholder="转入为正，转出为负"
+                    disabled={updateInvBusy}
+                  />
+                </label>
+              </div>
+
+              {updateInvError ? <div className="inline-error" role="alert">{updateInvError}</div> : null}
+
+              <div className="db-actions">
+                <button
+                  type="button"
+                  className="primary-btn"
+                  onClick={() => void handleUpdateInvestmentRecordMutation()}
+                  disabled={updateInvBusy || !`${updateInvForm.id ?? ""}`.trim()}
+                >
+                  {updateInvBusy ? "保存中..." : "保存修正"}
+                </button>
+                <button type="button" className="secondary-btn" onClick={closeInvestmentEditModal} disabled={updateInvBusy}>
+                  取消
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         {settingsOpen ? (
           <div className="kw-modal-overlay" role="presentation" onClick={() => setSettingsOpen(false)}>
@@ -7503,10 +8041,6 @@ function App() {
 
           {isTab("budget-fire") ? (
             <section className="card panel">
-              <div className="panel-header">
-                <h2>FIRE 进度</h2>
-                <p>基于最新资产快照与年预算，计算覆盖年数、自由度与目标差额。</p>
-              </div>
               <div className="query-form-grid query-form-grid-compact" onKeyDown={makeEnterToQueryHandler(handleFireProgressQuery)}>
                 <label className="field">
                   <span>提取率（0~1）</span>
@@ -7529,11 +8063,6 @@ function App() {
 
           {isTab("income-analysis") ? (
             <section className="card panel">
-              <div className="panel-header">
-                <h2>工资收入概览</h2>
-                <p>按年汇总招行银行流水中的代发工资/公积金收入，并展示雇主分布与月度结构。</p>
-              </div>
-
               <div className="query-form-grid query-form-grid-compact">
                 <label className="field">
                   <span>年份</span>
@@ -7545,7 +8074,7 @@ function App() {
                 </label>
               </div>
 
-              <AutoRefreshHint busy={salaryIncomeBusy}>工资收入概览已启用自动刷新：进入本 TAB 或修改年份后会自动更新。</AutoRefreshHint>
+              <AutoRefreshHint busy={salaryIncomeBusy}>调整筛选条件后将自动刷新结果。</AutoRefreshHint>
 
               {salaryIncomeError ? <div className="inline-error" role="alert">{salaryIncomeError}</div> : null}
               <SalaryIncomeOverviewPreview data={salaryIncomeResult} />
@@ -8547,7 +9076,7 @@ function App() {
         </div>
 
         <div className={`workbench-card-grid ${queryWorkbenchGridModeClass}`}>
-          {isManualEntryTab ? <div className="subcard">
+          {showManualEntryWorkbench ? <div className="subcard">
             <h3>记录维护</h3>
             <p className="inline-hint">
               用于 desktop 内验证投资记录与资产估值的新增/修改/删除。成功后会自动刷新 `query_investments` / `query_asset_valuations` / `meta/accounts` / `account_catalog`。
@@ -8855,7 +9384,7 @@ function App() {
             {deleteAssetResult ? <JsonResultCard title="资产估值删除结果" data={deleteAssetResult} emptyText="暂无结果。" /> : null}
           </div> : null}
 
-          {isAdminVisibleWorkbench ? <div className="subcard">
+          {isAdminVisibleWorkbench ? <div className="subcard workbench-span-full">
             <h3>账户元数据查询</h3>
             <div className="query-form-grid query-form-grid-compact">
               <label className="field">
@@ -9040,7 +9569,7 @@ function App() {
             ) : null}
           </div> : null}
 
-          {isAdminVisibleWorkbench ? <div className="subcard">
+          {isAdminVisibleWorkbench ? <div className="subcard workbench-span-full">
             <h3>投资记录查询</h3>
             <div className="query-form-grid query-form-grid-compact" onKeyDown={makeEnterToQueryHandler(handleInvestmentsListQuery)}>
               <label className="field">
@@ -9049,11 +9578,11 @@ function App() {
                   type="number"
                   min={1}
                   max={500}
-                  value={safeNumericInputValue(invListQuery.limit, 100)}
+                  value={safeNumericInputValue(invListQuery.limit, 30)}
                   onChange={(e) =>
                     setInvListQuery((s) => ({
                       ...s,
-                      limit: parseNumericInputWithFallback(e.target.value || "100", 100),
+                      limit: parseNumericInputWithFallback(e.target.value || "30", 30),
                     }))
                   }
                 />
@@ -9102,13 +9631,30 @@ function App() {
                 {invListError}
               </div>
             ) : null}
-            <InvestmentsListPreview data={invListResult} />
+            <InvestmentsListPreview
+              data={invListResult}
+              deleteBusy={deleteInvBusy}
+              deletingId={deleteInvId}
+              onEditRow={(row) => {
+                prefillInvestmentUpdateFormFromRow(row);
+              }}
+              onDeleteRow={(id, row) => {
+                const accountName =
+                  (typeof row.account_name === "string" && row.account_name) ||
+                  (typeof row.account_id === "string" ? row.account_id : "该记录");
+                const snapshotDate = typeof row.snapshot_date === "string" ? row.snapshot_date : "-";
+                const ok = window.confirm(`确认删除投资记录？\n${accountName} · ${snapshotDate}\nID: ${id}`);
+                if (!ok) return;
+                void handleDeleteInvestmentRecordById(id);
+              }}
+            />
+            <p className="inline-hint">可在表格行内点击“修正”打开弹窗修改，或直接删除该条投资记录。</p>
             {showDebugJson ? (
               <JsonResultCard title="投资记录查询 JSON" data={invListResult} emptyText="暂无结果。请先查询投资记录。" />
             ) : null}
           </div> : null}
 
-          {isAdminVisibleWorkbench ? <div className="subcard">
+          {isAdminVisibleWorkbench ? <div className="subcard workbench-span-full">
             <h3>资产估值查询</h3>
             <div className="query-form-grid query-form-grid-compact" onKeyDown={makeEnterToQueryHandler(handleAssetValuationsQuery)}>
               <label className="field">
@@ -9117,11 +9663,11 @@ function App() {
                   type="number"
                   min={1}
                   max={500}
-                  value={safeNumericInputValue(assetListQuery.limit, 100)}
+                  value={safeNumericInputValue(assetListQuery.limit, 30)}
                   onChange={(e) =>
                     setAssetListQuery((s) => ({
                       ...s,
-                      limit: parseNumericInputWithFallback(e.target.value || "100", 100),
+                      limit: parseNumericInputWithFallback(e.target.value || "30", 30),
                     }))
                   }
                 />
@@ -9192,11 +9738,6 @@ function App() {
       </section> : null}
 
       {isTab("return-analysis") ? <section className="card panel">
-        <div className="panel-header">
-          <h2>投资收益率与曲线</h2>
-          <p>在同一视图中查看区间收益指标与资产变化趋势，便于连续观察投资表现。</p>
-        </div>
-
         <div
           className="query-form-grid"
           onKeyDown={makeEnterToQueryHandler(async () => {
@@ -9349,11 +9890,6 @@ function App() {
       </section> : null}
 
       {isTab("wealth-overview") ? <section className="card panel">
-        <div className="panel-header">
-          <h2>财富总览与趋势</h2>
-          <p>在同一视图中查看财富结构关系与变化趋势，便于连续观察资产构成与净值变化。</p>
-        </div>
-
         {(() => {
           const wealthVisibility = {
             investment: wealthCurveQuery.include_investment === "true",
@@ -9364,26 +9900,83 @@ function App() {
           return (
             <>
         <div
-          className="query-form-grid"
+          className="wealth-filter-stack"
           onKeyDown={makeEnterToQueryHandler(async () => {
             await Promise.all([handleWealthOverviewQuery(), handleWealthCurveQuery()]);
           })}
         >
-          <label className="field">
-            <span>趋势区间</span>
-            <select
-              value={wealthCurveQuery.preset}
-              onChange={(e) => setWealthCurveQuery((s) => ({ ...s, preset: e.target.value }))}
-            >
-              <option value="ytd">年初至今</option>
-              <option value="1y">近1年</option>
-              <option value="3y">近3年</option>
-              <option value="since_inception">成立以来</option>
-              <option value="custom">自定义</option>
-            </select>
-          </label>
+          <div className="wealth-filter-main-row">
+            <label className="field">
+              <span>趋势区间</span>
+              <select
+                value={wealthCurveQuery.preset}
+                onChange={(e) => setWealthCurveQuery((s) => ({ ...s, preset: e.target.value }))}
+              >
+                <option value="ytd">年初至今</option>
+                <option value="1y">近1年</option>
+                <option value="3y">近3年</option>
+                <option value="since_inception">成立以来</option>
+                <option value="custom">自定义</option>
+              </select>
+            </label>
+            <div className="field wealth-asset-filter-field wealth-asset-filter-field-inline">
+              <span>资产类型</span>
+              <div className="wealth-asset-chip-group">
+                <button
+                  type="button"
+                  className={`consumption-chip ${
+                    wealthCurveQuery.include_investment === "true" &&
+                    wealthCurveQuery.include_cash === "true" &&
+                    wealthCurveQuery.include_real_estate === "true" &&
+                    wealthCurveQuery.include_liability === "true"
+                      ? "active"
+                      : ""
+                  }`}
+                  onClick={() =>
+                    setWealthSharedAssetFilters((prev) => ({
+                      ...prev,
+                      include_investment: "true",
+                      include_cash: "true",
+                      include_real_estate: "true",
+                      include_liability: "true",
+                    }))
+                  }
+                >
+                  全部
+                </button>
+                <button
+                  type="button"
+                  className={`consumption-chip ${wealthCurveQuery.include_investment === "true" ? "active" : ""}`}
+                  onClick={() => toggleWealthAssetFilter("include_investment")}
+                >
+                  投资
+                </button>
+                <button
+                  type="button"
+                  className={`consumption-chip ${wealthCurveQuery.include_cash === "true" ? "active" : ""}`}
+                  onClick={() => toggleWealthAssetFilter("include_cash")}
+                >
+                  现金
+                </button>
+                <button
+                  type="button"
+                  className={`consumption-chip ${wealthCurveQuery.include_real_estate === "true" ? "active" : ""}`}
+                  onClick={() => toggleWealthAssetFilter("include_real_estate")}
+                >
+                  不动产
+                </button>
+                <button
+                  type="button"
+                  className={`consumption-chip ${wealthCurveQuery.include_liability === "true" ? "active" : ""}`}
+                  onClick={() => toggleWealthAssetFilter("include_liability")}
+                >
+                  负债
+                </button>
+              </div>
+            </div>
+          </div>
           {wealthCurveQuery.preset === "custom" ? (
-            <>
+            <div className="wealth-filter-date-row">
               <label className="field">
                 <span>开始日期（自定义）</span>
                 <DateInput
@@ -9402,63 +9995,8 @@ function App() {
                   placeholder="YYYY-MM-DD"
                 />
               </label>
-            </>
-          ) : null}
-          <div className="field wealth-asset-filter-field">
-            <span>资产类型</span>
-            <div className="wealth-asset-chip-group">
-              <button
-                type="button"
-                className={`consumption-chip ${
-                  wealthCurveQuery.include_investment === "true" &&
-                  wealthCurveQuery.include_cash === "true" &&
-                  wealthCurveQuery.include_real_estate === "true" &&
-                  wealthCurveQuery.include_liability === "true"
-                    ? "active"
-                    : ""
-                }`}
-                onClick={() =>
-                  setWealthSharedAssetFilters((prev) => ({
-                    ...prev,
-                    include_investment: "true",
-                    include_cash: "true",
-                    include_real_estate: "true",
-                    include_liability: "true",
-                  }))
-                }
-              >
-                全部
-              </button>
-              <button
-                type="button"
-                className={`consumption-chip ${wealthCurveQuery.include_investment === "true" ? "active" : ""}`}
-                onClick={() => toggleWealthAssetFilter("include_investment")}
-              >
-                投资
-              </button>
-              <button
-                type="button"
-                className={`consumption-chip ${wealthCurveQuery.include_cash === "true" ? "active" : ""}`}
-                onClick={() => toggleWealthAssetFilter("include_cash")}
-              >
-                现金
-              </button>
-              <button
-                type="button"
-                className={`consumption-chip ${wealthCurveQuery.include_real_estate === "true" ? "active" : ""}`}
-                onClick={() => toggleWealthAssetFilter("include_real_estate")}
-              >
-                不动产
-              </button>
-              <button
-                type="button"
-                className={`consumption-chip ${wealthCurveQuery.include_liability === "true" ? "active" : ""}`}
-                onClick={() => toggleWealthAssetFilter("include_liability")}
-              >
-                负债
-              </button>
             </div>
-          </div>
+          ) : null}
         </div>
 
         <AutoRefreshHint busy={wealthOverviewBusy || wealthCurveBusy}>调整筛选条件后将自动刷新结果。</AutoRefreshHint>
