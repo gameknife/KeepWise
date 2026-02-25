@@ -6,12 +6,15 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use sha1::{Digest, Sha1};
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(test)]
+use std::path::PathBuf;
 use std::sync::OnceLock;
 use tauri::AppHandle;
 use uuid::Uuid;
 
 use crate::ledger_db::resolve_ledger_db_path;
+use crate::rules_store::ensure_app_rules_dir_seeded;
 
 const DEFAULT_SOURCE_TYPE: &str = "cmb_bank_pdf";
 const DEFAULT_REVIEW_THRESHOLD: f64 = 0.70;
@@ -94,6 +97,7 @@ const SKIP_SUMMARIES_EXTRA: &[&str] = &[
 
 const DEBIT_PAYMENT_SUMMARIES: &[&str] =
     &["快捷支付", "银联快捷支付", "银联消费", "银联无卡自助消费"];
+const QUICKPAY_PERSON_DETECTION_SUMMARIES: &[&str] = &["快捷支付", "银联快捷支付"];
 const BANK_TRANSFER_OUT_SUMMARIES: &[&str] = &["转账汇款", "行内转账转出"];
 const WECHAT_TRANSFER_PREFIXES: &[&str] = &["微信转账", "微信红包"];
 const DEFAULT_PERSONAL_TRANSFER_WHITELIST: &[&str] = &["徐凯"];
@@ -287,14 +291,6 @@ fn normalize_merchant(text: &str) -> String {
         merchant = next;
     }
     merchant
-}
-
-fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..")
-}
-
-fn rules_dir() -> PathBuf {
-    repo_root().join("data/rules")
 }
 
 fn resolve_source_path_text(raw: Option<String>) -> Result<String, String> {
@@ -923,22 +919,26 @@ fn classify_transactions(
                 continue;
             }
 
-            if let Some(person_name) = looks_like_person_counterparty(&counterparty) {
-                rows.push(ClassifiedPdfRow {
-                    tx: tx.clone(),
-                    include_in_import: false,
-                    include_in_expense_analysis: false,
-                    rule_tag: "skip_quickpay_person_non_whitelist".to_string(),
-                    expense_category: format!("个人转账(非白名单:{person_name})"),
-                    direction: "transfer".to_string(),
-                    confidence: 0.85,
-                    needs_review: 0,
-                    excluded_in_analysis: 1,
-                    exclude_reason: "个人转账仅统计微信转账/红包；快捷支付实名个人默认忽略"
-                        .to_string(),
-                });
-                bump("skip_quickpay_person_non_whitelist", Some(tx.amount_cents));
-                continue;
+            let allow_quickpay_person_heuristic =
+                QUICKPAY_PERSON_DETECTION_SUMMARIES.contains(&tx.summary.as_str());
+            if allow_quickpay_person_heuristic {
+                if let Some(person_name) = looks_like_person_counterparty(&counterparty) {
+                    rows.push(ClassifiedPdfRow {
+                        tx: tx.clone(),
+                        include_in_import: false,
+                        include_in_expense_analysis: false,
+                        rule_tag: "skip_quickpay_person_non_whitelist".to_string(),
+                        expense_category: format!("个人转账(非白名单:{person_name})"),
+                        direction: "transfer".to_string(),
+                        confidence: 0.85,
+                        needs_review: 0,
+                        excluded_in_analysis: 1,
+                        exclude_reason: "个人转账仅统计微信转账/红包；快捷支付实名个人默认忽略"
+                            .to_string(),
+                    });
+                    bump("skip_quickpay_person_non_whitelist", Some(tx.amount_cents));
+                    continue;
+                }
             }
 
             let fallback_category = if ["快捷支付", "银联快捷支付"].contains(&tx.summary.as_str())
@@ -1096,12 +1096,12 @@ fn stable_source_name(header: &PdfHeader) -> String {
     )
 }
 
-fn build_preview_and_rows(
+fn build_preview_and_rows_with_rules_dir(
     pdf_path: &Path,
     review_threshold: f64,
+    rules_root: &Path,
 ) -> Result<(PdfHeader, Vec<ClassifiedPdfRow>, Value), String> {
     let (header, records) = parse_pdf(pdf_path)?;
-    let rules_root = rules_dir();
     let merchant_map = load_merchant_map(&rules_root.join("merchant_map.csv"));
     let category_rules = load_category_rules(&rules_root.join("category_rules.csv"));
     let transfer_whitelist =
@@ -1312,8 +1312,13 @@ fn upsert_transaction(
     Ok(())
 }
 
-fn preview_at_path(pdf_path: &Path, review_threshold: f64) -> Result<Value, String> {
-    let (_header, _rows, preview) = build_preview_and_rows(pdf_path, review_threshold)?;
+fn preview_at_path_with_rules_dir(
+    pdf_path: &Path,
+    review_threshold: f64,
+    rules_root: &Path,
+) -> Result<Value, String> {
+    let (_header, _rows, preview) =
+        build_preview_and_rows_with_rules_dir(pdf_path, review_threshold, rules_root)?;
     Ok(preview)
 }
 
@@ -1322,8 +1327,10 @@ fn import_at_db_path(
     pdf_path: &Path,
     review_threshold: f64,
     source_type: &str,
+    rules_root: &Path,
 ) -> Result<Value, String> {
-    let (header, rows, preview) = build_preview_and_rows(pdf_path, review_threshold)?;
+    let (header, rows, preview) =
+        build_preview_and_rows_with_rules_dir(pdf_path, review_threshold, rules_root)?;
 
     let conn = Connection::open(db_path).map_err(|e| format!("打开数据库失败: {e}"))?;
     conn.execute_batch("PRAGMA foreign_keys = ON;")
@@ -1422,10 +1429,14 @@ fn import_at_db_path(
 }
 
 #[tauri::command]
-pub fn cmb_bank_pdf_preview(req: CmbBankPdfPreviewRequest) -> Result<Value, String> {
+pub fn cmb_bank_pdf_preview(
+    app: AppHandle,
+    req: CmbBankPdfPreviewRequest,
+) -> Result<Value, String> {
     let source_path = resolve_source_path_text(req.source_path)?;
     let review_threshold = resolve_review_threshold(req.review_threshold)?;
-    preview_at_path(Path::new(&source_path), review_threshold)
+    let rules_dir = ensure_app_rules_dir_seeded(&app)?;
+    preview_at_path_with_rules_dir(Path::new(&source_path), review_threshold, &rules_dir)
 }
 
 #[tauri::command]
@@ -1441,10 +1452,271 @@ pub fn cmb_bank_pdf_import(app: AppHandle, req: CmbBankPdfImportRequest) -> Resu
         return Err("source_type 不能为空".to_string());
     }
     let db_path = resolve_ledger_db_path(&app)?;
+    let rules_dir = ensure_app_rules_dir_seeded(&app)?;
     import_at_db_path(
         &db_path,
         Path::new(&source_path),
         review_threshold,
         &source_type,
+        &rules_dir,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusqlite::params;
+    use std::fs;
+
+    fn repo_root_for_tests() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("src-tauri parent")
+            .parent()
+            .expect("keepwise-tauri parent")
+            .parent()
+            .expect("apps parent")
+            .to_path_buf()
+    }
+
+    fn temp_db_path(name: &str) -> PathBuf {
+        let mut p = std::env::temp_dir();
+        p.push(format!("keepwise_cmb_pdf_test_{}_{}.db", name, Uuid::new_v4()));
+        p
+    }
+
+    fn apply_all_migrations(conn: &Connection) {
+        let migrations_dir = repo_root_for_tests().join("db/migrations");
+        let mut entries = fs::read_dir(&migrations_dir)
+            .expect("read migrations")
+            .map(|e| e.expect("dir entry").path())
+            .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("sql"))
+            .collect::<Vec<_>>();
+        entries.sort();
+        for path in entries {
+            let sql = fs::read_to_string(&path).expect("read migration");
+            conn.execute_batch(&sql)
+                .unwrap_or_else(|e| panic!("migration failed {}: {e}", path.display()));
+        }
+    }
+
+    fn seeded_conn() -> Connection {
+        let db_path = temp_db_path("seeded");
+        let conn = Connection::open(&db_path).expect("open temp db");
+        conn.execute_batch("PRAGMA foreign_keys = ON;")
+            .expect("enable fk");
+        apply_all_migrations(&conn);
+        ensure_schema_ready(&conn).expect("schema ready");
+        conn
+    }
+
+    fn sample_header() -> PdfHeader {
+        PdfHeader {
+            account_last4: "1234".to_string(),
+            range_start: "2026-01-01".to_string(),
+            range_end: "2026-01-31".to_string(),
+        }
+    }
+
+    fn sample_row() -> ClassifiedPdfRow {
+        ClassifiedPdfRow {
+            tx: BankPdfTransaction {
+                page: 1,
+                date: "2026-01-15".to_string(),
+                currency: "CNY".to_string(),
+                amount_text: "-123.45".to_string(),
+                amount_cents: -12_345,
+                balance_text: "1000.00".to_string(),
+                raw_detail: "银联消费 星巴克".to_string(),
+                summary: "银联消费".to_string(),
+                counterparty: "星巴克".to_string(),
+            },
+            include_in_import: true,
+            include_in_expense_analysis: true,
+            rule_tag: "debit_consume".to_string(),
+            expense_category: "餐饮".to_string(),
+            direction: "expense".to_string(),
+            confidence: 0.95,
+            needs_review: 0,
+            excluded_in_analysis: 0,
+            exclude_reason: String::new(),
+        }
+    }
+
+    fn sample_bank_tx(
+        date: &str,
+        summary: &str,
+        counterparty: &str,
+        amount_cents: i64,
+        currency: &str,
+    ) -> BankPdfTransaction {
+        let sign = if amount_cents >= 0 { "" } else { "-" };
+        let abs = amount_cents.abs();
+        let amount_text = format!("{sign}{}.{:02}", abs / 100, abs % 100);
+        BankPdfTransaction {
+            page: 1,
+            date: date.to_string(),
+            currency: currency.to_string(),
+            amount_text,
+            amount_cents,
+            balance_text: "0.00".to_string(),
+            raw_detail: format!("{summary} {counterparty}"),
+            summary: summary.to_string(),
+            counterparty: counterparty.to_string(),
+        }
+    }
+
+    #[test]
+    fn pdf_transaction_id_is_stable_for_same_occurrence() {
+        let header = sample_header();
+        let row = sample_row();
+        let a = transaction_id(&row, &header, "cmb_bank_pdf", 1);
+        let b = transaction_id(&row, &header, "cmb_bank_pdf", 1);
+        let c = transaction_id(&row, &header, "cmb_bank_pdf", 2);
+        assert_eq!(a, b);
+        assert_ne!(a, c);
+    }
+
+    #[test]
+    fn pdf_upsert_transaction_is_idempotent_for_same_tx_id() {
+        let conn = seeded_conn();
+        let header = sample_header();
+        let row = sample_row();
+        let tx_id = transaction_id(&row, &header, "cmb_bank_pdf", 1);
+        let category_id = category_id_from_name(&row.expense_category);
+        let import_job_id = Uuid::new_v4().to_string();
+
+        conn.execute(
+            r#"
+            INSERT INTO import_jobs(id, source_type, source_file, status, started_at, total_count, imported_count, error_count)
+            VALUES (?1, 'cmb_bank_pdf', 'sample.pdf', 'success', datetime('now'), 1, 1, 0)
+            "#,
+            params![import_job_id],
+        )
+        .expect("seed import job");
+
+        upsert_transaction(
+            &conn,
+            &row,
+            &header,
+            &tx_id,
+            &category_id,
+            "cmb_bank_pdf",
+            &import_job_id,
+        )
+        .expect("first upsert");
+        upsert_transaction(
+            &conn,
+            &row,
+            &header,
+            &tx_id,
+            &category_id,
+            "cmb_bank_pdf",
+            &import_job_id,
+        )
+        .expect("second upsert");
+
+        let tx_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM transactions", [], |r| r.get(0))
+            .expect("tx count");
+        assert_eq!(tx_count, 1);
+
+        let (merchant, account_id, source_type, amount_cents): (String, String, String, i64) = conn
+            .query_row(
+                "SELECT merchant, account_id, source_type, amount_cents FROM transactions WHERE id = ?1",
+                params![tx_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .expect("load tx");
+        assert_eq!(merchant, "星巴克");
+        assert_eq!(account_id, "acct_cmb_debit_1234");
+        assert_eq!(source_type, "cmb_bank_pdf");
+        assert_eq!(amount_cents, -12_345);
+    }
+
+    #[test]
+    fn pdf_classification_preview_summary_counts_are_consistent() {
+        let header = sample_header();
+        let records = vec![
+            sample_bank_tx("2026-01-05", "代发工资", "某公司", 30_000_00, "CNY"),
+            sample_bank_tx("2026-01-06", "代发住房公积金", "某公司", 5_000_00, "CNY"),
+            sample_bank_tx("2026-01-07", "银联消费", "星巴克", -35_00, "CNY"),
+            sample_bank_tx("2026-01-08", "转账汇款", "张三 6222021234567890", -200_00, "CNY"),
+            sample_bank_tx("2026-01-09", "基金申购", "基金公司", -1000_00, "CNY"),
+            sample_bank_tx("2026-01-10", "银联消费", "Tokyo Shop", -50_00, "USD"),
+        ];
+        let mut whitelist = HashSet::new();
+        whitelist.insert("张三".to_string());
+        let merchant_map = HashMap::from([(
+            "星巴克".to_string(),
+            ("餐饮".to_string(), 0.99_f64),
+        )]);
+        let category_rules = Vec::<CategoryRule>::new();
+
+        let (rows, preview) = classify_transactions(
+            &header,
+            &records,
+            &whitelist,
+            &merchant_map,
+            &category_rules,
+            0.7,
+        );
+        assert_eq!(rows.len(), records.len());
+        assert_eq!(preview["summary"]["total_records"].as_i64(), Some(6));
+        assert_eq!(preview["summary"]["cny_records"].as_i64(), Some(5));
+        assert_eq!(preview["summary"]["non_cny_records"].as_i64(), Some(1));
+        assert_eq!(preview["summary"]["import_rows_count"].as_i64(), Some(4));
+        assert_eq!(preview["summary"]["expense_rows_count"].as_i64(), Some(2));
+        assert_eq!(preview["summary"]["income_rows_count"].as_i64(), Some(2));
+        assert_eq!(preview["summary"]["skipped_rows_count"].as_i64(), Some(2));
+        assert_eq!(preview["summary"]["expense_total_cents"].as_i64(), Some(-23500));
+        assert_eq!(preview["summary"]["income_total_cents"].as_i64(), Some(3500000));
+
+        assert_eq!(preview["rule_counts"]["salary"].as_i64(), Some(1));
+        assert_eq!(preview["rule_counts"]["housing_fund_income"].as_i64(), Some(1));
+        assert_eq!(preview["rule_counts"]["debit_merchant_spend"].as_i64(), Some(1));
+        assert_eq!(preview["rule_counts"]["bank_transfer_whitelist"].as_i64(), Some(1));
+        assert_eq!(preview["rule_counts"]["skip_irrelevant_summary"].as_i64(), Some(1));
+        assert_eq!(preview["rule_counts"]["skip_non_cny"].as_i64(), Some(1));
+    }
+
+    #[test]
+    fn pdf_debit_consume_chinese_merchant_is_not_misclassified_as_person_transfer() {
+        let header = sample_header();
+        let records = vec![sample_bank_tx(
+            "2026-01-07",
+            "银联消费",
+            "星巴克",
+            -35_00,
+            "CNY",
+        )];
+        let whitelist = HashSet::<String>::new();
+        let merchant_map = HashMap::from([(
+            "星巴克".to_string(),
+            ("餐饮".to_string(), 0.99_f64),
+        )]);
+        let category_rules = Vec::<CategoryRule>::new();
+
+        let (rows, preview) = classify_transactions(
+            &header,
+            &records,
+            &whitelist,
+            &merchant_map,
+            &category_rules,
+            0.7,
+        );
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(preview["summary"]["import_rows_count"].as_i64(), Some(1));
+        assert_eq!(preview["summary"]["expense_rows_count"].as_i64(), Some(1));
+        assert_eq!(preview["rule_counts"]["debit_merchant_spend"].as_i64(), Some(1));
+        assert_eq!(
+            preview["rule_counts"]["skip_quickpay_person_non_whitelist"]
+                .as_i64()
+                .unwrap_or(0),
+            0
+        );
+        assert_eq!(rows[0].direction, "expense");
+        assert_eq!(rows[0].expense_category, "餐饮");
+    }
 }

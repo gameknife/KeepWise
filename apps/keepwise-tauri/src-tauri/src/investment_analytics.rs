@@ -1559,3 +1559,163 @@ pub fn investment_returns_query(
     let db_path = resolve_ledger_db_path(&app)?;
     investment_returns_query_at_db_path(&db_path, req)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusqlite::Connection;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use uuid::Uuid;
+
+    fn repo_root() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..")
+    }
+
+    fn create_temp_test_db() -> PathBuf {
+        let unique = format!(
+            "keepwise_investment_analytics_test_{}_{}.db",
+            std::process::id(),
+            Uuid::new_v4()
+        );
+        std::env::temp_dir().join(unique)
+    }
+
+    fn apply_all_migrations_for_test(db_path: &Path) {
+        let conn = Connection::open(db_path).expect("open temp db");
+        let mut entries = fs::read_dir(repo_root().join("db/migrations"))
+            .expect("read migrations dir")
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| {
+                p.extension()
+                    .and_then(|s| s.to_str())
+                    .map(|s| s.eq_ignore_ascii_case("sql"))
+                    .unwrap_or(false)
+            })
+            .collect::<Vec<_>>();
+        entries.sort();
+        for path in entries {
+            let sql = fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("read migration {:?} failed: {e}", path));
+            conn.execute_batch(&sql)
+                .unwrap_or_else(|e| panic!("apply migration {:?} failed: {e}", path));
+        }
+    }
+
+    fn seed_investment_fixture(db_path: &Path) {
+        let conn = Connection::open(db_path).expect("open db");
+        conn.execute_batch(
+            r#"
+            INSERT INTO accounts(id, name, account_type) VALUES
+              ('acct_inv_alpha', 'Alpha策略', 'investment'),
+              ('acct_inv_beta', 'Beta策略', 'investment');
+
+            INSERT INTO investment_records(id, account_id, snapshot_date, total_assets_cents, transfer_amount_cents, source_type) VALUES
+              ('alpha_1', 'acct_inv_alpha', '2026-01-01', 1000000, 0, 'manual'),
+              ('alpha_2', 'acct_inv_alpha', '2026-03-01', 1100000, 0, 'manual'),
+              ('beta_1', 'acct_inv_beta', '2026-01-01', 2000000, 0, 'manual'),
+              ('beta_2', 'acct_inv_beta', '2026-03-01', 2020000, 0, 'manual');
+            "#,
+        )
+        .expect("seed investment fixture");
+    }
+
+    fn approx_eq(a: f64, b: f64, eps: f64) {
+        assert!(
+            (a - b).abs() <= eps,
+            "approx not equal: left={a} right={b} eps={eps}"
+        );
+    }
+
+    #[test]
+    fn investment_returns_query_sorts_by_return_rate_and_supports_filter_limit() {
+        let db_path = create_temp_test_db();
+        apply_all_migrations_for_test(&db_path);
+        seed_investment_fixture(&db_path);
+
+        let payload = investment_returns_query_at_db_path(
+            &db_path,
+            InvestmentReturnsQueryRequest {
+                preset: Some("custom".to_string()),
+                from_date: Some("2026-01-01".to_string()),
+                to_date: Some("2026-03-01".to_string()),
+                keyword: None,
+                limit: Some(10),
+            },
+        )
+        .expect("query investment returns");
+
+        assert_eq!(
+            payload
+                .get("summary")
+                .and_then(|v| v.get("computed_count"))
+                .and_then(Value::as_i64),
+            Some(2)
+        );
+        assert_eq!(
+            payload
+                .get("summary")
+                .and_then(|v| v.get("error_count"))
+                .and_then(Value::as_i64),
+            Some(0)
+        );
+
+        let rows = payload
+            .get("rows")
+            .and_then(Value::as_array)
+            .expect("rows array");
+        assert_eq!(rows.len(), 2);
+        assert_eq!(
+            rows[0].get("account_id").and_then(Value::as_str),
+            Some("acct_inv_alpha"),
+            "higher return account should be ranked first"
+        );
+        approx_eq(
+            rows[0]
+                .get("return_rate")
+                .and_then(Value::as_f64)
+                .expect("alpha return_rate"),
+            0.10,
+            1e-8,
+        );
+        approx_eq(
+            rows[1]
+                .get("return_rate")
+                .and_then(Value::as_f64)
+                .expect("beta return_rate"),
+            0.01,
+            1e-8,
+        );
+
+        let filtered = investment_returns_query_at_db_path(
+            &db_path,
+            InvestmentReturnsQueryRequest {
+                preset: Some("custom".to_string()),
+                from_date: Some("2026-01-01".to_string()),
+                to_date: Some("2026-03-01".to_string()),
+                keyword: Some("beta".to_string()),
+                limit: Some(1),
+            },
+        )
+        .expect("query filtered investment returns");
+        let filtered_rows = filtered
+            .get("rows")
+            .and_then(Value::as_array)
+            .expect("filtered rows");
+        assert_eq!(filtered_rows.len(), 1);
+        assert_eq!(
+            filtered_rows[0].get("account_id").and_then(Value::as_str),
+            Some("acct_inv_beta")
+        );
+        assert_eq!(
+            filtered
+                .get("range")
+                .and_then(|v| v.get("input_limit"))
+                .and_then(Value::as_i64),
+            Some(1)
+        );
+
+        let _ = fs::remove_file(&db_path);
+    }
+}

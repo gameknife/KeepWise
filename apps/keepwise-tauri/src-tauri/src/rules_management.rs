@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use tauri::AppHandle;
 
 use crate::ledger_db::resolve_ledger_db_path;
+use crate::rules_store::ensure_app_rules_dir_seeded;
 
 const MERCHANT_MAP_HEADERS: &[&str] = &[
     "merchant_normalized",
@@ -127,18 +128,8 @@ pub struct MerchantRuleSuggestionsQueryRequest {
     pub only_unmapped: Option<String>,
 }
 
-fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..")
-}
-
-fn rules_dir() -> PathBuf {
-    repo_root().join("data/rules")
-}
-
-fn ensure_rules_dir() -> Result<PathBuf, String> {
-    let dir = rules_dir();
-    fs::create_dir_all(&dir).map_err(|e| format!("创建规则目录失败: {e}"))?;
-    Ok(dir)
+fn ensure_rules_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    ensure_app_rules_dir_seeded(app)
 }
 
 fn ensure_csv_file_with_headers(path: &Path, headers: &[&str]) -> Result<(), String> {
@@ -164,7 +155,8 @@ fn read_csv_rows(path: &Path, headers: &[&str]) -> Result<Vec<BTreeMap<String, S
         .from_path(path)
         .map_err(|e| format!("读取规则文件失败 ({}): {e}", path.to_string_lossy()))?;
     for rec in reader.records() {
-        let record = rec.map_err(|e| format!("解析规则文件失败 ({}): {e}", path.to_string_lossy()))?;
+        let record =
+            rec.map_err(|e| format!("解析规则文件失败 ({}): {e}", path.to_string_lossy()))?;
         let mut row = BTreeMap::<String, String>::new();
         let mut has_any = false;
         for (idx, key) in headers.iter().enumerate() {
@@ -181,7 +173,11 @@ fn read_csv_rows(path: &Path, headers: &[&str]) -> Result<Vec<BTreeMap<String, S
     Ok(rows)
 }
 
-fn write_csv_rows(path: &Path, headers: &[&str], rows: &[BTreeMap<String, String>]) -> Result<(), String> {
+fn write_csv_rows(
+    path: &Path,
+    headers: &[&str],
+    rows: &[BTreeMap<String, String>],
+) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| format!("创建规则目录失败: {e}"))?;
     }
@@ -206,26 +202,26 @@ fn write_csv_rows(path: &Path, headers: &[&str], rows: &[BTreeMap<String, String
         .map_err(|e| format!("刷新规则文件失败 ({}): {e}", path.to_string_lossy()))
 }
 
-fn ensure_merchant_map_file() -> Result<PathBuf, String> {
-    let path = ensure_rules_dir()?.join("merchant_map.csv");
+fn ensure_merchant_map_file(app: &AppHandle) -> Result<PathBuf, String> {
+    let path = ensure_rules_dir(app)?.join("merchant_map.csv");
     ensure_csv_file_with_headers(&path, MERCHANT_MAP_HEADERS)?;
     Ok(path)
 }
 
-fn ensure_category_rules_file() -> Result<PathBuf, String> {
-    let path = ensure_rules_dir()?.join("category_rules.csv");
+fn ensure_category_rules_file(app: &AppHandle) -> Result<PathBuf, String> {
+    let path = ensure_rules_dir(app)?.join("category_rules.csv");
     ensure_csv_file_with_headers(&path, CATEGORY_RULE_HEADERS)?;
     Ok(path)
 }
 
-fn ensure_analysis_exclusions_file() -> Result<PathBuf, String> {
-    let path = ensure_rules_dir()?.join("analysis_exclusions.csv");
+fn ensure_analysis_exclusions_file(app: &AppHandle) -> Result<PathBuf, String> {
+    let path = ensure_rules_dir(app)?.join("analysis_exclusions.csv");
     ensure_csv_file_with_headers(&path, ANALYSIS_EXCLUSION_HEADERS)?;
     Ok(path)
 }
 
-fn ensure_bank_transfer_whitelist_file() -> Result<PathBuf, String> {
-    let path = ensure_rules_dir()?.join("bank_transfer_whitelist.csv");
+fn ensure_bank_transfer_whitelist_file(app: &AppHandle) -> Result<PathBuf, String> {
+    let path = ensure_rules_dir(app)?.join("bank_transfer_whitelist.csv");
     ensure_csv_file_with_headers(&path, BANK_TRANSFER_WHITELIST_HEADERS)?;
     let mut rows = read_csv_rows(&path, BANK_TRANSFER_WHITELIST_HEADERS)?;
     let mut changed = false;
@@ -283,7 +279,10 @@ fn cents_to_yuan_text(cents: i64) -> String {
 fn row_to_json(headers: &[&str], row: &BTreeMap<String, String>) -> Value {
     let mut obj = serde_json::Map::new();
     for h in headers {
-        obj.insert((*h).to_string(), json!(row.get(*h).cloned().unwrap_or_default()));
+        obj.insert(
+            (*h).to_string(),
+            json!(row.get(*h).cloned().unwrap_or_default()),
+        );
     }
     Value::Object(obj)
 }
@@ -292,9 +291,11 @@ fn sort_bank_transfer_rows(rows: &mut [BTreeMap<String, String>]) {
     rows.sort_by(|a, b| {
         let a_active = parse_boolish(a.get("is_active").map(|s| s.as_str()), true).unwrap_or(true);
         let b_active = parse_boolish(b.get("is_active").map(|s| s.as_str()), true).unwrap_or(true);
-        (!a_active)
-            .cmp(&(!b_active))
-            .then_with(|| a.get("name").unwrap_or(&String::new()).cmp(b.get("name").unwrap_or(&String::new())))
+        (!a_active).cmp(&(!b_active)).then_with(|| {
+            a.get("name")
+                .unwrap_or(&String::new())
+                .cmp(b.get("name").unwrap_or(&String::new()))
+        })
     });
 }
 
@@ -309,8 +310,16 @@ fn sort_category_rows(rows: &mut [BTreeMap<String, String>]) {
             .and_then(|v| v.parse::<i32>().ok())
             .unwrap_or(999);
         ap.cmp(&bp)
-            .then_with(|| a.get("match_type").unwrap_or(&String::new()).cmp(b.get("match_type").unwrap_or(&String::new())))
-            .then_with(|| a.get("pattern").unwrap_or(&String::new()).cmp(b.get("pattern").unwrap_or(&String::new())))
+            .then_with(|| {
+                a.get("match_type")
+                    .unwrap_or(&String::new())
+                    .cmp(b.get("match_type").unwrap_or(&String::new()))
+            })
+            .then_with(|| {
+                a.get("pattern")
+                    .unwrap_or(&String::new())
+                    .cmp(b.get("pattern").unwrap_or(&String::new()))
+            })
     });
 }
 
@@ -319,7 +328,11 @@ fn sort_merchant_map_rows(rows: &mut [BTreeMap<String, String>]) {
         a.get("merchant_normalized")
             .unwrap_or(&String::new())
             .cmp(b.get("merchant_normalized").unwrap_or(&String::new()))
-            .then_with(|| a.get("expense_category").unwrap_or(&String::new()).cmp(b.get("expense_category").unwrap_or(&String::new())))
+            .then_with(|| {
+                a.get("expense_category")
+                    .unwrap_or(&String::new())
+                    .cmp(b.get("expense_category").unwrap_or(&String::new()))
+            })
     });
 }
 
@@ -327,18 +340,26 @@ fn sort_analysis_exclusion_rows(rows: &mut [BTreeMap<String, String>]) {
     rows.sort_by(|a, b| {
         let a_enabled = parse_boolish(a.get("enabled").map(|s| s.as_str()), false).unwrap_or(false);
         let b_enabled = parse_boolish(b.get("enabled").map(|s| s.as_str()), false).unwrap_or(false);
-        (!a_enabled)
-            .cmp(&(!b_enabled))
-            .then_with(|| a.get("rule_name").unwrap_or(&String::new()).cmp(b.get("rule_name").unwrap_or(&String::new())))
+        (!a_enabled).cmp(&(!b_enabled)).then_with(|| {
+            a.get("rule_name")
+                .unwrap_or(&String::new())
+                .cmp(b.get("rule_name").unwrap_or(&String::new()))
+        })
     });
 }
 
 #[tauri::command]
-pub fn query_merchant_map_rules(req: Option<RulesListQueryRequest>) -> Result<Value, String> {
-    let req = req.unwrap_or(RulesListQueryRequest { keyword: None, limit: None });
+pub fn query_merchant_map_rules(
+    app: AppHandle,
+    req: Option<RulesListQueryRequest>,
+) -> Result<Value, String> {
+    let req = req.unwrap_or(RulesListQueryRequest {
+        keyword: None,
+        limit: None,
+    });
     let keyword = req.keyword.unwrap_or_default().trim().to_lowercase();
     let limit = parse_limit(req.limit, 200);
-    let path = ensure_merchant_map_file()?;
+    let path = ensure_merchant_map_file(&app)?;
     let mut rows = read_csv_rows(&path, MERCHANT_MAP_HEADERS)?;
     if !keyword.is_empty() {
         rows.retain(|row| {
@@ -366,8 +387,15 @@ pub fn query_merchant_map_rules(req: Option<RulesListQueryRequest>) -> Result<Va
 }
 
 #[tauri::command]
-pub fn upsert_merchant_map_rule(req: MerchantMapUpsertRequest) -> Result<Value, String> {
-    let merchant = req.merchant_normalized.unwrap_or_default().trim().to_string();
+pub fn upsert_merchant_map_rule(
+    app: AppHandle,
+    req: MerchantMapUpsertRequest,
+) -> Result<Value, String> {
+    let merchant = req
+        .merchant_normalized
+        .unwrap_or_default()
+        .trim()
+        .to_string();
     let category = req.expense_category.unwrap_or_default().trim().to_string();
     let note = req.note.unwrap_or_default().trim().to_string();
     let confidence = parse_confidence_text(req.confidence, 0.95)?;
@@ -377,7 +405,7 @@ pub fn upsert_merchant_map_rule(req: MerchantMapUpsertRequest) -> Result<Value, 
     if category.is_empty() {
         return Err("expense_category 必填".to_string());
     }
-    let path = ensure_merchant_map_file()?;
+    let path = ensure_merchant_map_file(&app)?;
     let mut rows = read_csv_rows(&path, MERCHANT_MAP_HEADERS)?;
     let mut updated = false;
     for row in &mut rows {
@@ -412,15 +440,24 @@ pub fn upsert_merchant_map_rule(req: MerchantMapUpsertRequest) -> Result<Value, 
 }
 
 #[tauri::command]
-pub fn delete_merchant_map_rule(req: MerchantMapDeleteRequest) -> Result<Value, String> {
-    let merchant = req.merchant_normalized.unwrap_or_default().trim().to_string();
+pub fn delete_merchant_map_rule(
+    app: AppHandle,
+    req: MerchantMapDeleteRequest,
+) -> Result<Value, String> {
+    let merchant = req
+        .merchant_normalized
+        .unwrap_or_default()
+        .trim()
+        .to_string();
     if merchant.is_empty() {
         return Err("merchant_normalized 必填".to_string());
     }
-    let path = ensure_merchant_map_file()?;
+    let path = ensure_merchant_map_file(&app)?;
     let mut rows = read_csv_rows(&path, MERCHANT_MAP_HEADERS)?;
     let before = rows.len();
-    rows.retain(|row| row.get("merchant_normalized").map(|s| s.as_str()) != Some(merchant.as_str()));
+    rows.retain(|row| {
+        row.get("merchant_normalized").map(|s| s.as_str()) != Some(merchant.as_str())
+    });
     let deleted = before.saturating_sub(rows.len());
     write_csv_rows(&path, MERCHANT_MAP_HEADERS, &rows)?;
     Ok(json!({
@@ -432,11 +469,17 @@ pub fn delete_merchant_map_rule(req: MerchantMapDeleteRequest) -> Result<Value, 
 }
 
 #[tauri::command]
-pub fn query_category_rules(req: Option<RulesListQueryRequest>) -> Result<Value, String> {
-    let req = req.unwrap_or(RulesListQueryRequest { keyword: None, limit: None });
+pub fn query_category_rules(
+    app: AppHandle,
+    req: Option<RulesListQueryRequest>,
+) -> Result<Value, String> {
+    let req = req.unwrap_or(RulesListQueryRequest {
+        keyword: None,
+        limit: None,
+    });
     let keyword = req.keyword.unwrap_or_default().trim().to_lowercase();
     let limit = parse_limit(req.limit, 200);
-    let path = ensure_category_rules_file()?;
+    let path = ensure_category_rules_file(&app)?;
     let mut rows = read_csv_rows(&path, CATEGORY_RULE_HEADERS)?;
     if !keyword.is_empty() {
         rows.retain(|row| {
@@ -465,7 +508,10 @@ pub fn query_category_rules(req: Option<RulesListQueryRequest>) -> Result<Value,
 }
 
 #[tauri::command]
-pub fn upsert_category_rule(req: CategoryRuleUpsertRequest) -> Result<Value, String> {
+pub fn upsert_category_rule(
+    app: AppHandle,
+    req: CategoryRuleUpsertRequest,
+) -> Result<Value, String> {
     let match_type = req
         .match_type
         .unwrap_or_else(|| "contains".to_string())
@@ -484,12 +530,16 @@ pub fn upsert_category_rule(req: CategoryRuleUpsertRequest) -> Result<Value, Str
     if category.is_empty() {
         return Err("expense_category 必填".to_string());
     }
-    let priority_text = req.priority.unwrap_or_else(|| "500".to_string()).trim().to_string();
+    let priority_text = req
+        .priority
+        .unwrap_or_else(|| "500".to_string())
+        .trim()
+        .to_string();
     let priority = priority_text
         .parse::<i32>()
         .map_err(|_| "priority 必须是整数".to_string())?;
 
-    let path = ensure_category_rules_file()?;
+    let path = ensure_category_rules_file(&app)?;
     let mut rows = read_csv_rows(&path, CATEGORY_RULE_HEADERS)?;
     let mut updated = false;
     for row in &mut rows {
@@ -531,7 +581,10 @@ pub fn upsert_category_rule(req: CategoryRuleUpsertRequest) -> Result<Value, Str
 }
 
 #[tauri::command]
-pub fn delete_category_rule(req: CategoryRuleDeleteRequest) -> Result<Value, String> {
+pub fn delete_category_rule(
+    app: AppHandle,
+    req: CategoryRuleDeleteRequest,
+) -> Result<Value, String> {
     let match_type = req.match_type.unwrap_or_default().trim().to_lowercase();
     let pattern = req.pattern.unwrap_or_default().trim().to_string();
     if !RULE_MATCH_TYPES.iter().any(|v| *v == match_type) {
@@ -540,7 +593,7 @@ pub fn delete_category_rule(req: CategoryRuleDeleteRequest) -> Result<Value, Str
     if pattern.is_empty() {
         return Err("pattern 必填".to_string());
     }
-    let path = ensure_category_rules_file()?;
+    let path = ensure_category_rules_file(&app)?;
     let mut rows = read_csv_rows(&path, CATEGORY_RULE_HEADERS)?;
     let before = rows.len();
     rows.retain(|row| {
@@ -560,6 +613,7 @@ pub fn delete_category_rule(req: CategoryRuleDeleteRequest) -> Result<Value, Str
 
 #[tauri::command]
 pub fn query_bank_transfer_whitelist_rules(
+    app: AppHandle,
     req: Option<BankTransferWhitelistQueryRequest>,
 ) -> Result<Value, String> {
     let req = req.unwrap_or(BankTransferWhitelistQueryRequest {
@@ -570,7 +624,7 @@ pub fn query_bank_transfer_whitelist_rules(
     let keyword = req.keyword.unwrap_or_default().trim().to_lowercase();
     let limit = parse_limit(req.limit, 200);
     let active_only = parse_boolish(req.active_only.as_deref(), false)?;
-    let path = ensure_bank_transfer_whitelist_file()?;
+    let path = ensure_bank_transfer_whitelist_file(&app)?;
     let mut rows = read_csv_rows(&path, BANK_TRANSFER_WHITELIST_HEADERS)?;
     rows.retain(|row| {
         let name = row.get("name").cloned().unwrap_or_default();
@@ -584,7 +638,8 @@ pub fn query_bank_transfer_whitelist_rules(
         if keyword.is_empty() {
             return true;
         }
-        let hay = format!("{} {}", name, row.get("note").cloned().unwrap_or_default()).to_lowercase();
+        let hay =
+            format!("{} {}", name, row.get("note").cloned().unwrap_or_default()).to_lowercase();
         hay.contains(&keyword)
     });
     sort_bank_transfer_rows(&mut rows);
@@ -619,6 +674,7 @@ pub fn query_bank_transfer_whitelist_rules(
 
 #[tauri::command]
 pub fn upsert_bank_transfer_whitelist_rule(
+    app: AppHandle,
     req: BankTransferWhitelistUpsertRequest,
 ) -> Result<Value, String> {
     let name = req.name.unwrap_or_default().trim().to_string();
@@ -627,7 +683,7 @@ pub fn upsert_bank_transfer_whitelist_rule(
     if name.is_empty() {
         return Err("name 必填".to_string());
     }
-    let path = ensure_bank_transfer_whitelist_file()?;
+    let path = ensure_bank_transfer_whitelist_file(&app)?;
     let mut rows = read_csv_rows(&path, BANK_TRANSFER_WHITELIST_HEADERS)?;
     let mut updated = false;
     for row in &mut rows {
@@ -666,13 +722,14 @@ pub fn upsert_bank_transfer_whitelist_rule(
 
 #[tauri::command]
 pub fn delete_bank_transfer_whitelist_rule(
+    app: AppHandle,
     req: BankTransferWhitelistDeleteRequest,
 ) -> Result<Value, String> {
     let name = req.name.unwrap_or_default().trim().to_string();
     if name.is_empty() {
         return Err("name 必填".to_string());
     }
-    let path = ensure_bank_transfer_whitelist_file()?;
+    let path = ensure_bank_transfer_whitelist_file(&app)?;
     let mut rows = read_csv_rows(&path, BANK_TRANSFER_WHITELIST_HEADERS)?;
     let before = rows.len();
     rows.retain(|row| row.get("name").map(|s| s.as_str()) != Some(name.as_str()));
@@ -688,6 +745,7 @@ pub fn delete_bank_transfer_whitelist_rule(
 
 #[tauri::command]
 pub fn query_analysis_exclusion_rules(
+    app: AppHandle,
     req: Option<AnalysisExclusionQueryRequest>,
 ) -> Result<Value, String> {
     let req = req.unwrap_or(AnalysisExclusionQueryRequest {
@@ -698,7 +756,7 @@ pub fn query_analysis_exclusion_rules(
     let keyword = req.keyword.unwrap_or_default().trim().to_lowercase();
     let limit = parse_limit(req.limit, 200);
     let enabled_only = parse_boolish(req.enabled_only.as_deref(), false)?;
-    let path = ensure_analysis_exclusions_file()?;
+    let path = ensure_analysis_exclusions_file(&app)?;
     let mut rows = read_csv_rows(&path, ANALYSIS_EXCLUSION_HEADERS)?;
     rows.retain(|row| {
         let enabled = parse_boolish(row.get("enabled").map(|s| s.as_str()), false).unwrap_or(false);
@@ -727,10 +785,14 @@ pub fn query_analysis_exclusion_rules(
             let mut obj = serde_json::Map::new();
             for h in ANALYSIS_EXCLUSION_HEADERS {
                 if *h == "enabled" {
-                    let enabled = parse_boolish(row.get("enabled").map(|s| s.as_str()), false).unwrap_or(false);
+                    let enabled = parse_boolish(row.get("enabled").map(|s| s.as_str()), false)
+                        .unwrap_or(false);
                     obj.insert((*h).to_string(), json!(if enabled { 1 } else { 0 }));
                 } else {
-                    obj.insert((*h).to_string(), json!(row.get(*h).cloned().unwrap_or_default()));
+                    obj.insert(
+                        (*h).to_string(),
+                        json!(row.get(*h).cloned().unwrap_or_default()),
+                    );
                 }
             }
             Value::Object(obj)
@@ -755,14 +817,20 @@ pub fn query_analysis_exclusion_rules(
 }
 
 #[tauri::command]
-pub fn upsert_analysis_exclusion_rule(req: AnalysisExclusionUpsertRequest) -> Result<Value, String> {
+pub fn upsert_analysis_exclusion_rule(
+    app: AppHandle,
+    req: AnalysisExclusionUpsertRequest,
+) -> Result<Value, String> {
     let rule_name = req.rule_name.unwrap_or_default().trim().to_string();
     if rule_name.is_empty() {
         return Err("rule_name 必填".to_string());
     }
     let enabled = parse_boolish(req.enabled.as_deref(), true)?;
     let mut next = BTreeMap::<String, String>::new();
-    next.insert("enabled".to_string(), if enabled { "1" } else { "0" }.to_string());
+    next.insert(
+        "enabled".to_string(),
+        if enabled { "1" } else { "0" }.to_string(),
+    );
     next.insert("rule_name".to_string(), rule_name.clone());
     next.insert(
         "merchant_contains".to_string(),
@@ -770,25 +838,41 @@ pub fn upsert_analysis_exclusion_rule(req: AnalysisExclusionUpsertRequest) -> Re
     );
     next.insert(
         "description_contains".to_string(),
-        req.description_contains.unwrap_or_default().trim().to_string(),
+        req.description_contains
+            .unwrap_or_default()
+            .trim()
+            .to_string(),
     );
     next.insert(
         "expense_category".to_string(),
         req.expense_category.unwrap_or_default().trim().to_string(),
     );
-    next.insert("min_amount".to_string(), req.min_amount.unwrap_or_default().trim().to_string());
-    next.insert("max_amount".to_string(), req.max_amount.unwrap_or_default().trim().to_string());
-    next.insert("start_date".to_string(), req.start_date.unwrap_or_default().trim().to_string());
-    next.insert("end_date".to_string(), req.end_date.unwrap_or_default().trim().to_string());
     next.insert(
-        "reason".to_string(),
-        {
-            let v = req.reason.unwrap_or_default().trim().to_string();
-            if v.is_empty() { "排除分析".to_string() } else { v }
-        },
+        "min_amount".to_string(),
+        req.min_amount.unwrap_or_default().trim().to_string(),
     );
+    next.insert(
+        "max_amount".to_string(),
+        req.max_amount.unwrap_or_default().trim().to_string(),
+    );
+    next.insert(
+        "start_date".to_string(),
+        req.start_date.unwrap_or_default().trim().to_string(),
+    );
+    next.insert(
+        "end_date".to_string(),
+        req.end_date.unwrap_or_default().trim().to_string(),
+    );
+    next.insert("reason".to_string(), {
+        let v = req.reason.unwrap_or_default().trim().to_string();
+        if v.is_empty() {
+            "排除分析".to_string()
+        } else {
+            v
+        }
+    });
 
-    let path = ensure_analysis_exclusions_file()?;
+    let path = ensure_analysis_exclusions_file(&app)?;
     let mut rows = read_csv_rows(&path, ANALYSIS_EXCLUSION_HEADERS)?;
     let mut updated = false;
     for row in &mut rows {
@@ -808,7 +892,10 @@ pub fn upsert_analysis_exclusion_rule(req: AnalysisExclusionUpsertRequest) -> Re
         if *h == "enabled" {
             obj.insert((*h).to_string(), json!(if enabled { 1 } else { 0 }));
         } else {
-            obj.insert((*h).to_string(), json!(next.get(*h).cloned().unwrap_or_default()));
+            obj.insert(
+                (*h).to_string(),
+                json!(next.get(*h).cloned().unwrap_or_default()),
+            );
         }
     }
     Ok(json!({
@@ -819,12 +906,15 @@ pub fn upsert_analysis_exclusion_rule(req: AnalysisExclusionUpsertRequest) -> Re
 }
 
 #[tauri::command]
-pub fn delete_analysis_exclusion_rule(req: AnalysisExclusionDeleteRequest) -> Result<Value, String> {
+pub fn delete_analysis_exclusion_rule(
+    app: AppHandle,
+    req: AnalysisExclusionDeleteRequest,
+) -> Result<Value, String> {
     let rule_name = req.rule_name.unwrap_or_default().trim().to_string();
     if rule_name.is_empty() {
         return Err("rule_name 必填".to_string());
     }
-    let path = ensure_analysis_exclusions_file()?;
+    let path = ensure_analysis_exclusions_file(&app)?;
     let mut rows = read_csv_rows(&path, ANALYSIS_EXCLUSION_HEADERS)?;
     let before = rows.len();
     rows.retain(|row| row.get("rule_name").map(|s| s.as_str()) != Some(rule_name.as_str()));
@@ -852,7 +942,7 @@ pub fn query_merchant_rule_suggestions(
     let keyword = req.keyword.unwrap_or_default().trim().to_lowercase();
     let only_unmapped = parse_boolish(req.only_unmapped.as_deref(), true)?;
 
-    let merchant_map_path = ensure_merchant_map_file()?;
+    let merchant_map_path = ensure_merchant_map_file(&app)?;
     let merchant_map_rows = read_csv_rows(&merchant_map_path, MERCHANT_MAP_HEADERS)?;
     let mut merchant_map: HashMap<String, (String, f64, String)> = HashMap::new();
     for row in merchant_map_rows {
@@ -941,8 +1031,13 @@ pub fn query_merchant_rule_suggestions(
 
     let mut rows = Vec::<Value>::new();
     for rec in iter {
-        let (merchant_normalized, txn_count, total_amount_cents, review_count, suggested_category_opt) =
-            rec.map_err(|e| format!("读取 merchant suggestions 结果失败: {e}"))?;
+        let (
+            merchant_normalized,
+            txn_count,
+            total_amount_cents,
+            review_count,
+            suggested_category_opt,
+        ) = rec.map_err(|e| format!("读取 merchant suggestions 结果失败: {e}"))?;
         let mapped = merchant_map.get(&merchant_normalized);
         if only_unmapped && mapped.is_some() {
             continue;
@@ -951,7 +1046,10 @@ pub fn query_merchant_rule_suggestions(
             Some((c, conf, note)) => (c.clone(), Some(*conf), note.clone()),
             None => ("".to_string(), None, "".to_string()),
         };
-        let suggested_expense_category = suggested_category_opt.unwrap_or_default().trim().to_string();
+        let suggested_expense_category = suggested_category_opt
+            .unwrap_or_default()
+            .trim()
+            .to_string();
         rows.push(json!({
             "merchant_normalized": merchant_normalized,
             "txn_count": txn_count,

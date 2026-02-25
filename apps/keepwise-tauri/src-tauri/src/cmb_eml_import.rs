@@ -15,6 +15,9 @@ use uuid::Uuid;
 use walkdir::WalkDir;
 
 use crate::ledger_db::resolve_ledger_db_path;
+use crate::rules_store::ensure_app_rules_dir_seeded;
+#[cfg(test)]
+use crate::rules_store::resolve_repo_rules_dir;
 
 const DEFAULT_SOURCE_TYPE: &str = "cmb_eml";
 const DEFAULT_REVIEW_THRESHOLD: f64 = 0.70;
@@ -162,12 +165,9 @@ fn trim_text(s: &str) -> String {
     ws_re().replace_all(s.trim(), " ").trim().to_string()
 }
 
+#[cfg(test)]
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..")
-}
-
-fn resolve_rules_dir() -> PathBuf {
-    repo_root().join("data/rules")
 }
 
 fn resolve_source_path_text(raw: Option<String>) -> Result<String, String> {
@@ -383,7 +383,10 @@ fn extract_card_last4(raw: &str) -> Option<String> {
     if text.chars().all(|c| c.is_ascii_digit()) && text.len() == 4 {
         return Some(text);
     }
-    card_last4_re().find_iter(&text).last().map(|m| m.as_str().to_string())
+    card_last4_re()
+        .find_iter(&text)
+        .last()
+        .map(|m| m.as_str().to_string())
 }
 
 fn parse_single_eml(path: &Path, root_for_rel: &Path) -> Result<Vec<ParsedEmlTransaction>, String> {
@@ -815,12 +818,13 @@ fn apply_analysis_exclusions(
     }
 }
 
-fn load_rules_bundle() -> (
+fn load_rules_bundle(
+    rules_dir: &Path,
+) -> (
     HashMap<String, (String, f64)>,
     Vec<CategoryRule>,
     Vec<AnalysisExclusionRule>,
 ) {
-    let rules_dir = resolve_rules_dir();
     (
         load_merchant_map(&rules_dir.join("merchant_map.csv")),
         load_category_rules(&rules_dir.join("category_rules.csv")),
@@ -828,12 +832,21 @@ fn load_rules_bundle() -> (
     )
 }
 
+#[cfg(test)]
 fn parse_and_classify_emls(
     source_path: &Path,
     review_threshold: f64,
 ) -> Result<(Vec<ClassifiedTransaction>, PreviewSummary), String> {
+    parse_and_classify_emls_with_rules_dir(source_path, review_threshold, &resolve_repo_rules_dir())
+}
+
+fn parse_and_classify_emls_with_rules_dir(
+    source_path: &Path,
+    review_threshold: f64,
+    rules_dir: &Path,
+) -> Result<(Vec<ClassifiedTransaction>, PreviewSummary), String> {
     let (files, root_for_rel) = collect_eml_files(source_path)?;
-    let (merchant_map, category_rules, exclusion_rules) = load_rules_bundle();
+    let (merchant_map, category_rules, exclusion_rules) = load_rules_bundle(rules_dir);
 
     let mut parsed_records = Vec::<ParsedEmlTransaction>::new();
     let mut failed_files = Vec::<Value>::new();
@@ -1182,8 +1195,13 @@ fn upsert_transaction(
     Ok(())
 }
 
-fn cmb_eml_preview_at_path(source_path: &Path, review_threshold: f64) -> Result<Value, String> {
-    let (_classified, summary) = parse_and_classify_emls(source_path, review_threshold)?;
+fn cmb_eml_preview_at_path_with_rules_dir(
+    source_path: &Path,
+    review_threshold: f64,
+    rules_dir: &Path,
+) -> Result<Value, String> {
+    let (_classified, summary) =
+        parse_and_classify_emls_with_rules_dir(source_path, review_threshold, rules_dir)?;
     Ok(json!({
         "source_path": source_path.to_string_lossy().to_string(),
         "review_threshold": review_threshold,
@@ -1196,8 +1214,10 @@ fn cmb_eml_import_at_db_path(
     source_path: &Path,
     review_threshold: f64,
     source_type: &str,
+    rules_dir: &Path,
 ) -> Result<Value, String> {
-    let (classified, summary) = parse_and_classify_emls(source_path, review_threshold)?;
+    let (classified, summary) =
+        parse_and_classify_emls_with_rules_dir(source_path, review_threshold, rules_dir)?;
 
     let conn = Connection::open(db_path).map_err(|e| format!("打开数据库失败: {e}"))?;
     conn.execute_batch("PRAGMA foreign_keys = ON;")
@@ -1311,10 +1331,11 @@ fn cmb_eml_import_at_db_path(
 }
 
 #[tauri::command]
-pub fn cmb_eml_preview(req: CmbEmlPreviewRequest) -> Result<Value, String> {
+pub fn cmb_eml_preview(app: AppHandle, req: CmbEmlPreviewRequest) -> Result<Value, String> {
     let source_path = resolve_source_path_text(req.source_path)?;
     let review_threshold = resolve_review_threshold(req.review_threshold)?;
-    cmb_eml_preview_at_path(Path::new(&source_path), review_threshold)
+    let rules_dir = ensure_app_rules_dir_seeded(&app)?;
+    cmb_eml_preview_at_path_with_rules_dir(Path::new(&source_path), review_threshold, &rules_dir)
 }
 
 #[tauri::command]
@@ -1330,11 +1351,13 @@ pub fn cmb_eml_import(app: AppHandle, req: CmbEmlImportRequest) -> Result<Value,
         return Err("source_type 不能为空".to_string());
     }
     let db_path = resolve_ledger_db_path(&app)?;
+    let rules_dir = ensure_app_rules_dir_seeded(&app)?;
     cmb_eml_import_at_db_path(
         &db_path,
         Path::new(&source_path),
         review_threshold,
         &source_type,
+        &rules_dir,
     )
 }
 
@@ -1386,8 +1409,8 @@ mod tests {
         if !sample_dir.exists() {
             return;
         }
-        let (classified, summary) =
-            parse_and_classify_emls(&sample_dir, DEFAULT_REVIEW_THRESHOLD).expect("parse sample eml dir");
+        let (classified, summary) = parse_and_classify_emls(&sample_dir, DEFAULT_REVIEW_THRESHOLD)
+            .expect("parse sample eml dir");
         assert!(
             !classified.is_empty(),
             "expected parsed transactions from sample dir"
@@ -1469,12 +1492,14 @@ mod tests {
 
         let db_path = create_temp_test_db();
         apply_all_migrations_for_test(&db_path);
+        let rules_dir = repo_root().join("data/rules");
 
         let import1 = cmb_eml_import_at_db_path(
             &db_path,
             &sample_dir,
             DEFAULT_REVIEW_THRESHOLD,
             DEFAULT_SOURCE_TYPE,
+            &rules_dir,
         )
         .expect("first import");
         let import2 = cmb_eml_import_at_db_path(
@@ -1482,6 +1507,7 @@ mod tests {
             &sample_dir,
             DEFAULT_REVIEW_THRESHOLD,
             DEFAULT_SOURCE_TYPE,
+            &rules_dir,
         )
         .expect("second import");
 
@@ -1499,7 +1525,10 @@ mod tests {
             .and_then(Value::as_i64)
             .expect("import2.imported_count");
 
-        assert!(imported1 > 0, "first import should import sample transactions");
+        assert!(
+            imported1 > 0,
+            "first import should import sample transactions"
+        );
         assert_eq!(
             total_tx, imported1,
             "second import should upsert existing transactions instead of creating duplicates"
@@ -1530,6 +1559,42 @@ mod tests {
     }
 
     #[test]
+    fn preview_problematic_2026_sample_summary_matches_expected_counts() {
+        let sample_file = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../..")
+            .join("data/input/raw/eml/cmb/2026/招商银行信用卡电子账单 (12).eml");
+        if !sample_file.exists() {
+            return;
+        }
+        let rules_dir = repo_root().join("data/rules");
+        let preview = cmb_eml_preview_at_path_with_rules_dir(
+            &sample_file,
+            DEFAULT_REVIEW_THRESHOLD,
+            &rules_dir,
+        )
+        .expect("preview problematic 2026 sample");
+        let summary = preview
+            .get("summary")
+            .and_then(Value::as_object)
+            .expect("preview.summary object");
+        assert_eq!(
+            summary.get("records_count").and_then(Value::as_u64),
+            Some(118),
+            "records_count drifted for known problematic sample"
+        );
+        assert_eq!(
+            summary.get("consume_count").and_then(Value::as_u64),
+            Some(113),
+            "consume_count drifted for known problematic sample"
+        );
+        assert_eq!(
+            summary.get("needs_review_count").and_then(Value::as_u64),
+            Some(22),
+            "needs_review_count drifted for known problematic sample"
+        );
+    }
+
+    #[test]
     #[ignore]
     fn debug_problematic_2026_sample_preview_summary() {
         let sample_file = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -1539,10 +1604,14 @@ mod tests {
             return;
         }
         let (_classified, summary) =
-            parse_and_classify_emls(&sample_file, DEFAULT_REVIEW_THRESHOLD).expect("preview summary");
+            parse_and_classify_emls(&sample_file, DEFAULT_REVIEW_THRESHOLD)
+                .expect("preview summary");
         eprintln!(
             "records={} consume={} review={} excluded={}",
-            summary.records_count, summary.consume_count, summary.needs_review_count, summary.excluded_count
+            summary.records_count,
+            summary.consume_count,
+            summary.needs_review_count,
+            summary.excluded_count
         );
     }
 }

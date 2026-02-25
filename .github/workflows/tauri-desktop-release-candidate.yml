@@ -1,0 +1,224 @@
+name: tauri-desktop-release-candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_version:
+        description: "Release candidate version (e.g. 0.2.0-rc.1 or 0.2.0)"
+        required: true
+        type: string
+      run_prechecks:
+        description: "Run desktop:release:check before build"
+        required: true
+        type: boolean
+        default: true
+
+jobs:
+  mac-release-candidate:
+    runs-on: macos-latest
+    timeout-minutes: 60
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate target version input
+        run: |
+          version='${{ inputs.target_version }}'
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid target_version: $version"
+            echo "Expected semver-like value, e.g. 0.2.0 or 0.2.0-rc.1"
+            exit 1
+          fi
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: "apps/keepwise-tauri/package-lock.json"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install frontend deps
+        working-directory: apps/keepwise-tauri
+        run: npm ci
+
+      - name: Prepare release draft (preview mode)
+        working-directory: apps/keepwise-tauri
+        run: npm run desktop:release:prepare -- "${{ inputs.target_version }}"
+
+      - name: Version consistency preview check (package.json / Cargo.toml)
+        run: |
+          mkdir -p .artifacts/release-candidate
+          python3 - <<'PY'
+          import json, pathlib, re, sys
+
+          target = "${{ inputs.target_version }}"
+          pkg_path = pathlib.Path("apps/keepwise-tauri/package.json")
+          cargo_path = pathlib.Path("apps/keepwise-tauri/src-tauri/Cargo.toml")
+
+          pkg = json.loads(pkg_path.read_text(encoding="utf-8"))
+          pkg_ver = pkg.get("version", "")
+
+          cargo_text = cargo_path.read_text(encoding="utf-8")
+          m = re.search(r'(?ms)^\[package\].*?^version\s*=\s*"([^"]+)"', cargo_text)
+          cargo_ver = m.group(1) if m else ""
+
+          if not pkg_ver or not cargo_ver:
+              print("Failed to read package/cargo version")
+              sys.exit(1)
+
+          if pkg_ver != cargo_ver:
+              print(f"Version mismatch: package.json={pkg_ver}, Cargo.toml={cargo_ver}")
+              sys.exit(1)
+
+          rc = pathlib.Path(".artifacts/release-candidate/version_consistency_check.txt")
+          lines = []
+          lines.append("version_consistency=pass")
+          lines.append(f"target_version={target}")
+          lines.append(f"package_json_version={pkg_ver}")
+          lines.append(f"cargo_toml_version={cargo_ver}")
+          lines.append(f"matches_target_version={'yes' if pkg_ver == target else 'no'}")
+          if pkg_ver != target:
+              lines.append("note=RC workflow currently builds from working tree version; target_version is tracked in release draft and artifact naming")
+          rc.write_text("\n".join(lines) + "\n", encoding="utf-8")
+          print(rc)
+          PY
+
+          {
+            echo "### Version Consistency Preview Check"
+            echo
+            echo '```'
+            cat .artifacts/release-candidate/version_consistency_check.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Prechecks (desktop release check)
+        if: ${{ inputs.run_prechecks }}
+        working-directory: apps/keepwise-tauri
+        run: npm run desktop:release:check
+
+      - name: Build mac release candidate bundle
+        env:
+          KEEPWISE_SKIP_PREFLIGHT: ${{ inputs.run_prechecks && '1' || '0' }}
+          KEEPWISE_ARTIFACT_PREFIX: keepwise-desktop-rc-v${{ inputs.target_version }}-${{ github.run_number }}
+          KEEPWISE_DESKTOP_EXPORT_ROOT: ${{ github.workspace }}/.artifacts/desktop-builds
+        run: bash scripts/build_keepwise_desktop_local.sh mac
+
+      - name: Write release-candidate manifest
+        if: always()
+        run: |
+          mkdir -p .artifacts/release-candidate
+          {
+            echo "workflow=tauri-desktop-release-candidate"
+            echo "target_version=${{ inputs.target_version }}"
+            echo "run_prechecks=${{ inputs.run_prechecks }}"
+            echo "sha=${GITHUB_SHA}"
+            echo "ref=${GITHUB_REF}"
+            echo "run_id=${GITHUB_RUN_ID}"
+            echo "run_attempt=${GITHUB_RUN_ATTEMPT}"
+            echo "created_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > .artifacts/release-candidate/manifest.txt
+
+      - name: Summarize release-candidate artifacts
+        if: always()
+        run: |
+          mkdir -p .artifacts/release-candidate
+          latest_export_dir="$(ls -td .artifacts/desktop-builds/* 2>/dev/null | head -1 || true)"
+          summary_file=".artifacts/release-candidate/artifact_inventory_summary.txt"
+          {
+            echo "target_version=${{ inputs.target_version }}"
+            echo "run_prechecks=${{ inputs.run_prechecks }}"
+            echo "latest_export_dir=${latest_export_dir:-missing}"
+            if [[ -n "$latest_export_dir" && -f "$latest_export_dir/artifact_inventory.txt" ]]; then
+              echo "--- artifact_inventory.txt ---"
+              cat "$latest_export_dir/artifact_inventory.txt"
+            else
+              echo "artifact_inventory_missing=1"
+            fi
+          } > "$summary_file"
+
+          {
+            echo "## Tauri Desktop Release Candidate"
+            echo
+            echo "- target_version: \`${{ inputs.target_version }}\`"
+            echo "- run_prechecks: \`${{ inputs.run_prechecks }}\`"
+            echo "- latest_export_dir: \`${latest_export_dir:-missing}\`"
+            if [[ -n "$latest_export_dir" && -f "$latest_export_dir/artifact_inventory.txt" ]]; then
+              echo
+              echo "### Artifact Inventory"
+              echo '```'
+              cat "$latest_export_dir/artifact_inventory.txt"
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Write download-and-validate guide
+        if: always()
+        run: |
+          mkdir -p .artifacts/release-candidate
+          latest_export_dir="$(ls -td .artifacts/desktop-builds/* 2>/dev/null | head -1 || true)"
+          cat > .artifacts/release-candidate/DOWNLOAD_AND_VALIDATE.md <<EOF
+          # KeepWise Desktop RC 下载后验收说明
+
+          目标版本：\`${{ inputs.target_version }}\`
+
+          ## 1. 下载 CI Artifact
+
+          下载本次 workflow 的 artifact：\`tauri-desktop-release-candidate\`
+
+          ## 2. 重点查看目录
+
+          - \`.artifacts/release-candidate/\`
+          - \`.artifacts/desktop-builds/\`
+          - \`.artifacts/releases/\`（发布草稿）
+          - \`.artifacts/tauri-desktop-check/\`（若启用了 prechecks）
+
+          本次构建最新导出目录（workflow 内检测）：
+
+          - \`${latest_export_dir:-missing}\`
+
+          ## 3. 先看清点信息
+
+          - \`.artifacts/release-candidate/artifact_inventory_summary.txt\`
+          - \`artifact_inventory.txt\`（位于最新导出目录内）
+
+          ## 4. 建议人工验收顺序（本机）
+
+          1. 安装 / 启动 RC `.app` 或 `.dmg`
+          2. 按用户视角回归清单执行关键路径
+          3. 核对发布草稿与版本号信息
+
+          参考文档：
+
+          - \`docs/engineering/TAURI_DESKTOP_USER_REGRESSION_CHECKLIST.md\`
+          - \`docs/engineering/TAURI_DESKTOP_RELEASE_EXECUTION_CHECKLIST.md\`
+          - \`docs/engineering/TAURI_DESKTOP_BUILD_RUNBOOK.md\`
+
+          ## 5. 若发现问题
+
+          建议记录：
+
+          - 阻塞级别（阻塞/非阻塞）
+          - 复现步骤
+          - 截图/日志
+          - RC workflow run 链接与 commit SHA
+          EOF
+
+      - name: Upload release-candidate artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tauri-desktop-release-candidate
+          path: |
+            .artifacts/release-candidate
+            .artifacts/releases
+            .artifacts/desktop-builds
+            .artifacts/tauri-desktop-check
+          if-no-files-found: warn

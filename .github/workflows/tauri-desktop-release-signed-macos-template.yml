@@ -1,0 +1,174 @@
+name: tauri-desktop-release-signed-macos-template
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_version:
+        description: "Release version (e.g. 0.2.0 or 0.2.0-rc.1)"
+        required: true
+        type: string
+      run_prechecks:
+        description: "Run desktop:release:check before build"
+        required: true
+        type: boolean
+        default: true
+      execute_signing:
+        description: "Execute signing/notarization template (false = check-only)"
+        required: true
+        type: boolean
+        default: false
+
+jobs:
+  mac-signed-template:
+    runs-on: macos-latest
+    timeout-minutes: 90
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate target version input
+        run: |
+          version='${{ inputs.target_version }}'
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid target_version: $version"
+            echo "Expected semver-like value, e.g. 0.2.0 or 0.2.0-rc.1"
+            exit 1
+          fi
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: "apps/keepwise-tauri/package-lock.json"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install frontend deps
+        working-directory: apps/keepwise-tauri
+        run: npm ci
+
+      - name: Prepare release draft (preview mode)
+        working-directory: apps/keepwise-tauri
+        run: npm run desktop:release:prepare -- "${{ inputs.target_version }}"
+
+      - name: Prechecks (desktop release check)
+        if: ${{ inputs.run_prechecks }}
+        working-directory: apps/keepwise-tauri
+        run: npm run desktop:release:check
+
+      - name: Build mac bundle (unsigned or to-be-signed)
+        env:
+          KEEPWISE_SKIP_PREFLIGHT: ${{ inputs.run_prechecks && '1' || '0' }}
+          KEEPWISE_ARTIFACT_PREFIX: keepwise-desktop-signed-template-v${{ inputs.target_version }}-${{ github.run_number }}
+          KEEPWISE_DESKTOP_EXPORT_ROOT: ${{ github.workspace }}/.artifacts/desktop-builds
+        run: bash scripts/build_keepwise_desktop_local.sh mac
+
+      - name: Locate mac artifacts for signing template
+        id: locate
+        run: |
+          mkdir -p .artifacts/signed-macos-template
+          latest_export_dir="$(ls -td .artifacts/desktop-builds/* 2>/dev/null | head -1 || true)"
+          if [[ -z "$latest_export_dir" ]]; then
+            echo "No export dir found under .artifacts/desktop-builds"
+            exit 1
+          fi
+          app_path="$(find "$latest_export_dir" -maxdepth 1 -type d -name '*.app' | head -1 || true)"
+          dmg_path="$(find "$latest_export_dir" -maxdepth 1 -type f -name '*.dmg' | head -1 || true)"
+          if [[ -z "$app_path" ]]; then
+            echo "No .app found in export dir: $latest_export_dir"
+            exit 1
+          fi
+
+          {
+            echo "latest_export_dir=$latest_export_dir"
+            echo "app_path=$app_path"
+            echo "dmg_path=$dmg_path"
+          } | tee .artifacts/signed-macos-template/located_artifacts.txt
+
+          echo "latest_export_dir=$latest_export_dir" >> "$GITHUB_OUTPUT"
+          echo "app_path=$app_path" >> "$GITHUB_OUTPUT"
+          echo "dmg_path=$dmg_path" >> "$GITHUB_OUTPUT"
+
+      - name: Run macOS sign/notarize template (check-only or execute)
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID_EMAIL: ${{ secrets.APPLE_ID_EMAIL }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          XCRUN_NOTARYTOOL_PROFILE: ${{ secrets.XCRUN_NOTARYTOOL_PROFILE }}
+        run: |
+          set -euo pipefail
+          cmd=(bash scripts/macos_sign_notarize_template.sh --app "${{ steps.locate.outputs.app_path }}")
+          if [[ -n "${{ steps.locate.outputs.dmg_path }}" ]]; then
+            cmd+=(--dmg "${{ steps.locate.outputs.dmg_path }}")
+          fi
+          if [[ "${{ inputs.execute_signing }}" == "true" ]]; then
+            cmd+=(--execute)
+          else
+            cmd+=(--check-only)
+          fi
+          printf '%s\n' "${cmd[*]}" | tee .artifacts/signed-macos-template/sign_notarize_invocation.txt
+          "${cmd[@]}" | tee .artifacts/signed-macos-template/sign_notarize_output.log
+
+      - name: Write signed-template manifest
+        if: always()
+        run: |
+          mkdir -p .artifacts/signed-macos-template
+          {
+            echo "workflow=tauri-desktop-release-signed-macos-template"
+            echo "target_version=${{ inputs.target_version }}"
+            echo "run_prechecks=${{ inputs.run_prechecks }}"
+            echo "execute_signing=${{ inputs.execute_signing }}"
+            echo "sha=${GITHUB_SHA}"
+            echo "ref=${GITHUB_REF}"
+            echo "run_id=${GITHUB_RUN_ID}"
+            echo "run_attempt=${GITHUB_RUN_ATTEMPT}"
+            echo "created_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > .artifacts/signed-macos-template/manifest.txt
+
+      - name: Write signed-template usage note
+        if: always()
+        run: |
+          mkdir -p .artifacts/signed-macos-template
+          cat > .artifacts/signed-macos-template/README.md <<EOF
+          # macOS Signed Release Template (Workflow Output)
+
+          This workflow is a template scaffold for future signed macOS releases.
+
+          - target_version: \`${{ inputs.target_version }}\`
+          - run_prechecks: \`${{ inputs.run_prechecks }}\`
+          - execute_signing: \`${{ inputs.execute_signing }}\`
+
+          ## Notes
+
+          - When \`execute_signing=false\`, the workflow runs the signing/notarization template in check-only mode.
+          - Real signing requires configured secrets (Apple credentials / signing identity).
+          - Review:
+            - \`sign_notarize_output.log\`
+            - \`located_artifacts.txt\`
+            - \`manifest.txt\`
+
+          Reference docs:
+
+          - \`docs/engineering/TAURI_DESKTOP_SIGNING_NOTARIZATION_TEMPLATE.md\`
+          - \`docs/engineering/TAURI_DESKTOP_RELEASE_EXECUTION_CHECKLIST.md\`
+          EOF
+
+      - name: Upload signed-template artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tauri-desktop-signed-macos-template
+          path: |
+            .artifacts/signed-macos-template
+            .artifacts/desktop-builds
+            .artifacts/releases
+            .artifacts/tauri-desktop-check
+          if-no-files-found: warn

@@ -2,6 +2,7 @@
 
 mod account_catalog;
 mod admin_health;
+mod budget_fire_analytics;
 mod cmb_bank_pdf_import;
 mod cmb_eml_import;
 mod commands;
@@ -10,6 +11,7 @@ mod ledger_db;
 mod read_queries;
 mod record_mutations;
 mod rules_management;
+mod rules_store;
 mod transaction_mutations;
 pub mod wealth_analytics;
 mod yzxy_import;
@@ -44,6 +46,14 @@ pub fn run() {
             investment_analytics::investment_curve_query,
             wealth_analytics::wealth_overview_query,
             wealth_analytics::wealth_curve_query,
+            budget_fire_analytics::query_monthly_budget_items,
+            budget_fire_analytics::upsert_monthly_budget_item,
+            budget_fire_analytics::delete_monthly_budget_item,
+            budget_fire_analytics::query_budget_overview,
+            budget_fire_analytics::query_budget_monthly_review,
+            budget_fire_analytics::query_salary_income_overview,
+            budget_fire_analytics::query_consumption_report,
+            budget_fire_analytics::query_fire_progress,
             read_queries::meta_accounts_query,
             read_queries::query_transactions,
             read_queries::query_investments,

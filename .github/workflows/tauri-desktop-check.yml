@@ -1,0 +1,130 @@
+name: tauri-desktop-check
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "apps/keepwise-tauri/**"
+      - "scripts/validate_tauri_desktop_rust_regression.sh"
+      - "scripts/validate_tauri_core_diff_regression.sh"
+      - "tools/migration/**"
+      - "db/migrations/**"
+  push:
+    branches: [main]
+    paths:
+      - "apps/keepwise-tauri/**"
+      - "scripts/validate_tauri_desktop_rust_regression.sh"
+      - "scripts/validate_tauri_core_diff_regression.sh"
+      - "tools/migration/**"
+      - "db/migrations/**"
+
+jobs:
+  desktop-check:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    env:
+      KEEPWISE_DIFF_REPORT_DIR: ${{ github.workspace }}/.artifacts/tauri-desktop-check
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: "apps/keepwise-tauri/package-lock.json"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install frontend deps
+        working-directory: apps/keepwise-tauri
+        run: npm ci
+
+      - name: Frontend build
+        id: frontend_build
+        working-directory: apps/keepwise-tauri
+        run: npm run build
+
+      - name: Rust check
+        id: rust_check
+        working-directory: apps/keepwise-tauri
+        run: cargo check --manifest-path src-tauri/Cargo.toml
+
+      - name: Rust regression subset
+        id: rust_regression
+        working-directory: apps/keepwise-tauri
+        run: npm run test:rust:regression
+
+      - name: Core analytics diff regression
+        id: core_diff
+        working-directory: apps/keepwise-tauri
+        run: npm run test:diff:core
+
+      - name: Write desktop-check regression summary
+        if: always()
+        run: |
+          mkdir -p .artifacts/tauri-desktop-check
+          python3 - <<'PY'
+          import json, os, pathlib
+
+          out = pathlib.Path(".artifacts/tauri-desktop-check/regression_summary.txt")
+          diff_path = pathlib.Path(".artifacts/tauri-desktop-check/core_analytics_diff_regression.json")
+
+          lines = []
+          lines.append("KeepWise Tauri desktop-check regression summary")
+          lines.append(f"frontend_build_outcome={os.environ.get('FRONTEND_BUILD_OUTCOME', 'unknown')}")
+          lines.append(f"rust_check_outcome={os.environ.get('RUST_CHECK_OUTCOME', 'unknown')}")
+          lines.append(f"rust_regression_outcome={os.environ.get('RUST_REGRESSION_OUTCOME', 'unknown')}")
+          lines.append(f"core_diff_outcome={os.environ.get('CORE_DIFF_OUTCOME', 'unknown')}")
+
+          if diff_path.exists():
+              try:
+                  payload = json.loads(diff_path.read_text(encoding="utf-8"))
+                  summary = payload.get("summary", {})
+                  cases = summary.get("cases", {})
+                  cross = summary.get("cross_case_checks", {})
+                  lines.append(f"core_diff_cases_total={cases.get('total', 'n/a')}")
+                  lines.append(f"core_diff_cases_status_counts={cases.get('status_counts', {})}")
+                  lines.append(f"core_diff_cross_total={cross.get('total', 'n/a')}")
+                  lines.append(f"core_diff_cross_status_counts={cross.get('status_counts', {})}")
+              except Exception as exc:
+                  lines.append(f"core_diff_report_parse_error={exc}")
+          else:
+              lines.append("core_diff_report_missing=1")
+
+          out.write_text("\n".join(lines) + "\n", encoding="utf-8")
+          print(out)
+          PY
+        env:
+          FRONTEND_BUILD_OUTCOME: ${{ steps.frontend_build.outcome }}
+          RUST_CHECK_OUTCOME: ${{ steps.rust_check.outcome }}
+          RUST_REGRESSION_OUTCOME: ${{ steps.rust_regression.outcome }}
+          CORE_DIFF_OUTCOME: ${{ steps.core_diff.outcome }}
+
+      - name: Write desktop-check artifact manifest
+        if: always()
+        run: |
+          mkdir -p .artifacts/tauri-desktop-check
+          {
+            echo "workflow=tauri-desktop-check"
+            echo "sha=${GITHUB_SHA}"
+            echo "ref=${GITHUB_REF}"
+            echo "run_id=${GITHUB_RUN_ID}"
+            echo "run_attempt=${GITHUB_RUN_ATTEMPT}"
+            echo "created_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > .artifacts/tauri-desktop-check/manifest.txt
+
+      - name: Upload desktop-check artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tauri-desktop-check-artifacts
+          path: .artifacts/tauri-desktop-check
+          if-no-files-found: warn
