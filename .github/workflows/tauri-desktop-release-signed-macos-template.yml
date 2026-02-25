@@ -50,8 +50,13 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
       - name: Install diff regression Python deps
-        run: python3 -m pip install --user pyyaml
+        run: python -m pip install pyyaml
 
       - name: Install frontend deps
         working-directory: apps/keepwise-tauri
