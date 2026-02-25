@@ -1,5 +1,8 @@
-import { startTransition, useEffect, useId, useRef, useState } from "react";
+import { startTransition, useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+import DatePicker from "react-datepicker";
+import { sankey as d3Sankey, sankeyJustify, sankeyLinkHorizontal } from "d3-sankey";
 import { open } from "@tauri-apps/plugin-dialog";
+import "react-datepicker/dist/react-datepicker.css";
 import "./App.css";
 import keepwiseLogoSvg from "./assets/keepwise-logo.svg";
 import {
@@ -136,6 +139,12 @@ import {
 
 type LoadStatus = "idle" | "loading" | "ready" | "error";
 type BoolString = "true" | "false";
+type GainLossColorScheme = "cn_red_up_green_down" | "intl_green_up_red_down";
+type AppSettings = {
+  gainLossColorScheme: GainLossColorScheme;
+  defaultPrivacyMaskOnLaunch: boolean;
+  uiMotionEnabled: boolean;
+};
 type SmokeStatus = "idle" | "pass" | "fail";
 type SmokeKey = "investment-return" | "investment-curve" | "wealth-overview" | "wealth-curve";
 type PipelineStatus = "idle" | "running" | "pass" | "fail";
@@ -149,7 +158,6 @@ type ProductTabKey =
   | "budget-fire"
   | "income-analysis"
   | "consumption-analysis"
-  | "base-query"
   | "admin";
 
 type SmokeRow = {
@@ -184,7 +192,6 @@ const PRODUCT_TABS: ProductTabDef[] = [
   { key: "budget-fire", icon: "◎", label: "预算与FIRE", subtitle: "预算、复盘与 FIRE 进度", status: "partial" },
   { key: "income-analysis", icon: "¥", label: "收入分析", subtitle: "工资/公积金收入结构与趋势", status: "partial" },
   { key: "consumption-analysis", icon: "¤", label: "消费分析", subtitle: "交易筛选与排除规则", status: "partial" },
-  { key: "base-query", icon: "⌕", label: "基础查询", subtitle: "交易/投资/资产查询", status: "partial" },
   { key: "admin", icon: "⚙", label: "高级管理", subtitle: "调试、健康检查、管理操作", status: "ready" },
 ];
 
@@ -225,6 +232,170 @@ function BoolField({
   );
 }
 
+type InputLikeChangeEvent = {
+  target: { value: string };
+  currentTarget: { value: string };
+};
+
+type PickerInputProps = {
+  value?: string | number | null;
+  onChange?: (event: InputLikeChangeEvent) => void;
+  placeholder?: string;
+  disabled?: boolean;
+  className?: string;
+  title?: string;
+  id?: string;
+  name?: string;
+  autoFocus?: boolean;
+  onBlur?: (event: unknown) => void;
+  onKeyDown?: (event: unknown) => void;
+  type?: string;
+};
+
+function parseDateInputValue(value: string): Date | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) {
+    return null;
+  }
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const parsed = new Date(year, month - 1, day);
+  if (
+    Number.isNaN(parsed.getTime()) ||
+    parsed.getFullYear() !== year ||
+    parsed.getMonth() !== month - 1 ||
+    parsed.getDate() !== day
+  ) {
+    return null;
+  }
+  return parsed;
+}
+
+function formatDateInputValue(date: Date): string {
+  const year = `${date.getFullYear()}`;
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function parseMonthInputValue(value: string): Date | null {
+  const match = /^(\d{4})-(\d{2})$/.exec(value);
+  if (!match) {
+    return null;
+  }
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const parsed = new Date(year, month - 1, 1);
+  if (Number.isNaN(parsed.getTime()) || parsed.getFullYear() !== year || parsed.getMonth() !== month - 1) {
+    return null;
+  }
+  return parsed;
+}
+
+function formatMonthInputValue(date: Date): string {
+  const year = `${date.getFullYear()}`;
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  return `${year}-${month}`;
+}
+
+function emitPickerInputChange(onChange: PickerInputProps["onChange"], nextValue: string) {
+  if (!onChange) {
+    return;
+  }
+  onChange({
+    target: { value: nextValue },
+    currentTarget: { value: nextValue },
+  });
+}
+
+function DateInput({
+  value,
+  onChange,
+  placeholder,
+  disabled,
+  className,
+  title,
+  id,
+  name,
+  autoFocus,
+  onBlur,
+  onKeyDown,
+}: PickerInputProps) {
+  const selected = parseDateInputValue(value == null ? "" : String(value));
+  const mergedClassName = ["kw-date-picker-input", className].filter(Boolean).join(" ");
+
+  return (
+    <div className="kw-date-input-shell">
+      <DatePicker
+        selected={selected}
+        onChange={(date: Date | null) => emitPickerInputChange(onChange, date instanceof Date ? formatDateInputValue(date) : "")}
+        dateFormat="yyyy-MM-dd"
+        placeholderText={placeholder}
+        className={mergedClassName}
+        calendarClassName="kw-date-calendar"
+        popperClassName="kw-date-popper"
+        showPopperArrow={false}
+        shouldCloseOnSelect
+        disabled={disabled}
+        title={title}
+        id={id}
+        name={name}
+        autoFocus={autoFocus}
+        onBlur={onBlur as never}
+        onKeyDown={onKeyDown as never}
+        todayButton="今天"
+        isClearable
+        clearButtonTitle="清空日期"
+      />
+    </div>
+  );
+}
+
+function MonthInput({
+  value,
+  onChange,
+  placeholder,
+  disabled,
+  className,
+  title,
+  id,
+  name,
+  autoFocus,
+  onBlur,
+  onKeyDown,
+}: PickerInputProps) {
+  const selected = parseMonthInputValue(value == null ? "" : String(value));
+  const mergedClassName = ["kw-date-picker-input", className].filter(Boolean).join(" ");
+
+  return (
+    <div className="kw-date-input-shell">
+      <DatePicker
+        selected={selected}
+        onChange={(date: Date | null) => emitPickerInputChange(onChange, date instanceof Date ? formatMonthInputValue(date) : "")}
+        dateFormat="yyyy-MM"
+        placeholderText={placeholder}
+        className={mergedClassName}
+        calendarClassName="kw-date-calendar"
+        popperClassName="kw-date-popper"
+        showPopperArrow={false}
+        showMonthYearPicker
+        shouldCloseOnSelect
+        disabled={disabled}
+        title={title}
+        id={id}
+        name={name}
+        autoFocus={autoFocus}
+        onBlur={onBlur as never}
+        onKeyDown={onKeyDown as never}
+        todayButton="本月"
+        isClearable
+        clearButtonTitle="清空月份"
+      />
+    </div>
+  );
+}
+
 function JsonResultCard({
   title = "Result JSON",
   data,
@@ -239,7 +410,15 @@ function JsonResultCard({
     try {
       rendered = JSON.stringify(
         data,
-        (_key, value) => (typeof value === "bigint" ? value.toString() : value),
+        (key, value) => {
+          if (typeof value === "bigint") {
+            return isLikelyAmountJsonKey(key) && isAmountPrivacyMasked() ? "****" : value.toString();
+          }
+          if (isLikelyAmountJsonKey(key) && isAmountPrivacyMasked()) {
+            if (typeof value === "number" || typeof value === "string") return "****";
+          }
+          return value;
+        },
         2,
       );
     } catch (err) {
@@ -290,12 +469,88 @@ function readArray(root: unknown, path: string): unknown[] {
   return Array.isArray(value) ? value : [];
 }
 
+let amountPrivacyMaskedGlobal = false;
+let gainLossColorSchemeGlobal: GainLossColorScheme = "cn_red_up_green_down";
+const APP_SETTINGS_STORAGE_KEY = "keepwise.desktop.app-settings.v1";
+
+function isAmountPrivacyMasked(): boolean {
+  return amountPrivacyMaskedGlobal;
+}
+
+function isChinaGainLossColors(): boolean {
+  return gainLossColorSchemeGlobal === "cn_red_up_green_down";
+}
+
+function signedMetricTone(value?: number): "default" | "good" | "warn" {
+  if (typeof value !== "number" || !Number.isFinite(value) || value === 0) return "default";
+  if (isChinaGainLossColors()) {
+    return value > 0 ? "warn" : "good";
+  }
+  return value > 0 ? "good" : "warn";
+}
+
+function parseStoredAppSettings(raw: string | null): AppSettings {
+  const fallback: AppSettings = {
+    gainLossColorScheme: "cn_red_up_green_down",
+    defaultPrivacyMaskOnLaunch: false,
+    uiMotionEnabled: true,
+  };
+  if (!raw) return fallback;
+  try {
+    const parsed = JSON.parse(raw) as Partial<AppSettings>;
+    const scheme =
+      parsed.gainLossColorScheme === "intl_green_up_red_down" || parsed.gainLossColorScheme === "cn_red_up_green_down"
+        ? parsed.gainLossColorScheme
+        : fallback.gainLossColorScheme;
+    return {
+      gainLossColorScheme: scheme,
+      defaultPrivacyMaskOnLaunch: parsed.defaultPrivacyMaskOnLaunch === true,
+      uiMotionEnabled: parsed.uiMotionEnabled !== false,
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+function maskAmountDisplayText(text: string): string {
+  if (!isAmountPrivacyMasked()) return text;
+  const trimmed = text.trim();
+  if (!trimmed || trimmed === "-") return text;
+  return "****";
+}
+
+function isMonetaryLabel(label: string): boolean {
+  const normalized = label.toLowerCase();
+  if (
+    /收益率|年化|占比|比例|进度|自由度|覆盖年数|滞后|笔数|账户数|文件数|数量|对账|状态|天数|days?|count|rate|ratio|pct|%/.test(
+      normalized,
+    )
+  ) {
+    return false;
+  }
+  return /元|yuan|金额|总额|资产|预算|支出|收入|工资|公积金|净增长|净资产|负债|差额|剩余|财富|现金流|value|amount|wealth|asset|liability|income|expense|salary|fund|profit|budget|growth/.test(
+    normalized,
+  );
+}
+
+function maskAmountValueByLabel(label: string, value: string | number): string {
+  const raw = String(value);
+  if (!isMonetaryLabel(label)) return raw;
+  return maskAmountDisplayText(raw);
+}
+
+function isLikelyAmountJsonKey(key: string): boolean {
+  return /(?:_cents|_yuan)$/i.test(key);
+}
+
 function formatCentsShort(cents?: number): string {
   if (typeof cents !== "number" || !Number.isFinite(cents)) return "-";
-  return (cents / 100).toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
+  return maskAmountDisplayText(
+    (cents / 100).toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }),
+  );
 }
 
 function formatRatePct(rate?: number): string {
@@ -308,6 +563,23 @@ function formatPct(value?: number): string {
   return `${(value * 100).toFixed(2)}%`;
 }
 
+function formatPresetLabel(preset?: string): string {
+  switch (preset) {
+    case "ytd":
+      return "年初至今";
+    case "1y":
+      return "近1年";
+    case "3y":
+      return "近3年";
+    case "since_inception":
+      return "成立以来";
+    case "custom":
+      return "自定义";
+    default:
+      return preset && String(preset).trim() ? String(preset) : "-";
+  }
+}
+
 function safeNumericInputValue(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
@@ -315,6 +587,103 @@ function safeNumericInputValue(value: unknown, fallback: number): number {
 function parseNumericInputWithFallback(raw: string, fallback: number): number {
   const next = Number(raw);
   return Number.isFinite(next) ? next : fallback;
+}
+
+type AccountSelectOption = {
+  account_id: string;
+  account_name: string;
+  account_kind: string;
+};
+
+function buildAccountSelectOptionsFromCatalog(data: AccountCatalogPayload | null): AccountSelectOption[] {
+  if (!data) return [];
+  const rows = readArray(data, "rows").filter(isRecord);
+  const dedup = new Map<string, AccountSelectOption>();
+  for (const row of rows) {
+    const accountId = typeof row.account_id === "string" ? row.account_id : "";
+    if (!accountId) continue;
+    const accountName =
+      (typeof row.account_name === "string" && row.account_name.trim()) ||
+      accountId;
+    const accountKind = typeof row.account_kind === "string" && row.account_kind ? row.account_kind : "other";
+    if (!dedup.has(accountId)) {
+      dedup.set(accountId, {
+        account_id: accountId,
+        account_name: accountName,
+        account_kind: accountKind,
+      });
+    }
+  }
+  return [...dedup.values()].sort((a, b) => {
+    const kindCmp = a.account_kind.localeCompare(b.account_kind);
+    if (kindCmp !== 0) return kindCmp;
+    const nameCmp = a.account_name.localeCompare(b.account_name, undefined, { numeric: true });
+    if (nameCmp !== 0) return nameCmp;
+    return a.account_id.localeCompare(b.account_id);
+  });
+}
+
+function normalizeAccountKindsFilter(kinds?: string[]): string[] | null {
+  if (!kinds || kinds.length === 0) return null;
+  return [...new Set(kinds)];
+}
+
+function accountKindInFilter(kind: string, filter: string[] | null): boolean {
+  if (!filter) return true;
+  return filter.includes(kind);
+}
+
+function accountKindsForAssetClass(assetClass: string): string[] | null {
+  if (assetClass === "cash") return ["cash", "bank", "wallet"];
+  if (assetClass === "real_estate") return ["real_estate"];
+  if (assetClass === "liability") return ["liability", "credit_card"];
+  return null;
+}
+
+function AccountIdSelect({
+  value,
+  onChange,
+  options,
+  kinds,
+  emptyLabel = "全部账户",
+  includePortfolio = false,
+  portfolioLabel = "投资组合（全部投资账户）",
+  disabled = false,
+}: {
+  value?: string;
+  onChange: (value: string) => void;
+  options: AccountSelectOption[];
+  kinds?: string[];
+  emptyLabel?: string;
+  includePortfolio?: boolean;
+  portfolioLabel?: string;
+  disabled?: boolean;
+}) {
+  const filter = normalizeAccountKindsFilter(kinds);
+  const visible = options.filter((opt) => accountKindInFilter(opt.account_kind, filter));
+  const grouped = new Map<string, AccountSelectOption[]>();
+  for (const opt of visible) {
+    const key = opt.account_kind || "other";
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key)!.push(opt);
+  }
+  const groupOrder = [...grouped.keys()].sort((a, b) => a.localeCompare(b));
+
+  return (
+    <select className="account-id-select" value={value ?? ""} onChange={(e) => onChange(e.target.value)} disabled={disabled}>
+      <option value="">{emptyLabel}</option>
+      {includePortfolio ? <option value="__portfolio__">{portfolioLabel}</option> : null}
+      {groupOrder.map((kind) => (
+        <optgroup key={kind} label={kind}>
+          {(grouped.get(kind) ?? []).map((opt) => (
+            <option key={opt.account_id} value={opt.account_id}>
+              {opt.account_name} ({opt.account_id})
+            </option>
+          ))}
+        </optgroup>
+      ))}
+    </select>
+  );
 }
 
 function PreviewStat({
@@ -329,7 +698,7 @@ function PreviewStat({
   return (
     <div className={`preview-stat tone-${tone}`}>
       <div className="preview-stat-label">{label}</div>
-      <div className="preview-stat-value">{String(value)}</div>
+      <div className="preview-stat-value">{maskAmountValueByLabel(label, value)}</div>
     </div>
   );
 }
@@ -592,50 +961,31 @@ function LineAreaChart({
   );
 }
 
-function InvestmentReturnPreview({ data }: { data: unknown }) {
-  if (!isRecord(data)) return null;
-  const accountName = readString(data, "account_name") ?? "-";
-  const from = readString(data, "range.effective_from") ?? "-";
-  const to = readString(data, "range.effective_to") ?? "-";
-  const returnRate = readNumber(data, "metrics.return_rate");
-  const annualizedRate = readNumber(data, "metrics.annualized_rate");
-  const profitCents = readNumber(data, "metrics.profit_cents");
-  const endAssetsCents = readNumber(data, "metrics.end_assets_cents");
-  const note = readString(data, "metrics.note") ?? "";
-
-  return (
-    <div className="subcard preview-card">
-      <div className="preview-header">
-        <h3>Quick Preview</h3>
-        <div className="preview-subtle">{accountName}</div>
-      </div>
-      <div className="preview-subtle">
-        Range: <code>{from}</code> ~ <code>{to}</code>
-      </div>
-      <div className="preview-stat-grid">
-        <PreviewStat label="Return" value={formatRatePct(returnRate)} tone={typeof returnRate === "number" && returnRate >= 0 ? "good" : "warn"} />
-        <PreviewStat label="Annualized" value={formatRatePct(annualizedRate)} />
-        <PreviewStat label="Profit (Yuan)" value={formatCentsShort(profitCents)} />
-        <PreviewStat label="End Assets (Yuan)" value={formatCentsShort(endAssetsCents)} />
-      </div>
-      {note ? <div className="preview-note">{note}</div> : null}
-    </div>
-  );
-}
-
-function InvestmentCurvePreview({ data }: { data: unknown }) {
+function InvestmentCurvePreview({ data, returnData }: { data: unknown; returnData?: unknown }) {
   if (!isRecord(data)) return null;
   const rows = readArray(data, "rows").filter(isRecord);
   if (rows.length === 0) return null;
+  const returnPayload = isRecord(returnData) ? returnData : null;
   const from = readString(data, "range.effective_from") ?? "-";
   const to = readString(data, "range.effective_to") ?? "-";
-  const count = readNumber(data, "summary.count");
   const endAssets = readNumber(data, "summary.end_assets_cents");
+  const endNetGrowth = readNumber(data, "summary.end_net_growth_cents");
   const endReturn = readNumber(data, "summary.end_cumulative_return_rate");
+  const annualizedRate = readNumber(returnPayload, "metrics.annualized_rate");
+  const intervalReturnRate = readNumber(returnPayload, "metrics.return_rate");
+  const returnNote = readString(returnPayload, "metrics.note") ?? "";
+  const intervalReturnToneClass = signedMetricTone(intervalReturnRate);
   const assetPoints = rows
     .map((r) => {
       const label = typeof r.snapshot_date === "string" ? r.snapshot_date : "";
       const value = typeof r.total_assets_cents === "number" ? r.total_assets_cents : NaN;
+      return label && Number.isFinite(value) ? { label, value } : null;
+    })
+    .filter((v): v is { label: string; value: number } => v !== null);
+  const netGrowthPoints = rows
+    .map((r) => {
+      const label = typeof r.snapshot_date === "string" ? r.snapshot_date : "";
+      const value = typeof r.cumulative_net_growth_cents === "number" ? r.cumulative_net_growth_cents : NaN;
       return label && Number.isFinite(value) ? { label, value } : null;
     })
     .filter((v): v is { label: string; value: number } => v !== null);
@@ -646,27 +996,31 @@ function InvestmentCurvePreview({ data }: { data: unknown }) {
       return label && Number.isFinite(value) ? { label, value } : null;
     })
     .filter((v): v is { label: string; value: number } => v !== null);
-  const firstDateValue = rows[0]?.["snapshot_date"];
-  const lastDateValue = rows[rows.length - 1]?.["snapshot_date"];
-  const firstDate = typeof firstDateValue === "string" ? firstDateValue : "-";
-  const lastDate = typeof lastDateValue === "string" ? lastDateValue : "-";
-
   return (
     <div className="subcard preview-card">
       <div className="preview-header">
-        <h3>Curve Preview</h3>
-        <div className="preview-subtle">
-          {firstDate} → {lastDate}
-        </div>
+        <h3>投资收益表现</h3>
+        <div className="preview-subtle">趋势与区间收益指标</div>
       </div>
       <div className="preview-subtle">
-        Effective Range: <code>{from}</code> ~ <code>{to}</code>
+        统计区间：<code>{from}</code> ~ <code>{to}</code>
       </div>
-      <div className="preview-stat-grid">
-        <PreviewStat label="Points" value={count ?? rows.length} />
-        <PreviewStat label="End Assets (Yuan)" value={formatCentsShort(endAssets)} />
-        <PreviewStat label="End Cum Return" value={formatRatePct(endReturn)} tone={typeof endReturn === "number" && endReturn >= 0 ? "good" : "warn"} />
+      <div className="return-analysis-stat-layout">
+        <div className={`preview-stat return-analysis-focus tone-${intervalReturnToneClass}`}>
+          <div className="preview-stat-label">区间收益率</div>
+          <div className="return-analysis-focus-value">{formatRatePct(intervalReturnRate)}</div>
+          <div className="return-analysis-focus-subtle">
+            统计区间 <code>{from}</code> ~ <code>{to}</code>
+          </div>
+        </div>
+        <div className="preview-stat-grid return-analysis-stat-grid">
+          <PreviewStat label="年化收益率" value={formatRatePct(annualizedRate)} />
+          <PreviewStat label="期末资产（元）" value={formatCentsShort(endAssets)} />
+          <PreviewStat label="期末净增长（元）" value={formatCentsShort(endNetGrowth)} tone={signedMetricTone(endNetGrowth)} />
+          <PreviewStat label="期末累计收益率" value={formatRatePct(endReturn)} tone={signedMetricTone(endReturn)} />
+        </div>
       </div>
+      {returnNote ? <div className="preview-note">{returnNote}</div> : null}
       <div className="preview-chart-stack">
         <div className="sparkline-card full-width-chart-panel">
           <div className="sparkline-title">总资产曲线</div>
@@ -674,6 +1028,19 @@ function InvestmentCurvePreview({ data }: { data: unknown }) {
             points={assetPoints}
             color="#7cc3ff"
             height={250}
+            preferZeroBaseline
+            maxXTicks={8}
+            xLabelFormatter={(label) => (label.length >= 10 ? label.slice(5) : label)}
+            valueFormatter={(v) => formatCentsShort(v)}
+            tooltipFormatter={(p) => `${p.label} · ${formatCentsShort(p.value)} 元`}
+          />
+        </div>
+        <div className="sparkline-card full-width-chart-panel">
+          <div className="sparkline-title">累计净增长曲线</div>
+          <LineAreaChart
+            points={netGrowthPoints}
+            color="#73d7b6"
+            height={230}
             preferZeroBaseline
             maxXTicks={8}
             xLabelFormatter={(label) => (label.length >= 10 ? label.slice(5) : label)}
@@ -699,191 +1066,699 @@ function InvestmentCurvePreview({ data }: { data: unknown }) {
   );
 }
 
-function WealthOverviewPreview({ data }: { data: unknown }) {
-  const [sortKey, setSortKey] = useState<string>("snapshot_date");
-  const [sortDir, setSortDir] = useState<TableSortDirection>("desc");
-  if (!isRecord(data)) return null;
-  const rows = readArray(data, "rows").filter(isRecord);
-  const wealthTotal = readNumber(data, "summary.wealth_total_cents");
-  const netAssetTotal = readNumber(data, "summary.net_asset_total_cents");
-  const liabilityTotal = readNumber(data, "summary.liability_total_cents");
-  const staleCount = readNumber(data, "summary.stale_account_count");
-  const reconciliationOk = readBool(data, "summary.reconciliation_ok");
-  const asOf = readString(data, "as_of") ?? "-";
-  const requestedAsOf = readString(data, "requested_as_of") ?? "-";
-  const sortedRows = [...rows].sort((a, b) => {
-    const valueFor = (row: Record<string, unknown>) => {
-      switch (sortKey) {
-        case "asset_class":
-          return row.asset_class;
-        case "account_name":
-          return row.account_name;
-        case "snapshot_date":
-          return row.snapshot_date;
-        case "value_cents":
-          return row.value_cents;
-        case "stale_days":
-          return row.stale_days;
-        default:
-          return "";
-      }
-    };
-    const cmp = compareSortValues(valueFor(a), valueFor(b));
-    return sortDir === "asc" ? cmp : -cmp;
-  });
-  const toggleSort = (key: string) => {
-    const next = nextSortState(sortKey, sortDir, key);
-    setSortKey(next.key);
-    setSortDir(next.dir);
+function WealthStackedTrendChart({
+  rows,
+  visibility,
+  height = 300,
+}: {
+  rows: Array<{
+    label: string;
+    cash: number;
+    realEstate: number;
+    investment: number;
+    liability: number;
+  }>;
+  visibility: {
+    investment: boolean;
+    cash: boolean;
+    realEstate: boolean;
+    liability: boolean;
   };
+  height?: number;
+}) {
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const [measuredWidth, setMeasuredWidth] = useState(720);
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const update = () => {
+      const next = Math.max(360, Math.round(el.clientWidth || 720));
+      setMeasuredWidth((prev) => (prev === next ? prev : next));
+    };
+    update();
+    if (typeof ResizeObserver === "undefined") return;
+    const obs = new ResizeObserver(() => update());
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
+
+  const points = rows.filter((r) => r.label);
+  if (points.length === 0) {
+    return <div ref={wrapRef} className="line-area-chart-empty">暂无趋势数据</div>;
+  }
+
+  const width = measuredWidth;
+  const layers = [
+    { key: "cash", label: "现金", color: "#6fb4ff", visible: visibility.cash },
+    { key: "realEstate", label: "不动产", color: "#9b84ff", visible: visibility.realEstate },
+    { key: "investment", label: "投资", color: "#eab35f", visible: visibility.investment },
+  ] as const;
+  const debtColor = "#ff8c7a";
+  const debtPatternId = "wealth-debt-stripe-pattern";
+
+  const enriched = points.map((p) => {
+    const cash = visibility.cash && Number.isFinite(p.cash) ? p.cash : 0;
+    const realEstate = visibility.realEstate && Number.isFinite(p.realEstate) ? p.realEstate : 0;
+    const investment = visibility.investment && Number.isFinite(p.investment) ? p.investment : 0;
+    const liability = visibility.liability ? Math.max(0, Number.isFinite(p.liability) ? p.liability : 0) : 0;
+    const cashTop = cash;
+    const reTop = cash + realEstate;
+    const invTop = cash + realEstate + investment;
+    return {
+      ...p,
+      cash,
+      realEstate,
+      investment,
+      liability,
+      cashBottom: 0,
+      cashTop,
+      realEstateBottom: cashTop,
+      realEstateTop: reTop,
+      investmentBottom: reTop,
+      investmentTop: invTop,
+      liabilityTop: 0,
+      liabilityBottom: -liability,
+    };
+  });
+
+  const maxPositive = Math.max(...enriched.map((p) => p.investmentTop), 0);
+  const minNegative = Math.min(...enriched.map((p) => p.liabilityBottom), 0);
+  let yMin = minNegative;
+  let yMax = maxPositive;
+  if (yMin === yMax) {
+    const bump = Math.max(Math.abs(yMax) * 0.1, 1);
+    yMin -= bump;
+    yMax += bump;
+  } else {
+    const span = yMax - yMin;
+    const pad = span * 0.08;
+    yMin -= pad;
+    yMax += pad;
+  }
+  const ySpan = yMax - yMin || 1;
+
+  const baseMargin = { top: 14, right: 16, bottom: 42 };
+  const yTickCount = 4;
+  const innerH = height - baseMargin.top - baseMargin.bottom;
+  const yTickMeta = Array.from({ length: yTickCount + 1 }, (_, i) => {
+    const ratio = i / yTickCount;
+    const value = yMax - ySpan * ratio;
+    return { ratio, value, label: formatCentsShort(value) };
+  });
+  const maxYLabelLen = Math.max(...yTickMeta.map((tick) => tick.label.length), 1);
+  const margin = {
+    top: baseMargin.top,
+    right: baseMargin.right,
+    bottom: baseMargin.bottom,
+    left: Math.min(152, Math.max(76, 20 + maxYLabelLen * 7)),
+  };
+  const innerW = Math.max(140, width - margin.left - margin.right);
+  const stepX = enriched.length > 1 ? innerW / (enriched.length - 1) : 0;
+  const toX = (idx: number) => margin.left + (enriched.length > 1 ? idx * stepX : innerW / 2);
+  const toY = (value: number) => margin.top + innerH - ((value - yMin) / ySpan) * innerH;
+
+  const buildAreaPath = (
+    upperVals: number[],
+    lowerVals: number[],
+  ) => {
+    if (upperVals.length === 0) return "";
+    const upper = upperVals
+      .map((v, idx) => `${idx === 0 ? "M" : "L"} ${toX(idx).toFixed(2)} ${toY(v).toFixed(2)}`)
+      .join(" ");
+    const lower = lowerVals
+      .map((_v, idx) => `L ${toX(lowerVals.length - 1 - idx).toFixed(2)} ${toY(lowerVals[lowerVals.length - 1 - idx]).toFixed(2)}`)
+      .join(" ");
+    return `${upper} ${lower} Z`;
+  };
+  const buildLinePath = (vals: number[]) =>
+    vals.map((v, idx) => `${idx === 0 ? "M" : "L"} ${toX(idx).toFixed(2)} ${toY(v).toFixed(2)}`).join(" ");
+
+  const cashTopVals = enriched.map((p) => p.cashTop);
+  const cashBottomVals = enriched.map((p) => p.cashBottom);
+  const reTopVals = enriched.map((p) => p.realEstateTop);
+  const reBottomVals = enriched.map((p) => p.realEstateBottom);
+  const invTopVals = enriched.map((p) => p.investmentTop);
+  const invBottomVals = enriched.map((p) => p.investmentBottom);
+  const debtTopVals = enriched.map((p) => p.liabilityTop);
+  const debtBottomVals = enriched.map((p) => p.liabilityBottom);
+
+  const xTicks = (() => {
+    const maxTicks = 8;
+    if (enriched.length <= maxTicks) return enriched.map((_p, idx) => idx);
+    const step = Math.max(1, Math.ceil(enriched.length / maxTicks));
+    const result: number[] = [];
+    for (let i = 0; i < enriched.length; i += step) result.push(i);
+    if (result[result.length - 1] !== enriched.length - 1) result.push(enriched.length - 1);
+    return result;
+  })();
+  const zeroY = toY(0);
+  const activeIndex = hoverIndex == null ? null : Math.max(0, Math.min(enriched.length - 1, hoverIndex));
+  const activePoint = activeIndex == null ? null : enriched[activeIndex];
 
   return (
-    <div className="subcard preview-card">
-      <div className="preview-header">
-        <h3>Overview Preview</h3>
-        <div className="preview-subtle">
-          as_of <code>{asOf}</code> (requested <code>{requestedAsOf}</code>)
-        </div>
+    <div className="stacked-wealth-chart-wrap" ref={wrapRef}>
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        className="stacked-wealth-chart"
+        onMouseLeave={() => {
+          setHoverIndex(null);
+          setHoverPos(null);
+        }}
+        onMouseMove={(e) => {
+          const wrapRect = wrapRef.current?.getBoundingClientRect();
+          const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
+          const localX = e.clientX - rect.left;
+          const svgX = (localX / rect.width) * width;
+          const rawIdx = stepX > 0 ? Math.round((svgX - margin.left) / stepX) : 0;
+          setHoverIndex(Math.max(0, Math.min(enriched.length - 1, rawIdx)));
+          if (wrapRect) {
+            setHoverPos({
+              x: Math.max(8, Math.min(wrapRect.width - 8, e.clientX - wrapRect.left)),
+              y: Math.max(8, Math.min(wrapRect.height - 8, e.clientY - wrapRect.top)),
+            });
+          }
+        }}
+      >
+        <rect x={0} y={0} width={width} height={height} fill="transparent" />
+        <defs>
+          <pattern
+            id={debtPatternId}
+            width="8"
+            height="8"
+            patternUnits="userSpaceOnUse"
+            patternTransform="rotate(45)"
+          >
+            <rect width="8" height="8" fill="rgba(255,140,122,0.08)" />
+            <line x1="0" y1="0" x2="0" y2="8" stroke="rgba(255,140,122,0.82)" strokeWidth="2" />
+          </pattern>
+        </defs>
+
+        {yTickMeta.map((tick, idx) => {
+          const y = margin.top + innerH * tick.ratio;
+          return (
+            <g key={`y-tick-${idx}`}>
+              <line x1={margin.left} x2={margin.left + innerW} y1={y} y2={y} className="stacked-axis-grid" />
+              <text x={margin.left - 10} y={y + 4} textAnchor="end" className="stacked-axis-label">
+                {tick.label}
+              </text>
+            </g>
+          );
+        })}
+
+        <line x1={margin.left} x2={margin.left + innerW} y1={zeroY} y2={zeroY} className="stacked-axis-zero" />
+        <line x1={margin.left} x2={margin.left} y1={margin.top} y2={margin.top + innerH} className="stacked-axis-line" />
+        <line x1={margin.left} x2={margin.left + innerW} y1={margin.top + innerH} y2={margin.top + innerH} className="stacked-axis-line" />
+
+        {visibility.cash ? <path d={buildAreaPath(cashTopVals, cashBottomVals)} fill="rgba(111,180,255,0.24)" /> : null}
+        {visibility.realEstate ? <path d={buildAreaPath(reTopVals, reBottomVals)} fill="rgba(155,132,255,0.22)" /> : null}
+        {visibility.investment ? <path d={buildAreaPath(invTopVals, invBottomVals)} fill="rgba(234,179,95,0.20)" /> : null}
+        {visibility.liability ? <path d={buildAreaPath(debtTopVals, debtBottomVals)} fill={`url(#${debtPatternId})`} /> : null}
+
+        {visibility.cash ? <path d={buildLinePath(cashTopVals)} fill="none" stroke="#6fb4ff" strokeWidth="1.6" /> : null}
+        {visibility.realEstate ? <path d={buildLinePath(reTopVals)} fill="none" stroke="#9b84ff" strokeWidth="1.6" /> : null}
+        {visibility.investment ? <path d={buildLinePath(invTopVals)} fill="none" stroke="#eab35f" strokeWidth="1.8" /> : null}
+        {visibility.liability ? (
+          <path d={buildLinePath(debtBottomVals)} fill="none" stroke={debtColor} strokeWidth="1.6" strokeDasharray="6 4" />
+        ) : null}
+
+        {xTicks.map((idx) => (
+          <g key={`x-tick-${idx}`}>
+            <line x1={toX(idx)} x2={toX(idx)} y1={margin.top + innerH} y2={margin.top + innerH + 4} className="stacked-axis-line" />
+            <text x={toX(idx)} y={margin.top + innerH + 18} textAnchor="middle" className="stacked-axis-label">
+              {enriched[idx].label.length >= 10 ? enriched[idx].label.slice(5) : enriched[idx].label}
+            </text>
+          </g>
+        ))}
+
+        {activePoint && activeIndex != null ? (
+          <g pointerEvents="none">
+            <line x1={toX(activeIndex)} x2={toX(activeIndex)} y1={margin.top} y2={margin.top + innerH} className="stacked-hover-line" />
+            <circle cx={toX(activeIndex)} cy={toY(activePoint.investmentTop)} r="3.2" fill="#eab35f" />
+            {visibility.liability ? <circle cx={toX(activeIndex)} cy={toY(activePoint.liabilityBottom)} r="3.2" fill={debtColor} /> : null}
+          </g>
+        ) : null}
+      </svg>
+
+      <div className="stacked-wealth-legend">
+        {layers.filter((layer) => layer.visible).map((layer) => (
+          <span key={layer.key} className="stacked-wealth-legend-item">
+            <span className="stacked-wealth-legend-swatch" style={{ backgroundColor: layer.color }} />
+            <span>{layer.label}</span>
+          </span>
+        ))}
+        {visibility.liability ? (
+          <span className="stacked-wealth-legend-item">
+            <span className="stacked-wealth-legend-swatch debt" />
+            <span>负债（负轴）</span>
+          </span>
+        ) : null}
       </div>
-      <div className="preview-stat-grid">
-        <PreviewStat label="Wealth (Yuan)" value={formatCentsShort(wealthTotal)} />
-        <PreviewStat label="Net Assets (Yuan)" value={formatCentsShort(netAssetTotal)} />
-        <PreviewStat label="Liability (Yuan)" value={formatCentsShort(liabilityTotal)} />
-        <PreviewStat label="Stale Accounts" value={staleCount ?? 0} tone={(staleCount ?? 0) > 0 ? "warn" : "good"} />
-        <PreviewStat label="Reconciliation" value={reconciliationOk ? "OK" : "Mismatch"} tone={reconciliationOk ? "good" : "warn"} />
-        <PreviewStat label="Rows" value={rows.length} />
-      </div>
-      {sortedRows.length > 0 ? (
-        <div className="preview-table-wrap">
-          <table className="preview-table">
-            <thead>
-              <tr>
-                <th><SortableHeaderButton label="类型" sortKey="asset_class" activeSortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} /></th>
-                <th><SortableHeaderButton label="账户" sortKey="account_name" activeSortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} /></th>
-                <th><SortableHeaderButton label="日期" sortKey="snapshot_date" activeSortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} /></th>
-                <th className="num"><SortableHeaderButton label="数值" sortKey="value_cents" activeSortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} /></th>
-                <th className="num"><SortableHeaderButton label="滞后天数" sortKey="stale_days" activeSortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} /></th>
-              </tr>
-            </thead>
-            <tbody>
-              {sortedRows.map((row, idx) => {
-                const cls = typeof row.asset_class === "string" ? row.asset_class : "-";
-                const name = typeof row.account_name === "string" ? row.account_name : "-";
-                const date = typeof row.snapshot_date === "string" ? row.snapshot_date : "-";
-                const value = typeof row.value_cents === "number" ? row.value_cents : undefined;
-                const stale = typeof row.stale_days === "number" ? row.stale_days : undefined;
-                return (
-                  <tr key={`${cls}-${name}-${date}-${idx}`}>
-                    <td>{cls}</td>
-                    <td className="truncate-cell" title={name}>
-                      {name}
-                    </td>
-                    <td>{date}</td>
-                    <td className="num">{formatCentsShort(value)}</td>
-                    <td className={`num ${typeof stale === "number" && stale > 0 ? "warn-text" : ""}`}>{stale ?? "-"}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+
+      {activePoint && hoverPos ? (
+        <div
+          className="stacked-wealth-tooltip stacked-wealth-tooltip-floating"
+          style={{
+            left: `${Math.min(Math.max(hoverPos.x + 12, 10), measuredWidth - 250)}px`,
+            top: `${Math.max(hoverPos.y - 10, 10)}px`,
+          }}
+        >
+          <span className="stacked-wealth-tooltip-date">{activePoint.label}</span>
+          {visibility.cash ? (
+            <div className="stacked-wealth-tooltip-row">
+              <span className="stacked-wealth-tooltip-row-label">
+                <span className="stacked-wealth-tooltip-swatch" style={{ backgroundColor: "#6fb4ff" }} />
+                现金
+              </span>
+              <span className="stacked-wealth-tooltip-row-value">{formatCentsShort(activePoint.cash)}</span>
+            </div>
+          ) : null}
+          {visibility.realEstate ? (
+            <div className="stacked-wealth-tooltip-row">
+              <span className="stacked-wealth-tooltip-row-label">
+                <span className="stacked-wealth-tooltip-swatch" style={{ backgroundColor: "#9b84ff" }} />
+                不动产
+              </span>
+              <span className="stacked-wealth-tooltip-row-value">{formatCentsShort(activePoint.realEstate)}</span>
+            </div>
+          ) : null}
+          {visibility.investment ? (
+            <div className="stacked-wealth-tooltip-row">
+              <span className="stacked-wealth-tooltip-row-label">
+                <span className="stacked-wealth-tooltip-swatch" style={{ backgroundColor: "#eab35f" }} />
+                投资
+              </span>
+              <span className="stacked-wealth-tooltip-row-value">{formatCentsShort(activePoint.investment)}</span>
+            </div>
+          ) : null}
+          <div className="stacked-wealth-tooltip-row">
+            <span className="stacked-wealth-tooltip-row-label">
+              <span className="stacked-wealth-tooltip-swatch neutral" />
+              总资产
+            </span>
+            <span className="stacked-wealth-tooltip-row-value">{formatCentsShort(activePoint.investmentTop)}</span>
+          </div>
+          {visibility.liability ? (
+            <div className="stacked-wealth-tooltip-row">
+              <span className="stacked-wealth-tooltip-row-label">
+                <span className="stacked-wealth-tooltip-swatch debt" />
+                负债
+              </span>
+              <span className="stacked-wealth-tooltip-row-value">{formatCentsShort(activePoint.liability)}</span>
+            </div>
+          ) : null}
+          <div className="stacked-wealth-tooltip-row">
+            <span className="stacked-wealth-tooltip-row-label">
+              <span className="stacked-wealth-tooltip-swatch net" />
+              净资产
+            </span>
+            <span className="stacked-wealth-tooltip-row-value">
+              {formatCentsShort(activePoint.investmentTop - activePoint.liability)}
+            </span>
+          </div>
         </div>
       ) : null}
     </div>
   );
 }
 
-function WealthCurvePreview({ data }: { data: unknown }) {
+function formatCentsCompactCny(cents?: number, options?: { negative?: boolean }): string {
+  if (typeof cents !== "number" || !Number.isFinite(cents)) return "-";
+  const value = options?.negative ? -Math.abs(cents) : cents;
+  if (isAmountPrivacyMasked()) return "****";
+  const yuan = value / 100;
+  const abs = Math.abs(yuan);
+  if (abs >= 100000000) return `${(yuan / 100000000).toFixed(2)}亿`;
+  if (abs >= 10000) return `${(yuan / 10000).toFixed(2)}万`;
+  return `${yuan.toFixed(2)}元`;
+}
+
+function WealthSankeyDiagram({
+  overviewData,
+  visibility,
+}: {
+  overviewData: unknown;
+  visibility: {
+    investment: boolean;
+    cash: boolean;
+    realEstate: boolean;
+    liability: boolean;
+  };
+}) {
+  if (!isRecord(overviewData)) return null;
+  const summary = readPath(overviewData, "summary");
+  const rows = readArray(overviewData, "rows").filter(isRecord);
+  if (!isRecord(summary)) return null;
+
+  const sumByAssetClass = (assetClass: string): number =>
+    rows.reduce((acc, row) => {
+      const cls = typeof row.asset_class === "string" ? row.asset_class : "";
+      const value = typeof row.value_cents === "number" ? row.value_cents : 0;
+      return cls === assetClass ? acc + value : acc;
+    }, 0);
+
+  const rawCashTotal = readNumber(summary, "cash_total_cents") ?? sumByAssetClass("cash");
+  const rawRealEstateTotal = readNumber(summary, "real_estate_total_cents") ?? sumByAssetClass("real_estate");
+  const rawInvestmentTotal = readNumber(summary, "investment_total_cents") ?? sumByAssetClass("investment");
+  const rawLiabilityTotal = Math.max(0, readNumber(summary, "liability_total_cents") ?? sumByAssetClass("liability"));
+  const cashTotal = visibility.cash ? rawCashTotal : 0;
+  const realEstateTotal = visibility.realEstate ? rawRealEstateTotal : 0;
+  const investmentTotal = visibility.investment ? rawInvestmentTotal : 0;
+  const liabilityTotal = visibility.liability ? rawLiabilityTotal : 0;
+  const grossTotal = Math.max(0, cashTotal + realEstateTotal + investmentTotal);
+  const netTotal = grossTotal - liabilityTotal;
+
+  const categories = [
+    { key: "cash", label: "现金", color: "#6fb4ff", total: cashTotal },
+    { key: "real_estate", label: "不动产", color: "#9b84ff", total: realEstateTotal },
+    { key: "investment", label: "投资", color: "#eab35f", total: investmentTotal },
+  ].filter((item) => item.total > 0);
+  const hasAnyPositiveSelected = visibility.investment || visibility.cash || visibility.realEstate;
+  const hasChartData = !(categories.length === 0 && liabilityTotal <= 0 && grossTotal <= 0);
+  const width = 980;
+  const height = 390;
+
+  const debtFlowValue = Math.min(liabilityTotal, grossTotal);
+  const netFlowValue = Math.max(0, grossTotal - debtFlowValue);
+  const showNetNode = grossTotal > 0;
+  const showDebtNode = liabilityTotal > 0 && grossTotal > 0;
+
+  if (!hasAnyPositiveSelected) {
+    return <div className="wealth-sankey-empty">财富结构图至少需要选择一项正向资产（投资 / 现金 / 不动产）。</div>;
+  }
+
+  if (!hasChartData) {
+    return <div className="wealth-sankey-empty">当前筛选条件下暂无财富结构数据。</div>;
+  }
+
+  type SankeyNodeDatum = {
+    id: string;
+    name: string;
+    color: string;
+    value_cents: number;
+    role: "category" | "summary";
+  };
+  type SankeyLinkDatum = {
+    source: string;
+    target: string;
+    value: number;
+    color: string;
+    dashed?: boolean;
+  };
+
+  const nodeData: SankeyNodeDatum[] = [
+    ...categories.map((cat) => ({
+      id: cat.key,
+      name: cat.label,
+      color: cat.color,
+      value_cents: cat.total,
+      role: "category" as const,
+    })),
+    { id: "gross", name: "总资产", color: "#7b7fff", value_cents: grossTotal, role: "summary" },
+    ...(showNetNode ? [{ id: "net", name: "净资产", color: "#4bd19d", value_cents: netTotal, role: "summary" as const }] : []),
+    ...(showDebtNode ? [{ id: "debt", name: "负债", color: "#ff8c7a", value_cents: liabilityTotal, role: "summary" as const }] : []),
+  ];
+
+  const linkData: SankeyLinkDatum[] = [
+    ...categories.map((cat) => ({
+      source: cat.label,
+      target: "总资产",
+      value: Math.max(1, cat.total),
+      color: cat.color,
+    })),
+    ...(showNetNode
+      ? [{
+          source: "总资产",
+          target: "净资产",
+          value: Math.max(1, netFlowValue),
+          color: "#4bd19d",
+        }]
+      : []),
+    ...(showDebtNode
+      ? [{
+          source: "总资产",
+          target: "负债",
+          value: Math.max(1, debtFlowValue),
+          color: "#ff8c7a",
+          dashed: true,
+        }]
+      : []),
+  ];
+
+  const sankeyGraph = d3Sankey<any, any>()
+    .nodeId((d: any) => d.name)
+    .nodeAlign(sankeyJustify)
+    .nodeWidth(16)
+    .nodePadding(18)
+    .nodeSort(null)
+    .extent([[210, 90], [820, 335]])({
+      nodes: nodeData.map((node) => ({ ...node })),
+      links: linkData.map((link) => ({ ...link })),
+    } as any);
+
+  const nodeValueByName = new Map<string, number>();
+  for (const node of nodeData) nodeValueByName.set(node.name, node.value_cents);
+
+  const pathGen = sankeyLinkHorizontal<any, any>();
+  const categoryCardBaseX = 34;
+  const categoryCardW = 166;
+  const categoryCardH = 44;
+
+  return (
+    <div className="wealth-sankey-panel">
+      <div className="wealth-sankey-title-row">
+        <h4>财富结构关系图</h4>
+      </div>
+      <div className="wealth-sankey-stage" role="img" aria-label="财富结构关系图：资产构成、总资产、净资产与负债关系">
+        <svg viewBox={`0 0 ${width} ${height}`} className="wealth-sankey-svg" preserveAspectRatio="xMidYMid meet">
+          <defs>
+            <linearGradient id="kwWealthSankeyBg" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="rgba(255,255,255,0.03)" />
+              <stop offset="100%" stopColor="rgba(255,255,255,0.01)" />
+            </linearGradient>
+          </defs>
+          <rect x="0.5" y="0.5" width={width - 1} height={height - 1} rx="14" ry="14" fill="url(#kwWealthSankeyBg)" stroke="rgba(255,255,255,0.08)" />
+
+          {(sankeyGraph.links as any[]).map((link, idx) => {
+            const path = pathGen(link);
+            if (!path) return null;
+            return (
+              <g key={`sankey-link-${idx}`}>
+                <path
+                  d={path}
+                  fill="none"
+                  stroke={String(link.color ?? "#7cc3ff")}
+                  strokeOpacity={0.56}
+                  strokeLinecap="butt"
+                  strokeWidth={Math.max(2, Number(link.width ?? 2))}
+                  strokeDasharray={link.dashed ? "8 5" : undefined}
+                >
+                  <title>
+                    {`${String(link.source?.name ?? "-")} → ${String(link.target?.name ?? "-")} | ${formatCentsCompactCny(
+                      Number(link.value ?? 0),
+                      { negative: String(link.target?.name ?? "") === "负债" },
+                    )}`}
+                  </title>
+                </path>
+              </g>
+            );
+          })}
+
+          {(sankeyGraph.nodes as any[]).map((node, idx) => (
+            <g key={`sankey-node-${String(node.name ?? idx)}`}>
+              <rect
+                x={Number(node.x0)}
+                y={Number(node.y0)}
+                width={Math.max(8, Number(node.x1) - Number(node.x0))}
+                height={Math.max(8, Number(node.y1) - Number(node.y0))}
+                rx="0"
+                ry="0"
+                fill={String(node.color ?? "#7cc3ff")}
+                opacity="0.92"
+                stroke="rgba(255,255,255,0.08)"
+              >
+                <title>{`${String(node.name)} | ${formatCentsCompactCny(nodeValueByName.get(String(node.name)) ?? 0, { negative: String(node.name) === "负债" })}`}</title>
+              </rect>
+            </g>
+          ))}
+
+          {(sankeyGraph.nodes as any[]).map((node, idx) => {
+            const name = String(node.name ?? idx);
+            const isCategory = String(node.role ?? "") === "category";
+            if (!isCategory) return null;
+            const total = nodeValueByName.get(name) ?? 0;
+            const ratio = grossTotal > 0 ? (total / grossTotal) * 100 : 0;
+            const cardY = (Number(node.y0) + Number(node.y1)) / 2 - categoryCardH / 2;
+            const cardColor = String(node.color ?? "#7cc3ff");
+            return (
+              <g key={`cat-card-${name}`}>
+                <rect x={categoryCardBaseX} y={cardY} width={categoryCardW} height={categoryCardH} rx="10" ry="10" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.08)" />
+                <rect x={categoryCardBaseX} y={cardY} width="7" height={categoryCardH} fill={cardColor} />
+                <text x={categoryCardBaseX + 14} y={cardY + 17} fontSize="11.5" fill="#f3efe5">{name}</text>
+                <text x={categoryCardBaseX + 14} y={cardY + 33} fontSize="10.5" fill="rgba(243,239,229,0.72)">
+                  {formatCentsCompactCny(total)} · {ratio.toFixed(1)}%
+                </text>
+              </g>
+            );
+          })}
+
+          {(sankeyGraph.nodes as any[]).map((node, idx) => {
+            const name = String(node.name ?? idx);
+            if (String(node.role ?? "") !== "summary") return null;
+            const x = Number(node.x1) + 12;
+            const amount = nodeValueByName.get(name) ?? 0;
+            const color = String(node.color ?? "#f3efe5");
+            if (name === "总资产") {
+              const cx = (Number(node.x0) + Number(node.x1)) / 2;
+              const cy = (Number(node.y0) + Number(node.y1)) / 2;
+              const cardW = 112;
+              const cardH = 40;
+              const cardX = cx - cardW / 2;
+              const cardY = cy - cardH / 2;
+              return (
+                <g key={`summary-label-${name}`}>
+                  <rect x={cardX} y={cardY} width={cardW} height={cardH} rx="10" ry="10" fill="rgba(9, 14, 20, 0.58)" stroke="rgba(255,255,255,0.08)" />
+                  <rect x={cardX + cardW - 6} y={cardY} width="6" height={cardH} fill={color} />
+                  <text x={cx} y={cy - 3} fontSize="11.5" fill="rgba(243,239,229,0.78)" textAnchor="middle">{name}</text>
+                  <text x={cx} y={cy + 14} fontSize="12.5" fontWeight="700" fill={color} textAnchor="middle">
+                    {formatCentsCompactCny(amount)}
+                  </text>
+                </g>
+              );
+            }
+            const labelCardW = 126;
+            const labelCardH = 40;
+            const labelCardY = Math.max(92, Number(node.y0) + (Number(node.y1) - Number(node.y0)) / 2 - labelCardH / 2);
+            return (
+              <g key={`summary-label-${name}`}>
+                <rect x={x} y={labelCardY} width={labelCardW} height={labelCardH} rx="10" ry="10" fill="rgba(255,255,255,0.035)" stroke="rgba(255,255,255,0.08)" />
+                <rect x={x + labelCardW - 6} y={labelCardY} width="6" height={labelCardH} fill={color} />
+                <text x={x + 10} y={labelCardY + 15} fontSize="12" fill="rgba(243,239,229,0.72)">{name}</text>
+                <text x={x + 10} y={labelCardY + 31} fontSize="13" fontWeight="700" fill={color}>
+                  {formatCentsCompactCny(amount, { negative: name === "负债" })}
+                </text>
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+      <p className="wealth-sankey-note">左侧为资产构成，中部为总资产，右侧展示净资产与负债关系。</p>
+    </div>
+  );
+}
+
+function WealthOverviewPreview({
+  data,
+  visibility,
+}: {
+  data: unknown;
+  visibility: {
+    investment: boolean;
+    cash: boolean;
+    realEstate: boolean;
+    liability: boolean;
+  };
+}) {
+  if (!isRecord(data)) return null;
+  const rows = readArray(data, "rows").filter(isRecord);
+  const wealthTotal = readNumber(data, "summary.wealth_total_cents");
+  const netAssetTotal = readNumber(data, "summary.net_asset_total_cents");
+  const liabilityTotal = readNumber(data, "summary.liability_total_cents");
+  const asOf = readString(data, "as_of") ?? "-";
+  const requestedAsOf = readString(data, "requested_as_of") ?? "-";
+
+  return (
+    <div className="subcard preview-card">
+      <div className="preview-header">
+        <h3>财富总览结果</h3>
+        <div className="preview-subtle">
+          统计日期 <code>{asOf}</code>
+          {requestedAsOf !== "-" && requestedAsOf !== asOf ? (
+            <> · 请求日期 <code>{requestedAsOf}</code></>
+          ) : null}
+        </div>
+      </div>
+      <div className="preview-stat-grid">
+        <PreviewStat label="财富总额（元）" value={formatCentsShort(wealthTotal)} />
+        <PreviewStat label="净资产（元）" value={formatCentsShort(netAssetTotal)} />
+        <PreviewStat label="负债（元）" value={formatCentsShort(liabilityTotal)} />
+      </div>
+      <WealthSankeyDiagram overviewData={data} visibility={visibility} />
+      {rows.length === 0 ? <p className="preview-note">当前筛选条件下暂无可展示的财富条目。</p> : null}
+    </div>
+  );
+}
+
+function WealthCurvePreview({
+  data,
+  visibility,
+}: {
+  data: unknown;
+  visibility: {
+    investment: boolean;
+    cash: boolean;
+    realEstate: boolean;
+    liability: boolean;
+  };
+}) {
   if (!isRecord(data)) return null;
   const rows = readArray(data, "rows").filter(isRecord);
   if (rows.length === 0) return null;
-  const points = readNumber(data, "range.points");
   const from = readString(data, "range.effective_from") ?? "-";
   const to = readString(data, "range.effective_to") ?? "-";
   const changePct = readNumber(data, "summary.change_pct");
   const endWealth = readNumber(data, "summary.end_wealth_cents");
   const endNetAsset = readNumber(data, "summary.end_net_asset_cents");
-  const wealthPoints = rows
+  const stackedRows = rows
     .map((r) => {
       const label = typeof r.snapshot_date === "string" ? r.snapshot_date : "";
-      const value = typeof r.wealth_total_cents === "number" ? r.wealth_total_cents : NaN;
-      return label && Number.isFinite(value) ? { label, value } : null;
+      if (!label) return null;
+      const cash = typeof r.cash_total_cents === "number" ? r.cash_total_cents : 0;
+      const realEstate = typeof r.real_estate_total_cents === "number" ? r.real_estate_total_cents : 0;
+      const investment = typeof r.investment_total_cents === "number" ? r.investment_total_cents : 0;
+      const liability = typeof r.liability_total_cents === "number" ? r.liability_total_cents : 0;
+      return { label, cash, realEstate, investment, liability };
     })
-    .filter((v): v is { label: string; value: number } => v !== null);
-  const netAssetPoints = rows
-    .map((r) => {
-      const label = typeof r.snapshot_date === "string" ? r.snapshot_date : "";
-      const value = typeof r.net_asset_total_cents === "number" ? r.net_asset_total_cents : NaN;
-      return label && Number.isFinite(value) ? { label, value } : null;
-    })
-    .filter((v): v is { label: string; value: number } => v !== null);
-  const liabilityPoints = rows
-    .map((r) => {
-      const label = typeof r.snapshot_date === "string" ? r.snapshot_date : "";
-      const value = typeof r.liability_total_cents === "number" ? r.liability_total_cents : NaN;
-      return label && Number.isFinite(value) ? { label, value } : null;
-    })
-    .filter((v): v is { label: string; value: number } => v !== null);
+    .filter(
+      (v): v is { label: string; cash: number; realEstate: number; investment: number; liability: number } => v !== null,
+    );
 
   return (
     <div className="subcard preview-card">
       <div className="preview-header">
-        <h3>Wealth Curve Preview</h3>
+        <h3>财富变化趋势</h3>
         <div className="preview-subtle">
-          <code>{from}</code> ~ <code>{to}</code>
+          统计区间 <code>{from}</code> ~ <code>{to}</code>
         </div>
       </div>
       <div className="preview-stat-grid">
-        <PreviewStat label="Points" value={points ?? rows.length} />
-        <PreviewStat label="End Wealth (Yuan)" value={formatCentsShort(endWealth)} />
-        <PreviewStat label="End Net Assets (Yuan)" value={formatCentsShort(endNetAsset)} />
-        <PreviewStat label="Change %" value={formatPct(changePct)} tone={typeof changePct === "number" && changePct >= 0 ? "good" : "warn"} />
+        <PreviewStat label="期末财富总额（元）" value={formatCentsShort(endWealth)} />
+        <PreviewStat label="期末净资产（元）" value={formatCentsShort(endNetAsset)} />
+        <PreviewStat label="区间变化率" value={formatPct(changePct)} tone={signedMetricTone(changePct)} />
       </div>
       <div className="preview-chart-stack">
         <div className="sparkline-card full-width-chart-panel">
-          <div className="sparkline-title">财富总额曲线</div>
-          <LineAreaChart
-            points={wealthPoints}
-            color="#7cc3ff"
-            height={250}
-            preferZeroBaseline
-            maxXTicks={8}
-            xLabelFormatter={(label) => (label.length >= 10 ? label.slice(5) : label)}
-            valueFormatter={(v) => formatCentsShort(v)}
-            tooltipFormatter={(p) => `${p.label} · ${formatCentsShort(p.value)} 元`}
-          />
-        </div>
-        <div className="sparkline-card full-width-chart-panel">
-          <div className="sparkline-title">净资产曲线</div>
-          <LineAreaChart
-            points={netAssetPoints}
-            color="#7ad7a7"
-            height={230}
-            preferZeroBaseline={false}
-            maxXTicks={8}
-            xLabelFormatter={(label) => (label.length >= 10 ? label.slice(5) : label)}
-            valueFormatter={(v) => formatCentsShort(v)}
-            tooltipFormatter={(p) => `${p.label} · ${formatCentsShort(p.value)} 元`}
-          />
-        </div>
-        <div className="sparkline-card full-width-chart-panel">
-          <div className="sparkline-title">负债曲线</div>
-          <LineAreaChart
-            points={liabilityPoints}
-            color="#ff937f"
-            height={210}
-            preferZeroBaseline
-            maxXTicks={8}
-            xLabelFormatter={(label) => (label.length >= 10 ? label.slice(5) : label)}
-            valueFormatter={(v) => formatCentsShort(v)}
-            tooltipFormatter={(p) => `${p.label} · ${formatCentsShort(p.value)} 元`}
-          />
+          <div className="sparkline-title">财产趋势（堆叠）</div>
+          <WealthStackedTrendChart rows={stackedRows} visibility={visibility} height={318} />
         </div>
       </div>
     </div>
   );
 }
 
-function BudgetItemsPreview({ data }: { data: unknown }) {
+function BudgetItemsPreview({
+  data,
+  deleteBusy = false,
+  deletingItemId = "",
+  onDeleteRow,
+}: {
+  data: unknown;
+  deleteBusy?: boolean;
+  deletingItemId?: string;
+  onDeleteRow?: (id: string, name: string) => void;
+}) {
   const [sortKey, setSortKey] = useState<string>("sort_order");
   const [sortDir, setSortDir] = useState<TableSortDirection>("asc");
   if (!isRecord(data)) return null;
@@ -942,6 +1817,7 @@ function BudgetItemsPreview({ data }: { data: unknown }) {
                 <th className="num"><SortableHeaderButton label="排序" sortKey="sort_order" activeSortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} /></th>
                 <th><SortableHeaderButton label="启用" sortKey="is_active" activeSortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} /></th>
                 <th><SortableHeaderButton label="更新时间" sortKey="updated_at" activeSortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} /></th>
+                {onDeleteRow ? <th>操作</th> : null}
               </tr>
             </thead>
             <tbody>
@@ -954,6 +1830,8 @@ function BudgetItemsPreview({ data }: { data: unknown }) {
                 const active = typeof row.is_active === "boolean" ? row.is_active : false;
                 const builtin = typeof row.is_builtin === "boolean" ? row.is_builtin : false;
                 const updatedAt = typeof row.updated_at === "string" ? row.updated_at : "-";
+                const rowDeleteDisabled = deleteBusy || builtin || !id;
+                const rowDeleteBusy = deleteBusy && deletingItemId === id;
                 return (
                   <tr key={id}>
                     <td className="truncate-cell" title={name}>{name}{builtin ? "（内置）" : ""}</td>
@@ -962,6 +1840,19 @@ function BudgetItemsPreview({ data }: { data: unknown }) {
                     <td className="num">{String(sort)}</td>
                     <td>{active ? "是" : "否"}</td>
                     <td>{updatedAt}</td>
+                    {onDeleteRow ? (
+                      <td>
+                        <button
+                          type="button"
+                          className="danger-btn table-inline-btn"
+                          onClick={() => onDeleteRow(id, name)}
+                          disabled={rowDeleteDisabled}
+                          title={builtin ? "内置预算项暂不支持删除" : "删除预算项"}
+                        >
+                          {rowDeleteBusy ? "删除中..." : "删除"}
+                        </button>
+                      </td>
+                    ) : null}
                   </tr>
                 );
               })}
@@ -999,10 +1890,10 @@ function BudgetOverviewPreview({ data }: { data: unknown }) {
         <PreviewStat label="月预算(元)" value={formatCentsShort(monthlyBudget)} />
         <PreviewStat label="年预算(元)" value={formatCentsShort(annualBudget)} />
         <PreviewStat label="累计支出(元)" value={formatCentsShort(actual)} />
-        <PreviewStat label="年剩余(元)" value={formatCentsShort(annualRemaining)} tone={(annualRemaining ?? 0) >= 0 ? "good" : "warn"} />
+        <PreviewStat label="年剩余(元)" value={formatCentsShort(annualRemaining)} tone={signedMetricTone(annualRemaining)} />
         <PreviewStat label="YTD预算(元)" value={formatCentsShort(ytdBudget)} />
         <PreviewStat label="YTD支出(元)" value={formatCentsShort(ytdActual)} />
-        <PreviewStat label="YTD偏差(元)" value={formatCentsShort(ytdVariance)} tone={(ytdVariance ?? 0) >= 0 ? "good" : "warn"} />
+        <PreviewStat label="YTD偏差(元)" value={formatCentsShort(ytdVariance)} tone={signedMetricTone(ytdVariance)} />
         <PreviewStat label="全年使用率" value={usageRateText} />
         <PreviewStat label="YTD使用率" value={ytdUsageRateText} />
         <PreviewStat label="已过月数" value={elapsedMonths ?? "-"} />
@@ -1042,7 +1933,7 @@ function BudgetMonthlyReviewPreview({ data }: { data: unknown }) {
       <div className="preview-stat-grid">
         <PreviewStat label="年预算(元)" value={formatCentsShort(annualBudget)} />
         <PreviewStat label="年支出(元)" value={formatCentsShort(annualSpent)} />
-        <PreviewStat label="年偏差(元)" value={formatCentsShort(annualVariance)} tone={(annualVariance ?? 0) >= 0 ? "good" : "warn"} />
+        <PreviewStat label="年偏差(元)" value={formatCentsShort(annualVariance)} tone={signedMetricTone(annualVariance)} />
         <PreviewStat label="年使用率" value={annualUsageRateText} />
         <PreviewStat label="超预算月" value={overMonths ?? 0} tone={(overMonths ?? 0) > 0 ? "warn" : "good"} />
         <PreviewStat label="低于预算月" value={underMonths ?? 0} tone={(underMonths ?? 0) > 0 ? "good" : "default"} />
@@ -1095,29 +1986,49 @@ function BudgetMonthlyReviewPreview({ data }: { data: unknown }) {
 
 function FireProgressPreview({ data }: { data: unknown }) {
   if (!isRecord(data)) return null;
-  const year = readNumber(data, "year");
   const rateText = readString(data, "withdrawal_rate_pct_text") ?? "-";
+  const asOfDate = readString(data, "as_of_date") ?? readString(data, "wealth_snapshot.as_of_date") ?? "-";
   const annualBudget = readNumber(data, "budget.annual_total_cents");
   const investableTotal = readNumber(data, "investable_assets.total_cents");
   const coverageYearsText = readString(data, "metrics.coverage_years_text") ?? "-";
   const freedomRatioText = readString(data, "metrics.freedom_ratio_pct_text") ?? "-";
+  const freedomRatioPct =
+    readNumber(data, "metrics.freedom_ratio_pct") ??
+    (() => {
+      const m = freedomRatioText.match(/-?\d+(?:\.\d+)?/);
+      return m ? Number(m[0]) : undefined;
+    })();
   const requiredAssets = readNumber(data, "metrics.required_assets_cents");
   const remainingToGoal = readNumber(data, "metrics.remaining_to_goal_cents");
   const goalGap = readNumber(data, "metrics.goal_gap_cents");
+  const freedomToneClass =
+    typeof freedomRatioPct === "number" && Number.isFinite(freedomRatioPct)
+      ? freedomRatioPct >= 100
+        ? "good"
+        : freedomRatioPct >= 60
+          ? "mid"
+          : "warn"
+      : "default";
   return (
     <div className="subcard preview-card">
       <div className="preview-header">
         <h3>FIRE 进度预览</h3>
-        <div className="preview-subtle">{year ?? "-"} 年 · 提取率 {rateText}</div>
+        <div className="preview-subtle">按最新资产快照计算 · {asOfDate !== "-" ? <>快照日期 <code>{asOfDate}</code> · </> : null}提取率 {rateText}</div>
       </div>
-      <div className="preview-stat-grid">
-        <PreviewStat label="年预算(元)" value={formatCentsShort(annualBudget)} />
-        <PreviewStat label="可投资产(元)" value={formatCentsShort(investableTotal)} />
-        <PreviewStat label="覆盖年数" value={coverageYearsText} />
-        <PreviewStat label="自由度" value={freedomRatioText} />
-        <PreviewStat label="目标资产(元)" value={formatCentsShort(requiredAssets)} />
-        <PreviewStat label="距离目标(元)" value={formatCentsShort(remainingToGoal)} tone={(remainingToGoal ?? 0) === 0 ? "good" : "warn"} />
-        <PreviewStat label="目标差额(元)" value={formatCentsShort(goalGap)} tone={(goalGap ?? 0) >= 0 ? "good" : "warn"} />
+      <div className="fire-progress-stat-layout">
+        <div className={`preview-stat fire-progress-focus tone-${freedomToneClass}`}>
+          <div className="preview-stat-label">自由度</div>
+          <div className="fire-progress-focus-value">{freedomRatioText}</div>
+          <div className="fire-progress-focus-subtle">覆盖年数 {coverageYearsText}</div>
+        </div>
+        <div className="preview-stat-grid fire-progress-stat-grid">
+          <PreviewStat label="年预算(元)" value={formatCentsShort(annualBudget)} />
+          <PreviewStat label="可投资产(元)" value={formatCentsShort(investableTotal)} />
+          <PreviewStat label="覆盖年数" value={coverageYearsText} />
+          <PreviewStat label="目标资产(元)" value={formatCentsShort(requiredAssets)} />
+          <PreviewStat label="距离目标(元)" value={formatCentsShort(remainingToGoal)} tone={(remainingToGoal ?? 0) === 0 ? "good" : "warn"} />
+          <PreviewStat label="目标差额(元)" value={formatCentsShort(goalGap)} tone={signedMetricTone(goalGap)} />
+        </div>
       </div>
     </div>
   );
@@ -1878,7 +2789,6 @@ function RuntimeHealthPreview({ data }: { data: unknown }) {
   const wealthRowCount = readNumber(data, "checks.wealth_overview.row_count");
   const wealthStale = readNumber(data, "checks.wealth_overview.stale_account_count");
   const portfolioCurveOk = readBool(data, "checks.portfolio_curve.ok");
-  const portfolioCurvePoints = readNumber(data, "checks.portfolio_curve.points");
   const portfolioCurveReturn = readString(data, "checks.portfolio_curve.end_cumulative_return_pct_text") ?? "-";
   const portfolioCurveGrowth = readString(data, "checks.portfolio_curve.end_net_growth_yuan") ?? "-";
 
@@ -1922,7 +2832,6 @@ function RuntimeHealthPreview({ data }: { data: unknown }) {
           value={portfolioCurveOk === undefined ? "-" : portfolioCurveOk ? "OK" : "Skipped/Warn"}
           tone={portfolioCurveOk === false ? "warn" : portfolioCurveOk ? "good" : "default"}
         />
-        <PreviewStat label="Curve Points" value={portfolioCurvePoints ?? "-"} />
         <PreviewStat label="Curve Return" value={portfolioCurveReturn} />
         <PreviewStat label="Curve Growth (Yuan)" value={portfolioCurveGrowth} />
       </div>
@@ -1988,6 +2897,7 @@ function InvestmentReturnsPreview({ data }: { data: unknown }) {
     setSortDir(next.dir);
   };
   const preset = readString(data, "range.preset") ?? "-";
+  const presetLabel = formatPresetLabel(preset);
   const avgReturnPct = readString(data, "summary.avg_return_pct") ?? "-";
   const accountCount = readNumber(data, "summary.account_count");
   const computedCount = readNumber(data, "summary.computed_count");
@@ -1996,16 +2906,16 @@ function InvestmentReturnsPreview({ data }: { data: unknown }) {
   return (
     <div className="subcard preview-card">
       <div className="preview-header">
-        <h3>Investment Returns Compare</h3>
+        <h3>账户收益率对比结果</h3>
         <div className="preview-subtle">
-          preset <code>{preset}</code>
+          统计区间：{presetLabel}
         </div>
       </div>
       <div className="preview-stat-grid">
-        <PreviewStat label="Accounts" value={accountCount ?? 0} />
-        <PreviewStat label="Computed" value={computedCount ?? 0} tone={(computedCount ?? 0) > 0 ? "good" : "warn"} />
+        <PreviewStat label="账户数" value={accountCount ?? 0} />
+        <PreviewStat label="成功计算" value={computedCount ?? 0} tone={(computedCount ?? 0) > 0 ? "good" : "warn"} />
         <PreviewStat label="错误数" value={errorCount ?? 0} tone={(errorCount ?? 0) > 0 ? "warn" : "good"} />
-        <PreviewStat label="Avg Return" value={avgReturnPct} />
+        <PreviewStat label="平均收益率" value={avgReturnPct} />
       </div>
       {sortedRows.length > 0 ? (
         <div className="preview-table-wrap">
@@ -2045,11 +2955,11 @@ function InvestmentReturnsPreview({ data }: { data: unknown }) {
       ) : null}
       {errors.length > 0 ? (
         <div className="preview-note">
-          <strong>Top 错误数</strong>
+          <strong>错误示例</strong>
           <ul className="text-list">
             {errors.slice(0, 5).map((row, idx) => {
               const name = (typeof row.account_name === "string" && row.account_name) || (typeof row.account_id === "string" ? row.account_id : `row_${idx}`);
-              const msg = typeof row.error === "string" ? row.error : "Unknown error";
+              const msg = typeof row.error === "string" ? row.error : "未知错误";
               return <li key={`${name}-${idx}`}>{name}: {msg}</li>;
             })}
           </ul>
@@ -2397,7 +3307,17 @@ function AssetValuationsPreview({ data }: { data: unknown }) {
   );
 }
 
-function AccountCatalogPreview({ data }: { data: unknown }) {
+function AccountCatalogPreview({
+  data,
+  onDeleteRow,
+  deleteBusy = false,
+  deletingAccountId = "",
+}: {
+  data: unknown;
+  onDeleteRow?: (accountId: string, accountName: string) => void;
+  deleteBusy?: boolean;
+  deletingAccountId?: string;
+}) {
   const [sortKey, setSortKey] = useState<string>("updated_at");
   const [sortDir, setSortDir] = useState<TableSortDirection>("desc");
   if (!isRecord(data)) return null;
@@ -2413,8 +3333,6 @@ function AccountCatalogPreview({ data }: { data: unknown }) {
           return row.account_name ?? row.account_id;
         case "account_kind":
           return row.account_kind;
-        case "account_type":
-          return row.account_type;
         case "transaction_count":
           return row.transaction_count;
         case "investment_record_count":
@@ -2455,21 +3373,25 @@ function AccountCatalogPreview({ data }: { data: unknown }) {
             <thead>
               <tr>
                 <th><SortableHeaderButton label="账户" sortKey="account_name" activeSortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} /></th>
-                <th><SortableHeaderButton label="种类" sortKey="account_kind" activeSortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} /></th>
-                <th><SortableHeaderButton label="类型" sortKey="account_type" activeSortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} /></th>
+                <th><SortableHeaderButton label="账户种类" sortKey="account_kind" activeSortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} /></th>
                 <th className="num"><SortableHeaderButton label="交易" sortKey="transaction_count" activeSortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} /></th>
                 <th className="num"><SortableHeaderButton label="投资" sortKey="investment_record_count" activeSortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} /></th>
                 <th className="num"><SortableHeaderButton label="资产" sortKey="asset_valuation_count" activeSortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} /></th>
                 <th><SortableHeaderButton label="更新时间" sortKey="updated_at" activeSortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} /></th>
+                {onDeleteRow ? <th>操作</th> : null}
               </tr>
             </thead>
             <tbody>
               {sortedRows.map((row, idx) => {
+                const accountId = typeof row.account_id === "string" ? row.account_id : "";
                 const name =
                   (typeof row.account_name === "string" && row.account_name) ||
-                  (typeof row.account_id === "string" ? row.account_id : "-");
+                  (accountId || "-");
                 const kindVal = typeof row.account_kind === "string" ? row.account_kind : "-";
                 const typeVal = typeof row.account_type === "string" ? row.account_type : "-";
+                const kindDisplay = kindVal !== "-" && typeVal !== "-" && kindVal !== typeVal
+                  ? `${kindVal}（底层类型: ${typeVal}）`
+                  : kindVal;
                 const tx = typeof row.transaction_count === "number" ? row.transaction_count : 0;
                 const inv = typeof row.investment_record_count === "number" ? row.investment_record_count : 0;
                 const asset = typeof row.asset_valuation_count === "number" ? row.asset_valuation_count : 0;
@@ -2477,12 +3399,24 @@ function AccountCatalogPreview({ data }: { data: unknown }) {
                 return (
                   <tr key={`${name}-${idx}`}>
                     <td className="truncate-cell" title={name}>{name}</td>
-                    <td>{kindVal}</td>
-                    <td>{typeVal}</td>
+                    <td className="truncate-cell" title={kindDisplay}>{kindDisplay}</td>
                     <td className="num">{tx}</td>
                     <td className="num">{inv}</td>
                     <td className="num">{asset}</td>
                     <td>{updated}</td>
+                    {onDeleteRow ? (
+                      <td>
+                        <button
+                          type="button"
+                          className="secondary-btn table-inline-btn"
+                          onClick={() => onDeleteRow(accountId, name)}
+                          disabled={deleteBusy || !accountId}
+                          title={accountId ? `删除账户：${accountId}` : "缺少账户 ID，无法删除"}
+                        >
+                          {deleteBusy && deletingAccountId === accountId ? "删除中..." : "删除"}
+                        </button>
+                      </td>
+                    ) : null}
                   </tr>
                 );
               })}
@@ -2492,6 +3426,67 @@ function AccountCatalogPreview({ data }: { data: unknown }) {
       ) : null}
     </div>
   );
+}
+
+function InlineProgressSpinner({ active }: { active?: boolean }) {
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    if (!active) {
+      setVisible(false);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setVisible(true);
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [active]);
+
+  if (!active || !visible) return null;
+  return <span className="inline-progress-spinner" aria-hidden="true" />;
+}
+
+function AutoRefreshHint({ busy, children }: { busy?: boolean; children: ReactNode }) {
+  return (
+    <p className="inline-hint auto-refresh-hint">
+      <span>{children}</span>
+      <InlineProgressSpinner active={busy} />
+    </p>
+  );
+}
+
+function makeEnterToQueryHandler(run: () => void | Promise<void>) {
+  return (e: ReactKeyboardEvent<HTMLElement>) => {
+    if (e.key !== "Enter") return;
+    const target = e.target as HTMLElement | null;
+    if (!target) return;
+    if (target instanceof HTMLTextAreaElement || target instanceof HTMLButtonElement) return;
+    if (target instanceof HTMLInputElement && target.type === "checkbox") return;
+    e.preventDefault();
+    void run();
+  };
+}
+
+function useDebouncedAutoRun(
+  task: () => void | Promise<void>,
+  deps: ReadonlyArray<unknown>,
+  options?: { enabled?: boolean; delayMs?: number },
+) {
+  const taskRef = useRef(task);
+  useEffect(() => {
+    taskRef.current = task;
+  }, [task]);
+
+  const enabled = options?.enabled ?? true;
+  const delayMs = options?.delayMs ?? 260;
+
+  useEffect(() => {
+    if (!enabled) return;
+    const timer = window.setTimeout(() => {
+      void taskRef.current();
+    }, delayMs);
+    return () => window.clearTimeout(timer);
+  }, [enabled, delayMs, ...deps]);
 }
 
 function makeInitialSmokeRows(): SmokeRow[] {
@@ -2884,9 +3879,9 @@ function MerchantSuggestionsPreview({
                 const reviewCount = typeof row.review_count === "number" ? row.review_count : 0;
                 const totalYuan =
                   typeof row.total_amount_yuan === "string"
-                    ? row.total_amount_yuan
+                    ? maskAmountDisplayText(row.total_amount_yuan)
                     : typeof row.total_amount_cents === "number"
-                      ? (row.total_amount_cents / 100).toFixed(2)
+                      ? maskAmountDisplayText((row.total_amount_cents / 100).toFixed(2))
                       : "-";
                 return (
                   <tr key={`${merchant}-${idx}`}>
@@ -3514,6 +4509,36 @@ function RulesAdminPanel({ showRawJson }: { showRawJson: boolean }) {
     return;
   }
 
+  useDebouncedAutoRun(
+    handleMerchantQuery,
+    [merchantQuery.keyword ?? "", merchantQuery.limit ?? 100],
+    { delayMs: 260 },
+  );
+  useDebouncedAutoRun(
+    handleMerchantSuggestionsQuery,
+    [
+      merchantSuggestionsQuery.keyword ?? "",
+      merchantSuggestionsQuery.limit ?? 100,
+      merchantSuggestionsQuery.only_unmapped ?? "true",
+    ],
+    { delayMs: 260 },
+  );
+  useDebouncedAutoRun(
+    handleCategoryQuery,
+    [categoryQuery.keyword ?? "", categoryQuery.limit ?? 100],
+    { delayMs: 260 },
+  );
+  useDebouncedAutoRun(
+    handleBankQuery,
+    [bankQuery.keyword ?? "", bankQuery.limit ?? 100, bankQuery.active_only ?? "false"],
+    { delayMs: 260 },
+  );
+  useDebouncedAutoRun(
+    handleExclQuery,
+    [exclQuery.keyword ?? "", exclQuery.limit ?? 100, exclQuery.enabled_only ?? "false"],
+    { delayMs: 260 },
+  );
+
   return (
     <section className="card panel">
       <div className="panel-header">
@@ -3521,33 +4546,14 @@ function RulesAdminPanel({ showRawJson }: { showRawJson: boolean }) {
         <p>在 desktop 内维护导入规则文件（当前写入仓库 `data/rules/*.csv`），供 EML / CMB PDF 导入即时生效。</p>
       </div>
 
-      <div className="db-actions">
-        <button type="button" className="secondary-btn" onClick={() => void handleMerchantQuery()} disabled={anyBusy}>
-          刷新商户映射
-        </button>
-        <button
-          type="button"
-          className="secondary-btn"
-          onClick={() => void handleMerchantSuggestionsQuery()}
-          disabled={anyBusy}
-        >
-          刷新商户建议
-        </button>
-        <button type="button" className="secondary-btn" onClick={() => void handleCategoryQuery()} disabled={anyBusy}>
-          刷新分类规则
-        </button>
-        <button type="button" className="secondary-btn" onClick={() => void handleBankQuery()} disabled={anyBusy}>
-          刷新转账白名单
-        </button>
-        <button type="button" className="secondary-btn" onClick={() => void handleExclQuery()} disabled={anyBusy}>
-          刷新分析排除规则
-        </button>
-      </div>
+      <AutoRefreshHint busy={merchantQueryBusy || merchantSuggestionsBusy || categoryQueryBusy || bankQueryBusy || exclQueryBusy}>
+        规则查询已改为自动刷新：首次进入本页会自动加载，修改筛选条件后会自动更新下方列表。
+      </AutoRefreshHint>
 
       <div className="db-grid rules-admin-grid">
         <div className="subcard">
           <h3>商户映射</h3>
-          <div className="query-form-grid query-form-grid-compact">
+          <div className="query-form-grid query-form-grid-compact" onKeyDown={makeEnterToQueryHandler(handleMerchantQuery)}>
             <label className="field">
               <span>关键词</span>
               <input
@@ -3602,9 +4608,6 @@ function RulesAdminPanel({ showRawJson }: { showRawJson: boolean }) {
             </label>
           </div>
           <div className="db-actions">
-            <button type="button" className="secondary-btn" onClick={() => void handleMerchantQuery()} disabled={anyBusy}>
-              {merchantQueryBusy ? "查询中..." : "查询"}
-            </button>
             <button type="button" className="primary-btn" onClick={() => void handleMerchantUpsert()} disabled={anyBusy}>
               {merchantUpsertBusy ? "保存中..." : "写入"}
             </button>
@@ -3639,7 +4642,7 @@ function RulesAdminPanel({ showRawJson }: { showRawJson: boolean }) {
               { key: "note", label: "备注" },
             ]}
           />
-          <p className="inline-hint">建议先查询查看现有规则，再写入/删除。可打开原始 JSON 查看结果详情。</p>
+          <AutoRefreshHint busy={merchantQueryBusy}>建议先查询查看现有规则，再写入/删除。可打开原始 JSON 查看结果详情。</AutoRefreshHint>
           {showRawJson ? (
             <>
               <JsonResultCard title="商户映射查询" data={merchantQueryResult} emptyText="尚未查询。" />
@@ -3654,7 +4657,7 @@ function RulesAdminPanel({ showRawJson }: { showRawJson: boolean }) {
           <p className="inline-hint">
             基于 desktop 本地库交易聚合生成建议回填清单。建议先用 `only_unmapped=true` 看未映射商户，再把结果回填到 商户映射。
           </p>
-          <div className="query-form-grid query-form-grid-compact">
+          <div className="query-form-grid query-form-grid-compact" onKeyDown={makeEnterToQueryHandler(handleMerchantSuggestionsQuery)}>
             <label className="field">
               <span>关键词</span>
               <input
@@ -3688,16 +4691,7 @@ function RulesAdminPanel({ showRawJson }: { showRawJson: boolean }) {
               }
             />
           </div>
-          <div className="db-actions">
-            <button
-              type="button"
-              className="secondary-btn"
-              onClick={() => void handleMerchantSuggestionsQuery()}
-              disabled={anyBusy}
-            >
-              {merchantSuggestionsBusy ? "Querying..." : "查询商户建议"}
-            </button>
-          </div>
+          <AutoRefreshHint busy={merchantSuggestionsBusy}>首次进入会自动加载；修改关键词、数量或“仅显示未映射”后会自动刷新建议列表。</AutoRefreshHint>
           {merchantSuggestionsError ? (
             <div className="inline-error" role="alert">
               {merchantSuggestionsError}
@@ -3718,7 +4712,7 @@ function RulesAdminPanel({ showRawJson }: { showRawJson: boolean }) {
 
         <div className="subcard">
           <h3>分类规则</h3>
-          <div className="query-form-grid query-form-grid-compact">
+          <div className="query-form-grid query-form-grid-compact" onKeyDown={makeEnterToQueryHandler(handleCategoryQuery)}>
             <label className="field">
               <span>关键词</span>
               <input
@@ -3795,9 +4789,6 @@ function RulesAdminPanel({ showRawJson }: { showRawJson: boolean }) {
             </label>
           </div>
           <div className="db-actions">
-            <button type="button" className="secondary-btn" onClick={() => void handleCategoryQuery()} disabled={anyBusy}>
-              {categoryQueryBusy ? "查询中..." : "查询"}
-            </button>
             <button type="button" className="primary-btn" onClick={() => void handleCategoryUpsert()} disabled={anyBusy}>
               {categoryUpsertBusy ? "保存中..." : "写入"}
             </button>
@@ -3851,7 +4842,7 @@ function RulesAdminPanel({ showRawJson }: { showRawJson: boolean }) {
               { key: "confidence", label: "置信度" },
             ]}
           />
-          <p className="inline-hint">EML/PDF 分类会读取这里的规则，修改后重新预览即可验证效果。</p>
+          <AutoRefreshHint busy={categoryQueryBusy}>EML/PDF 分类会读取这里的规则，修改后重新预览即可验证效果。</AutoRefreshHint>
           {showRawJson ? (
             <>
               <JsonResultCard title="分类规则查询" data={categoryQueryResult} emptyText="尚未查询。" />
@@ -3863,7 +4854,7 @@ function RulesAdminPanel({ showRawJson }: { showRawJson: boolean }) {
 
         <div className="subcard">
           <h3>银行转账白名单</h3>
-          <div className="query-form-grid query-form-grid-compact">
+          <div className="query-form-grid query-form-grid-compact" onKeyDown={makeEnterToQueryHandler(handleBankQuery)}>
             <label className="field">
               <span>关键词</span>
               <input
@@ -3911,9 +4902,6 @@ function RulesAdminPanel({ showRawJson }: { showRawJson: boolean }) {
             </label>
           </div>
           <div className="db-actions">
-            <button type="button" className="secondary-btn" onClick={() => void handleBankQuery()} disabled={anyBusy}>
-              {bankQueryBusy ? "查询中..." : "查询"}
-            </button>
             <button type="button" className="primary-btn" onClick={() => void handleBankUpsert()} disabled={anyBusy}>
               {bankUpsertBusy ? "保存中..." : "写入"}
             </button>
@@ -3945,7 +4933,7 @@ function RulesAdminPanel({ showRawJson }: { showRawJson: boolean }) {
               { key: "note", label: "备注" },
             ]}
           />
-          <p className="inline-hint">该白名单用于招行 PDF 导入中识别银行卡个人转账消费。</p>
+          <AutoRefreshHint busy={bankQueryBusy}>该白名单用于招行 PDF 导入中识别银行卡个人转账消费。</AutoRefreshHint>
           {showRawJson ? (
             <>
               <JsonResultCard title="白名单查询" data={bankQueryResult} emptyText="尚未查询。" />
@@ -3957,7 +4945,7 @@ function RulesAdminPanel({ showRawJson }: { showRawJson: boolean }) {
 
         <div className="subcard">
           <h3>分析排除规则</h3>
-          <div className="query-form-grid query-form-grid-compact">
+          <div className="query-form-grid query-form-grid-compact" onKeyDown={makeEnterToQueryHandler(handleExclQuery)}>
             <label className="field">
               <span>关键词</span>
               <input
@@ -4036,17 +5024,19 @@ function RulesAdminPanel({ showRawJson }: { showRawJson: boolean }) {
             </label>
             <label className="field">
               <span>开始日期</span>
-              <input
+              <DateInput
                 value={exclUpsertForm.start_date ?? ""}
                 onChange={(e) => setExclUpsertForm((prev) => ({ ...prev, start_date: e.target.value }))}
+                type="date"
                 placeholder="YYYY-MM-DD"
               />
             </label>
             <label className="field">
               <span>结束日期</span>
-              <input
+              <DateInput
                 value={exclUpsertForm.end_date ?? ""}
                 onChange={(e) => setExclUpsertForm((prev) => ({ ...prev, end_date: e.target.value }))}
+                type="date"
                 placeholder="YYYY-MM-DD"
               />
             </label>
@@ -4059,9 +5049,6 @@ function RulesAdminPanel({ showRawJson }: { showRawJson: boolean }) {
             </label>
           </div>
           <div className="db-actions">
-            <button type="button" className="secondary-btn" onClick={() => void handleExclQuery()} disabled={anyBusy}>
-              {exclQueryBusy ? "查询中..." : "查询"}
-            </button>
             <button type="button" className="primary-btn" onClick={() => void handleExclUpsert()} disabled={anyBusy}>
               {exclUpsertBusy ? "保存中..." : "写入"}
             </button>
@@ -4095,7 +5082,7 @@ function RulesAdminPanel({ showRawJson }: { showRawJson: boolean }) {
               { key: "reason", label: "原因" },
             ]}
           />
-          <p className="inline-hint">EML 导入会在分类后应用这些排除规则，修改后重新预览招行 EML 即可观察变化。</p>
+          <AutoRefreshHint busy={exclQueryBusy}>EML 导入会在分类后应用这些排除规则，修改后重新预览招行 EML 即可观察变化。</AutoRefreshHint>
           {showRawJson ? (
             <>
               <JsonResultCard title="排除规则查询" data={exclQueryResult} emptyText="尚未查询。" />
@@ -4188,15 +5175,13 @@ function App() {
     preset: "ytd",
     from: "",
     to: "",
-    keyword: "",
-    limit: 200,
   });
   const [invCurveBusy, setInvCurveBusy] = useState(false);
   const [invCurveError, setInvCurveError] = useState("");
   const [invCurveResult, setInvCurveResult] = useState<InvestmentCurvePayload | null>(null);
   const [invCurveQuery, setInvCurveQuery] = useState({
     account_id: "__portfolio__",
-    preset: "1y",
+    preset: "ytd",
     from: "",
     to: "",
   });
@@ -4228,7 +5213,7 @@ function App() {
     include_real_estate: BoolString;
     include_liability: BoolString;
   }>({
-    preset: "1y",
+    preset: "ytd",
     from: "",
     to: "",
     include_investment: "true",
@@ -4245,6 +5230,8 @@ function App() {
   const [budgetItemDeleteBusy, setBudgetItemDeleteBusy] = useState(false);
   const [budgetItemDeleteError, setBudgetItemDeleteError] = useState("");
   const [budgetItemDeleteResult, setBudgetItemDeleteResult] = useState<MonthlyBudgetItemMutationPayload | null>(null);
+  const [budgetItemCreateOpen, setBudgetItemCreateOpen] = useState(false);
+  const [budgetItemDeletingRowId, setBudgetItemDeletingRowId] = useState("");
   const [budgetItemForm, setBudgetItemForm] = useState<MonthlyBudgetItemUpsertRequest>({
     id: "",
     name: "",
@@ -4252,10 +5239,8 @@ function App() {
     sort_order: "1000",
     is_active: "true",
   });
-  const [budgetItemDeleteForm, setBudgetItemDeleteForm] = useState<MonthlyBudgetItemDeleteRequest>({
-    id: "",
-  });
   const currentYearText = String(new Date().getFullYear());
+  const budgetYearOptions = Array.from({ length: 7 }, (_v, idx) => String(new Date().getFullYear() - idx));
   const [budgetOverviewBusy, setBudgetOverviewBusy] = useState(false);
   const [budgetOverviewError, setBudgetOverviewError] = useState("");
   const [budgetOverviewResult, setBudgetOverviewResult] = useState<BudgetOverviewPayload | null>(null);
@@ -4272,8 +5257,7 @@ function App() {
   const [fireProgressError, setFireProgressError] = useState("");
   const [fireProgressResult, setFireProgressResult] = useState<FireProgressPayload | null>(null);
   const [fireProgressQuery, setFireProgressQuery] = useState<FireProgressQueryRequest>({
-    year: currentYearText,
-    withdrawal_rate: "0.04",
+    withdrawal_rate: "0.03",
   });
   const [salaryIncomeBusy, setSalaryIncomeBusy] = useState(false);
   const [salaryIncomeError, setSalaryIncomeError] = useState("");
@@ -4331,6 +5315,8 @@ function App() {
   const [acctCatalogBusy, setAcctCatalogBusy] = useState(false);
   const [acctCatalogError, setAcctCatalogError] = useState("");
   const [acctCatalogResult, setAcctCatalogResult] = useState<AccountCatalogPayload | null>(null);
+  const [accountSelectCatalogBusy, setAccountSelectCatalogBusy] = useState(false);
+  const [accountSelectCatalogResult, setAccountSelectCatalogResult] = useState<AccountCatalogPayload | null>(null);
   const [acctCatalogQuery, setAcctCatalogQuery] = useState<QueryAccountCatalogRequest>({
     kind: "all",
     keyword: "",
@@ -4339,6 +5325,7 @@ function App() {
   const [acctCatalogUpsertBusy, setAcctCatalogUpsertBusy] = useState(false);
   const [acctCatalogUpsertError, setAcctCatalogUpsertError] = useState("");
   const [acctCatalogUpsertResult, setAcctCatalogUpsertResult] = useState<AccountCatalogUpsertPayload | null>(null);
+  const [acctCatalogCreateOpen, setAcctCatalogCreateOpen] = useState(false);
   const [acctCatalogUpsertForm, setAcctCatalogUpsertForm] = useState<UpsertAccountCatalogEntryRequest>({
     account_id: "",
     account_name: "",
@@ -4347,7 +5334,7 @@ function App() {
   const [acctCatalogDeleteBusy, setAcctCatalogDeleteBusy] = useState(false);
   const [acctCatalogDeleteError, setAcctCatalogDeleteError] = useState("");
   const [acctCatalogDeleteResult, setAcctCatalogDeleteResult] = useState<AccountCatalogDeletePayload | null>(null);
-  const [acctCatalogDeleteId, setAcctCatalogDeleteId] = useState("");
+  const [acctCatalogDeletingRowId, setAcctCatalogDeletingRowId] = useState("");
   const [manualInvBusy, setManualInvBusy] = useState(false);
   const [manualInvError, setManualInvError] = useState("");
   const [manualInvResult, setManualInvResult] = useState<ManualInvestmentMutationPayload | null>(null);
@@ -4485,6 +5472,7 @@ function App() {
       void handleAssetValuationsQuery();
       void handleMetaAccountsQuery();
       void handleAccountCatalogQuery();
+      void handleRefreshAccountSelectCatalog();
     } catch (err) {
       setAdminResetAllError(toErrorMessage(err));
     } finally {
@@ -4649,6 +5637,7 @@ function App() {
       void handleRunRuntimeHealthCheck();
       void handleMetaAccountsQuery();
       void handleAccountCatalogQuery();
+      void handleRefreshAccountSelectCatalog();
       void handleInvestmentsListQuery();
       void handleInvestmentReturnsQuery();
       void handleInvestmentReturnQuery();
@@ -4746,6 +5735,7 @@ function App() {
       void handleBudgetMonthlyReviewQuery();
       void handleMetaAccountsQuery();
       void handleAccountCatalogQuery();
+      void handleRefreshAccountSelectCatalog();
     } catch (err) {
       setEmlImportError(toErrorMessage(err));
     } finally {
@@ -4823,6 +5813,7 @@ function App() {
       void handleSalaryIncomeOverviewQuery();
       void handleMetaAccountsQuery();
       void handleAccountCatalogQuery();
+      void handleRefreshAccountSelectCatalog();
     } catch (err) {
       setCmbPdfImportError(toErrorMessage(err));
     } finally {
@@ -4854,17 +5845,30 @@ function App() {
     return req;
   }
 
+  function setInvestmentAnalysisSharedQuery(
+    updater: (prev: typeof invCurveQuery) => typeof invCurveQuery,
+  ) {
+    setInvCurveQuery((prev) => {
+      const next = updater(prev);
+      setInvQuery({
+        account_id: next.account_id,
+        preset: next.preset,
+        from: next.from,
+        to: next.to,
+      });
+      return next;
+    });
+  }
+
   function buildInvestmentReturnsRequest(): InvestmentReturnsQueryRequest {
     const req: InvestmentReturnsQueryRequest = {
       preset: invBatchQuery.preset || "ytd",
-      limit: Number(invBatchQuery.limit ?? 200),
+      limit: 500,
     };
     const from = `${invBatchQuery.from ?? ""}`.trim();
     const to = `${invBatchQuery.to ?? ""}`.trim();
-    const keyword = `${invBatchQuery.keyword ?? ""}`.trim();
     if (from) req.from = from;
     if (to) req.to = to;
-    if (keyword) req.keyword = keyword;
     return req;
   }
 
@@ -4879,7 +5883,10 @@ function App() {
       include_real_estate: wealthOverviewQuery.include_real_estate,
       include_liability: wealthOverviewQuery.include_liability,
     };
-    if (wealthOverviewQuery.as_of.trim()) req.as_of = wealthOverviewQuery.as_of.trim();
+    // Wealth overview shares the trend filters; when custom range has an end date, align overview snapshot to that date.
+    if (wealthCurveQuery.preset === "custom" && wealthCurveQuery.to.trim()) {
+      req.as_of = wealthCurveQuery.to.trim();
+    }
     return req;
   }
 
@@ -4896,6 +5903,74 @@ function App() {
     return req;
   }
 
+  function setWealthSharedAssetFilters(
+    updater: (prev: Pick<typeof wealthCurveQuery, "include_investment" | "include_cash" | "include_real_estate" | "include_liability">) => Pick<
+      typeof wealthCurveQuery,
+      "include_investment" | "include_cash" | "include_real_estate" | "include_liability"
+    >,
+  ) {
+    setWealthCurveQuery((prev) => {
+      const nextShared = updater({
+        include_investment: prev.include_investment,
+        include_cash: prev.include_cash,
+        include_real_estate: prev.include_real_estate,
+        include_liability: prev.include_liability,
+      });
+      setWealthOverviewQuery((prevOverview) => ({
+        ...prevOverview,
+        include_investment: nextShared.include_investment,
+        include_cash: nextShared.include_cash,
+        include_real_estate: nextShared.include_real_estate,
+        include_liability: nextShared.include_liability,
+      }));
+      return { ...prev, ...nextShared };
+    });
+  }
+
+  function toggleWealthAssetFilter(
+    key: "include_investment" | "include_cash" | "include_real_estate" | "include_liability",
+  ) {
+    setWealthSharedAssetFilters((prev) => ({
+      ...(() => {
+        const nextValue = prev[key] === "true" ? "false" : "true";
+        if (
+          nextValue === "false" &&
+          (key === "include_investment" || key === "include_cash" || key === "include_real_estate")
+        ) {
+          const otherPositiveStillOn = (
+            [
+              key === "include_investment" ? null : prev.include_investment,
+              key === "include_cash" ? null : prev.include_cash,
+              key === "include_real_estate" ? null : prev.include_real_estate,
+            ].filter((v): v is BoolString => v !== null)
+          ).some((v) => v === "true");
+          if (!otherPositiveStillOn) return prev;
+        }
+        return {
+          ...prev,
+          [key]: nextValue,
+        };
+      })(),
+    }));
+  }
+
+  function openBudgetItemCreateModal() {
+    setBudgetItemUpsertError("");
+    setBudgetItemForm({
+      id: "",
+      name: "",
+      monthly_amount: "",
+      sort_order: "1000",
+      is_active: "true",
+    });
+    setBudgetItemCreateOpen(true);
+  }
+
+  function closeBudgetItemCreateModal() {
+    if (budgetItemUpsertBusy) return;
+    setBudgetItemCreateOpen(false);
+  }
+
   function buildBudgetYearQueryRequest(query: BudgetYearQueryRequest): BudgetYearQueryRequest {
     const req: BudgetYearQueryRequest = {};
     const year = `${query.year ?? ""}`.trim();
@@ -4905,9 +5980,7 @@ function App() {
 
   function buildFireProgressQueryRequest(): FireProgressQueryRequest {
     const req: FireProgressQueryRequest = {};
-    const year = `${fireProgressQuery.year ?? ""}`.trim();
     const withdrawalRate = `${fireProgressQuery.withdrawal_rate ?? ""}`.trim();
-    if (year) req.year = year;
     if (withdrawalRate) req.withdrawal_rate = withdrawalRate;
     return req;
   }
@@ -4922,10 +5995,6 @@ function App() {
     const id = `${budgetItemForm.id ?? ""}`.trim();
     if (id) req.id = id;
     return req;
-  }
-
-  function buildBudgetItemDeleteMutationRequest(): MonthlyBudgetItemDeleteRequest {
-    return { id: `${budgetItemDeleteForm.id ?? ""}`.trim() };
   }
 
   function buildTransactionsQueryRequest(): QueryTransactionsRequest {
@@ -4985,13 +6054,10 @@ function App() {
   }
 
   function buildAccountCatalogUpsertRequest(): UpsertAccountCatalogEntryRequest {
-    const req: UpsertAccountCatalogEntryRequest = {
+    return {
       account_name: `${acctCatalogUpsertForm.account_name ?? ""}`.trim(),
       account_kind: acctCatalogUpsertForm.account_kind,
     };
-    const accountId = `${acctCatalogUpsertForm.account_id ?? ""}`.trim();
-    if (accountId) req.account_id = accountId;
-    return req;
   }
 
   function buildAdminResetRequest(): { confirm_text?: string } {
@@ -5021,6 +6087,14 @@ function App() {
       startTransition(() => {
         setBudgetItemUpsertResult(payload);
       });
+      setBudgetItemCreateOpen(false);
+      setBudgetItemForm({
+        id: "",
+        name: "",
+        monthly_amount: "",
+        sort_order: "1000",
+        is_active: "true",
+      });
       void handleMonthlyBudgetItemsQuery();
       void handleBudgetOverviewQuery();
       void handleBudgetMonthlyReviewQuery();
@@ -5032,11 +6106,12 @@ function App() {
     }
   }
 
-  async function handleDeleteMonthlyBudgetItem() {
+  async function handleDeleteMonthlyBudgetItem(id: string) {
     setBudgetItemDeleteBusy(true);
+    setBudgetItemDeletingRowId(id);
     setBudgetItemDeleteError("");
     try {
-      const payload = await deleteMonthlyBudgetItem(buildBudgetItemDeleteMutationRequest());
+      const payload = await deleteMonthlyBudgetItem({ id } satisfies MonthlyBudgetItemDeleteRequest);
       startTransition(() => {
         setBudgetItemDeleteResult(payload);
       });
@@ -5048,6 +6123,7 @@ function App() {
       setBudgetItemDeleteError(toErrorMessage(err));
     } finally {
       setBudgetItemDeleteBusy(false);
+      setBudgetItemDeletingRowId("");
     }
   }
 
@@ -5126,6 +6202,24 @@ function App() {
     }
   }
 
+  async function handleRefreshAccountSelectCatalog() {
+    setAccountSelectCatalogBusy(true);
+    try {
+      const payload = await queryAccountCatalog({
+        kind: "all",
+        keyword: "",
+        limit: 2000,
+      });
+      startTransition(() => {
+        setAccountSelectCatalogResult(payload);
+      });
+    } catch {
+      // Keep existing options if refresh fails; query cards already surface detailed errors.
+    } finally {
+      setAccountSelectCatalogBusy(false);
+    }
+  }
+
   async function handleAccountCatalogQuery() {
     setAcctCatalogBusy(true);
     setAcctCatalogError("");
@@ -5148,8 +6242,11 @@ function App() {
       const payload = await upsertAccountCatalogEntry(buildAccountCatalogUpsertRequest());
       startTransition(() => {
         setAcctCatalogUpsertResult(payload);
+        setAcctCatalogCreateOpen(false);
+        resetAccountCatalogCreateForm();
       });
       void handleAccountCatalogQuery();
+      void handleRefreshAccountSelectCatalog();
       void handleMetaAccountsQuery();
     } catch (err) {
       setAcctCatalogUpsertError(toErrorMessage(err));
@@ -5158,23 +6255,49 @@ function App() {
     }
   }
 
-  async function handleAccountCatalogDelete() {
+  async function handleAccountCatalogDelete(accountIdOverride?: string) {
+    const accountId = `${accountIdOverride ?? ""}`.trim();
+    if (!accountId) return;
     setAcctCatalogDeleteBusy(true);
     setAcctCatalogDeleteError("");
+    setAcctCatalogDeletingRowId(accountId);
     try {
       const payload = await deleteAccountCatalogEntry({
-        account_id: acctCatalogDeleteId.trim(),
+        account_id: accountId,
       });
       startTransition(() => {
         setAcctCatalogDeleteResult(payload);
       });
       void handleAccountCatalogQuery();
+      void handleRefreshAccountSelectCatalog();
       void handleMetaAccountsQuery();
     } catch (err) {
       setAcctCatalogDeleteError(toErrorMessage(err));
     } finally {
       setAcctCatalogDeleteBusy(false);
+      setAcctCatalogDeletingRowId("");
     }
+  }
+
+  function resetAccountCatalogCreateForm() {
+    setAcctCatalogUpsertForm({
+      account_id: "",
+      account_name: "",
+      account_kind: "cash",
+    });
+  }
+
+  function openAccountCatalogCreateModal() {
+    setAcctCatalogUpsertError("");
+    resetAccountCatalogCreateForm();
+    setAcctCatalogCreateOpen(true);
+  }
+
+  function closeAccountCatalogCreateModal() {
+    if (acctCatalogUpsertBusy) return;
+    setAcctCatalogCreateOpen(false);
+    setAcctCatalogUpsertError("");
+    resetAccountCatalogCreateForm();
   }
 
   function compactStringFields<T extends Record<string, unknown>>(input: T): T {
@@ -5194,6 +6317,7 @@ function App() {
       void handleInvestmentsListQuery();
       void handleMetaAccountsQuery();
       void handleAccountCatalogQuery();
+      void handleRefreshAccountSelectCatalog();
     } catch (err) {
       setManualInvError(toErrorMessage(err));
     } finally {
@@ -5210,6 +6334,7 @@ function App() {
       void handleInvestmentsListQuery();
       void handleMetaAccountsQuery();
       void handleAccountCatalogQuery();
+      void handleRefreshAccountSelectCatalog();
     } catch (err) {
       setUpdateInvError(toErrorMessage(err));
     } finally {
@@ -5226,6 +6351,7 @@ function App() {
       void handleInvestmentsListQuery();
       void handleMetaAccountsQuery();
       void handleAccountCatalogQuery();
+      void handleRefreshAccountSelectCatalog();
     } catch (err) {
       setDeleteInvError(toErrorMessage(err));
     } finally {
@@ -5242,6 +6368,7 @@ function App() {
       void handleAssetValuationsQuery();
       void handleMetaAccountsQuery();
       void handleAccountCatalogQuery();
+      void handleRefreshAccountSelectCatalog();
     } catch (err) {
       setManualAssetError(toErrorMessage(err));
     } finally {
@@ -5258,6 +6385,7 @@ function App() {
       void handleAssetValuationsQuery();
       void handleMetaAccountsQuery();
       void handleAccountCatalogQuery();
+      void handleRefreshAccountSelectCatalog();
     } catch (err) {
       setUpdateAssetError(toErrorMessage(err));
     } finally {
@@ -5274,6 +6402,7 @@ function App() {
       void handleAssetValuationsQuery();
       void handleMetaAccountsQuery();
       void handleAccountCatalogQuery();
+      void handleRefreshAccountSelectCatalog();
     } catch (err) {
       setDeleteAssetError(toErrorMessage(err));
     } finally {
@@ -5727,17 +6856,51 @@ function App() {
 
   const [activeTab, setActiveTab] = useState<ProductTabKey>("import-center");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [appSettings, setAppSettings] = useState<AppSettings>(() => {
+    if (typeof window === "undefined") {
+      return {
+        gainLossColorScheme: "cn_red_up_green_down",
+        defaultPrivacyMaskOnLaunch: false,
+        uiMotionEnabled: true,
+      };
+    }
+    return parseStoredAppSettings(window.localStorage.getItem(APP_SETTINGS_STORAGE_KEY));
+  });
+  const [amountPrivacyMasked, setAmountPrivacyMasked] = useState(() => appSettings.defaultPrivacyMaskOnLaunch);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [developerMode, setDeveloperMode] = useState(false);
+  amountPrivacyMaskedGlobal = amountPrivacyMasked;
+  gainLossColorSchemeGlobal = appSettings.gainLossColorScheme;
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(APP_SETTINGS_STORAGE_KEY, JSON.stringify(appSettings));
+    } catch {
+      // Ignore persistence errors (private mode / quota / disabled storage).
+    }
+  }, [appSettings]);
   const isReady = status === "ready";
   const activeTabMeta = PRODUCT_TABS.find((tab) => tab.key === activeTab) ?? PRODUCT_TABS[0];
   const isTab = (...keys: ProductTabKey[]) => keys.includes(activeTab);
+  const isAdminTab = isTab("admin");
+  const isAdminDeveloperMode = isAdminTab && developerMode;
+  const isAdminVisibleWorkbench = isAdminTab;
   const isManualEntryTab = isTab("manual-entry");
-  const isBaseQueryTab = isTab("base-query");
+  const isReturnAnalysisTab = isTab("return-analysis");
+  const isWealthOverviewTab = isTab("wealth-overview");
+  const isBudgetFireTab = isTab("budget-fire");
+  const isIncomeAnalysisTab = isTab("income-analysis");
   const isConsumptionAnalysisTab = isTab("consumption-analysis");
-  const showDebugJson = showRawJson && isTab("admin");
+  const shouldAutoLoadAccountSelectCatalog =
+    isAdminTab || isManualEntryTab || isReturnAnalysisTab || isConsumptionAnalysisTab;
+  const accountSelectOptions = buildAccountSelectOptionsFromCatalog(accountSelectCatalogResult);
+  const accountSelectOptionsLoading = accountSelectCatalogBusy && accountSelectOptions.length === 0;
+  const showQueryWorkbench = isManualEntryTab || isConsumptionAnalysisTab || isAdminVisibleWorkbench;
+  const showDebugJson = showRawJson && isAdminDeveloperMode;
   const queryWorkbenchHeader = isManualEntryTab
     ? {
         title: "手动录入",
-        description: "集中处理账户目录、投资记录与资产估值的手工录入/修改/删除，形成桌面端数据修正闭环。",
+        description: "集中处理投资记录与资产估值的手工录入/修改/删除，形成桌面端数据修正闭环。",
       }
     : isConsumptionAnalysisTab
       ? {
@@ -5745,28 +6908,304 @@ function App() {
           description: "聚焦消费交易查询与分析剔除操作，便于校正统计口径并快速回看交易明细。",
         }
       : {
-          title: "基础查询",
-          description: "查看账户元数据、投资记录与资产估值等基础数据，为收益分析和财富总览提供核查入口。",
+          title: "数据查询与维护",
+          description: "高级管理中的底层数据核查入口：账户元数据查询、投资记录查询、资产估值查询。",
         };
   const queryWorkbenchModules = isManualEntryTab
-    ? ["账户目录维护", "投资记录维护", "资产估值维护"]
+    ? ["投资记录维护", "资产估值维护"]
     : isConsumptionAnalysisTab
       ? ["交易查询", "分析剔除", "消费总览联动"]
-      : ["账户元数据", "投资记录查询", "资产估值查询"];
+      : ["账户元数据查询", "投资记录查询", "资产估值查询"];
   const queryWorkbenchFlow = isManualEntryTab
-    ? ["先查询账户目录确认 account_id", "执行写入/修改/删除", "回到基础查询或收益分析验证结果"]
+    ? ["如需新增/维护账户目录，请切换到高级管理（开发者模式）", "执行写入/修改/删除", "回到收益分析或财富总览验证结果"]
     : isConsumptionAnalysisTab
       ? ["先刷新消费总览", "在交易查询中定位交易", "执行剔除/恢复并回看总览变化"]
-      : ["先查账户元数据确认范围", "再查投资/资产明细", "必要时切换到手动录入进行纠错"];
+      : ["先刷新管理员数据库健康", "执行基础查询定位数据问题", "必要时切换到手动录入或业务 TAB 复查结果"];
   const queryWorkbenchGridModeClass = isManualEntryTab
     ? "mode-manual"
     : isConsumptionAnalysisTab
       ? "mode-consumption"
       : "mode-base";
 
+  useDebouncedAutoRun(
+    handleRefreshAccountSelectCatalog,
+    [activeTab],
+    { enabled: shouldAutoLoadAccountSelectCatalog, delayMs: 220 },
+  );
+  useDebouncedAutoRun(
+    handleAccountCatalogQuery,
+    [acctCatalogQuery.kind ?? "all", acctCatalogQuery.keyword ?? "", acctCatalogQuery.limit ?? 200],
+    { enabled: isAdminTab, delayMs: 220 },
+  );
+  useDebouncedAutoRun(handleMetaAccountsQuery, [metaAccountsQuery.kind ?? "all"], { enabled: isAdminTab, delayMs: 220 });
+  useDebouncedAutoRun(
+    handleInvestmentsListQuery,
+    [
+      invListQuery.limit ?? 100,
+      invListQuery.from ?? "",
+      invListQuery.to ?? "",
+      invListQuery.source_type ?? "",
+      invListQuery.account_id ?? "",
+    ],
+    { enabled: isAdminTab, delayMs: 220 },
+  );
+  useDebouncedAutoRun(
+    handleAssetValuationsQuery,
+    [
+      assetListQuery.limit ?? 100,
+      assetListQuery.from ?? "",
+      assetListQuery.to ?? "",
+      assetListQuery.asset_class ?? "",
+      assetListQuery.account_id ?? "",
+    ],
+    { enabled: isAdminTab, delayMs: 220 },
+  );
+  useDebouncedAutoRun(
+    handleTransactionsQuery,
+    [
+      txListQuery.limit ?? 100,
+      txListQuery.sort ?? "date_desc",
+      txListQuery.month_key ?? "",
+      txListQuery.keyword ?? "",
+      txListQuery.source_type ?? "",
+      txListQuery.account_id ?? "",
+    ],
+    { enabled: isConsumptionAnalysisTab, delayMs: 260 },
+  );
+  useDebouncedAutoRun(handleConsumptionOverviewQuery, [], { enabled: isConsumptionAnalysisTab, delayMs: 220 });
+  useDebouncedAutoRun(
+    handleInvestmentReturnQuery,
+    [invQuery.account_id, invQuery.preset, invQuery.from, invQuery.to],
+    { enabled: isReturnAnalysisTab, delayMs: 260 },
+  );
+  useDebouncedAutoRun(
+    handleInvestmentCurveQuery,
+    [invCurveQuery.account_id, invCurveQuery.preset, invCurveQuery.from, invCurveQuery.to],
+    { enabled: isReturnAnalysisTab, delayMs: 260 },
+  );
+  useDebouncedAutoRun(
+    handleInvestmentReturnsQuery,
+    [invBatchQuery.preset ?? "ytd", invBatchQuery.from ?? "", invBatchQuery.to ?? ""],
+    { enabled: isReturnAnalysisTab, delayMs: 260 },
+  );
+  useDebouncedAutoRun(
+    handleWealthOverviewQuery,
+    [
+      wealthOverviewQuery.include_investment ?? "true",
+      wealthOverviewQuery.include_cash ?? "true",
+      wealthOverviewQuery.include_real_estate ?? "true",
+      wealthOverviewQuery.include_liability ?? "true",
+    ],
+    { enabled: isWealthOverviewTab, delayMs: 260 },
+  );
+  useDebouncedAutoRun(
+    handleWealthCurveQuery,
+    [
+      wealthCurveQuery.preset ?? "ytd",
+      wealthCurveQuery.from ?? "",
+      wealthCurveQuery.to ?? "",
+      wealthCurveQuery.include_investment ?? "true",
+      wealthCurveQuery.include_cash ?? "true",
+      wealthCurveQuery.include_real_estate ?? "true",
+      wealthCurveQuery.include_liability ?? "true",
+    ],
+    { enabled: isWealthOverviewTab, delayMs: 260 },
+  );
+  useDebouncedAutoRun(handleMonthlyBudgetItemsQuery, [], { enabled: isBudgetFireTab, delayMs: 220 });
+  useDebouncedAutoRun(handleBudgetOverviewQuery, [budgetOverviewQuery.year ?? ""], { enabled: isBudgetFireTab, delayMs: 260 });
+  useDebouncedAutoRun(handleBudgetMonthlyReviewQuery, [budgetReviewQuery.year ?? ""], { enabled: isBudgetFireTab, delayMs: 260 });
+  useDebouncedAutoRun(
+    handleFireProgressQuery,
+    [fireProgressQuery.withdrawal_rate ?? ""],
+    { enabled: isBudgetFireTab, delayMs: 260 },
+  );
+  useDebouncedAutoRun(handleSalaryIncomeOverviewQuery, [salaryIncomeQuery.year ?? ""], { enabled: isIncomeAnalysisTab, delayMs: 260 });
+
+  const accountCatalogAdminPanel = isTab("admin") ? (
+    <section className="card panel">
+      <div className="panel-header">
+        <h2>账户目录维护</h2>
+        <p>独立账户目录管理模块：默认展示列表，支持筛选、行内删除和新建账户（自动生成账户 ID）。</p>
+      </div>
+
+      <div className="query-form-grid query-form-grid-compact" onKeyDown={makeEnterToQueryHandler(handleAccountCatalogQuery)}>
+        <label className="field">
+          <span>查询种类</span>
+          <select
+            value={acctCatalogQuery.kind ?? "all"}
+            onChange={(e) =>
+              setAcctCatalogQuery((s) => ({
+                ...s,
+                kind: e.target.value as QueryAccountCatalogRequest["kind"],
+              }))
+            }
+          >
+            <option value="all">all</option>
+            <option value="investment">investment</option>
+            <option value="cash">cash</option>
+            <option value="real_estate">real_estate</option>
+            <option value="bank">bank</option>
+            <option value="credit_card">credit_card</option>
+            <option value="wallet">wallet</option>
+            <option value="liability">liability</option>
+            <option value="other">other</option>
+          </select>
+        </label>
+        <label className="field">
+          <span>查询关键词</span>
+          <input
+            value={`${acctCatalogQuery.keyword ?? ""}`}
+            onChange={(e) => setAcctCatalogQuery((s) => ({ ...s, keyword: e.target.value }))}
+            placeholder="账户 ID / 名称 / 种类"
+          />
+        </label>
+        <label className="field">
+          <span>查询数量</span>
+          <input
+            type="number"
+            min={1}
+            max={1000}
+            value={safeNumericInputValue(acctCatalogQuery.limit, 200)}
+            onChange={(e) =>
+              setAcctCatalogQuery((s) => ({
+                ...s,
+                limit: parseNumericInputWithFallback(e.target.value || "200", 200),
+              }))
+            }
+          />
+        </label>
+      </div>
+
+      <div className="db-actions">
+        <button type="button" className="secondary-btn" onClick={openAccountCatalogCreateModal} disabled={acctCatalogUpsertBusy}>
+          新建账户
+        </button>
+      </div>
+      <AutoRefreshHint busy={acctCatalogBusy}>首次进入高级管理会自动加载；修改筛选条件后将自动刷新账户目录列表。</AutoRefreshHint>
+
+      {acctCatalogError ? (
+        <div className="inline-error" role="alert">
+          {acctCatalogError}
+        </div>
+      ) : null}
+      {acctCatalogDeleteError ? (
+        <div className="inline-error" role="alert">
+          {acctCatalogDeleteError}
+        </div>
+      ) : null}
+
+      {acctCatalogUpsertResult && showDebugJson ? (
+        <JsonResultCard title="账户目录写入结果" data={acctCatalogUpsertResult} emptyText="暂无写入结果。" />
+      ) : null}
+      {acctCatalogDeleteResult && showDebugJson ? (
+        <JsonResultCard title="账户目录删除结果" data={acctCatalogDeleteResult} emptyText="暂无删除结果。" />
+      ) : null}
+
+      <AccountCatalogPreview
+        data={acctCatalogResult}
+        deleteBusy={acctCatalogDeleteBusy}
+        deletingAccountId={acctCatalogDeletingRowId}
+        onDeleteRow={(accountId, accountName) => {
+          const ok = window.confirm(`确认删除账户「${accountName}」？\n${accountId}\n\n若存在交易/投资/资产引用，系统会阻止删除。`);
+          if (!ok) return;
+          void handleAccountCatalogDelete(accountId);
+        }}
+      />
+      {showDebugJson ? (
+        <JsonResultCard title="账户目录 JSON" data={acctCatalogResult} emptyText="暂无结果。请先查询账户目录。" />
+      ) : null}
+
+      {acctCatalogCreateOpen ? (
+        <div className="kw-modal-overlay" role="presentation" onClick={closeAccountCatalogCreateModal}>
+          <div
+            className="kw-modal-card"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="acct-catalog-create-modal-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="kw-modal-head">
+              <div>
+                <p className="eyebrow">账户目录维护</p>
+                <h3 id="acct-catalog-create-modal-title">新建账户</h3>
+              </div>
+              <button type="button" className="secondary-btn table-inline-btn" onClick={closeAccountCatalogCreateModal} disabled={acctCatalogUpsertBusy}>
+                关闭
+              </button>
+            </div>
+
+            <div className="query-form-grid query-form-grid-compact">
+              <label className="field">
+                <span>账户名称</span>
+                <input
+                  autoFocus
+                  value={`${acctCatalogUpsertForm.account_name ?? ""}`}
+                  onChange={(e) =>
+                    setAcctCatalogUpsertForm((s) => ({
+                      ...s,
+                      account_id: "",
+                      account_name: e.target.value,
+                    }))
+                  }
+                  placeholder="账户名称"
+                />
+              </label>
+              <label className="field">
+                <span>账户种类</span>
+                <select
+                  value={acctCatalogUpsertForm.account_kind ?? "cash"}
+                  onChange={(e) =>
+                    setAcctCatalogUpsertForm((s) => ({
+                      ...s,
+                      account_id: "",
+                      account_kind: e.target.value as UpsertAccountCatalogEntryRequest["account_kind"],
+                    }))
+                  }
+                >
+                  <option value="investment">investment</option>
+                  <option value="cash">cash</option>
+                  <option value="real_estate">real_estate</option>
+                  <option value="bank">bank</option>
+                  <option value="credit_card">credit_card</option>
+                  <option value="wallet">wallet</option>
+                  <option value="liability">liability</option>
+                  <option value="other">other</option>
+                </select>
+              </label>
+            </div>
+
+            <p className="inline-hint">保存后将自动生成账户 ID，并刷新账户目录与账户元数据查询。</p>
+
+            {acctCatalogUpsertError ? (
+              <div className="inline-error" role="alert">
+                {acctCatalogUpsertError}
+              </div>
+            ) : null}
+
+            <div className="db-actions">
+              <button
+                type="button"
+                className="primary-btn"
+                onClick={() => void handleAccountCatalogUpsert()}
+                disabled={acctCatalogUpsertBusy || !`${acctCatalogUpsertForm.account_name ?? ""}`.trim()}
+              >
+                {acctCatalogUpsertBusy ? "保存中..." : "保存新账户"}
+              </button>
+              <button type="button" className="secondary-btn" onClick={closeAccountCatalogCreateModal} disabled={acctCatalogUpsertBusy}>
+                取消
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </section>
+  ) : null;
+
   return (
     <main className="app-shell">
-      <div className={`workspace-layout ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
+      <div
+        className={`workspace-layout ${sidebarCollapsed ? "sidebar-collapsed" : ""} ${appSettings.uiMotionEnabled ? "" : "motion-disabled"}`}
+      >
         <aside className={`card workspace-sidebar ${sidebarCollapsed ? "collapsed" : ""}`} aria-label="功能导航">
           <div className="workspace-sidebar-head">
             <div className="workspace-brand">
@@ -5807,7 +7246,179 @@ function App() {
               </button>
             ))}
           </nav>
+          <div className="workspace-sidebar-footer">
+            <button
+              type="button"
+              className="sidebar-tool-btn"
+              onClick={() => setSettingsOpen(true)}
+              title="打开设置"
+              aria-label="打开设置"
+            >
+              <span className="sidebar-tool-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="3.1" />
+                  <circle cx="12" cy="12" r="7.1" />
+                  <path d="M12 2.9v2.2" />
+                  <path d="M12 18.9v2.2" />
+                  <path d="M21.1 12h-2.2" />
+                  <path d="M5.1 12H2.9" />
+                  <path d="M18.4 5.6 16.8 7.2" />
+                  <path d="M7.2 16.8 5.6 18.4" />
+                  <path d="M18.4 18.4 16.8 16.8" />
+                  <path d="M7.2 7.2 5.6 5.6" />
+                </svg>
+              </span>
+            </button>
+            <button
+              type="button"
+              className={`sidebar-tool-btn sidebar-privacy-btn ${amountPrivacyMasked ? "active" : ""}`}
+              onClick={() => setAmountPrivacyMasked((v) => !v)}
+              title={amountPrivacyMasked ? "关闭隐私显示（显示实际金额）" : "开启隐私显示（隐藏实际金额）"}
+              aria-label={amountPrivacyMasked ? "关闭隐私显示" : "开启隐私显示"}
+              aria-pressed={amountPrivacyMasked}
+            >
+              <span className="sidebar-privacy-icon" aria-hidden="true">
+                {amountPrivacyMasked ? (
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M3 3l18 18" />
+                    <path d="M10.58 10.58a2 2 0 102.83 2.83" />
+                    <path d="M9.36 5.37A10.9 10.9 0 0112 5c5.05 0 8.73 3.11 10 7-0.47 1.43-1.39 2.79-2.72 3.95" />
+                    <path d="M6.23 6.23C4.85 7.35 3.86 8.74 3 12c1.27 3.89 4.95 7 10 7 1.06 0 2.07-.14 3.01-.4" />
+                  </svg>
+                ) : (
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M2.5 12s3.5-7 9.5-7 9.5 7 9.5 7-3.5 7-9.5 7-9.5-7-9.5-7z" />
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                )}
+              </span>
+            </button>
+          </div>
         </aside>
+
+        {settingsOpen ? (
+          <div className="kw-modal-overlay" role="presentation" onClick={() => setSettingsOpen(false)}>
+            <div
+              className="kw-modal-card settings-modal-card"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="app-settings-modal-title"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="kw-modal-head">
+                <div>
+                  <p className="eyebrow">应用设置</p>
+                  <h3 id="app-settings-modal-title">设置</h3>
+                </div>
+                <button type="button" className="secondary-btn table-inline-btn" onClick={() => setSettingsOpen(false)}>
+                  关闭
+                </button>
+              </div>
+
+              <div className="settings-group">
+                <div className="settings-shell">
+                  <aside className="settings-nav" aria-label="设置分类">
+                    <button type="button" className="settings-nav-item active">
+                      <span className="settings-nav-item-title">显示</span>
+                      <span className="settings-nav-item-subtitle">颜色与展示风格</span>
+                    </button>
+                  </aside>
+
+                  <div className="settings-content">
+                    <div className="settings-group-head">
+                      <h4>显示</h4>
+                      <p>用于调整指标与金额展示方式。</p>
+                    </div>
+
+                    <div className="settings-item-card">
+                      <div className="settings-item-card-head">
+                        <h5>指标正负着色</h5>
+                        <p>控制收益率、变化率、偏差、差额等按正负显示颜色的方向。</p>
+                      </div>
+                      <div className="settings-item-grid">
+                        <label className="field">
+                          <span>着色方案</span>
+                          <select
+                            value={appSettings.gainLossColorScheme}
+                            onChange={(e) =>
+                              setAppSettings((prev) => ({
+                                ...prev,
+                                gainLossColorScheme: e.target.value as GainLossColorScheme,
+                              }))
+                            }
+                          >
+                            <option value="cn_red_up_green_down">红正绿负（中国地区习惯）</option>
+                            <option value="intl_green_up_red_down">绿正红负（国际常见习惯）</option>
+                          </select>
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="settings-item-card">
+                      <div className="settings-item-card-head">
+                        <h5>默认隐私模式</h5>
+                        <p>控制应用启动时金额是否默认隐藏（显示为 `****`）。</p>
+                      </div>
+                      <div className="settings-item-grid">
+                        <div className="settings-segmented" role="group" aria-label="默认隐私模式">
+                          <button
+                            type="button"
+                            className={`settings-segmented-btn ${appSettings.defaultPrivacyMaskOnLaunch ? "active" : ""}`}
+                            onClick={() =>
+                              setAppSettings((prev) => ({ ...prev, defaultPrivacyMaskOnLaunch: true }))
+                            }
+                          >
+                            默认隐藏金额
+                          </button>
+                          <button
+                            type="button"
+                            className={`settings-segmented-btn ${!appSettings.defaultPrivacyMaskOnLaunch ? "active" : ""}`}
+                            onClick={() =>
+                              setAppSettings((prev) => ({ ...prev, defaultPrivacyMaskOnLaunch: false }))
+                            }
+                          >
+                            默认显示金额
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="settings-item-card">
+                      <div className="settings-item-card-head">
+                        <h5>界面动画与过渡</h5>
+                        <p>控制界面按钮、侧栏、卡片等视觉过渡效果。默认开启。</p>
+                      </div>
+                      <div className="settings-item-grid">
+                        <div className="settings-segmented" role="group" aria-label="界面动画与过渡">
+                          <button
+                            type="button"
+                            className={`settings-segmented-btn ${appSettings.uiMotionEnabled ? "active" : ""}`}
+                            onClick={() =>
+                              setAppSettings((prev) => ({ ...prev, uiMotionEnabled: true }))
+                            }
+                          >
+                            开启
+                          </button>
+                          <button
+                            type="button"
+                            className={`settings-segmented-btn ${!appSettings.uiMotionEnabled ? "active" : ""}`}
+                            onClick={() =>
+                              setAppSettings((prev) => ({ ...prev, uiMotionEnabled: false }))
+                            }
+                          >
+                            关闭
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <p className="inline-hint">设置会自动保存到本地设备，并在下次打开应用时继续生效。</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         <div className="workspace-content">
           <section className="card workspace-tab-header">
@@ -5817,10 +7428,29 @@ function App() {
               <p className="workspace-tab-copy">{activeTabMeta.subtitle}</p>
             </div>
             <div className="workspace-tab-actions">
-              {isTab("admin") ? (
-                <button type="button" className="secondary-btn" onClick={() => setShowRawJson((v) => !v)}>
-                  {showRawJson ? "隐藏原始 JSON" : "显示原始 JSON"}
-                </button>
+              {isAdminTab ? (
+                <>
+                  <button
+                    type="button"
+                    className="secondary-btn"
+                    onClick={() => {
+                      if (developerMode) {
+                        setShowRawJson(false);
+                      }
+                      setDeveloperMode((v) => !v);
+                    }}
+                  >
+                    {developerMode ? "关闭开发者模式" : "打开开发者模式"}
+                  </button>
+                  {developerMode ? (
+                    <button type="button" className="secondary-btn" onClick={() => setShowRawJson((v) => !v)}>
+                      {showRawJson ? "隐藏原始 JSON" : "显示原始 JSON"}
+                    </button>
+                  ) : null}
+                  <div className={`status-pill status-${developerMode ? "loading" : "idle"}`}>
+                    开发者模式 {developerMode ? "ON" : "OFF"}
+                  </div>
+                </>
               ) : null}
               <div className={`status-pill status-${status}`}>桌面 {status.toUpperCase()}</div>
             </div>
@@ -5833,11 +7463,7 @@ function App() {
                 <p>基于账本交易数据直接渲染消费分析（分类分布、月度趋势、商户分布），不再嵌入独立 HTML 报告。</p>
               </div>
 
-              <div className="db-actions">
-                <button type="button" className="primary-btn" onClick={() => void handleConsumptionOverviewQuery()} disabled={consumptionOverviewBusy}>
-                  {consumptionOverviewBusy ? "执行中..." : "刷新消费总览"}
-                </button>
-              </div>
+              <AutoRefreshHint busy={consumptionOverviewBusy}>消费总览已启用自动刷新：进入本 TAB 会自动加载；导入/剔除后也会自动更新。</AutoRefreshHint>
 
               {consumptionOverviewError ? (
                 <div className="inline-error" role="alert">
@@ -5856,7 +7482,7 @@ function App() {
             </section>
           ) : null}
 
-          {isTab("manual-entry", "base-query", "consumption-analysis") ? (
+          {showQueryWorkbench ? (
             <section className="card panel workbench-intro-panel">
               <div className="panel-header">
                 <h2>{queryWorkbenchHeader.title} 导览</h2>
@@ -5878,91 +7504,26 @@ function App() {
           {isTab("budget-fire") ? (
             <section className="card panel">
               <div className="panel-header">
-                <h2>预算项管理</h2>
-                <p>月预算条目 CRUD（与 Web 版 `monthly_budget_items` 口径一致）。修改后可直接重跑预算概览 / 月度复盘 / FIRE 进度。</p>
+                <h2>FIRE 进度</h2>
+                <p>基于最新资产快照与年预算，计算覆盖年数、自由度与目标差额。</p>
               </div>
-
-              <div className="query-form-grid query-form-grid-compact">
+              <div className="query-form-grid query-form-grid-compact" onKeyDown={makeEnterToQueryHandler(handleFireProgressQuery)}>
                 <label className="field">
-                  <span>预算项 ID（编辑时填写）</span>
-                  <input
-                    value={`${budgetItemForm.id ?? ""}`}
-                    onChange={(e) => setBudgetItemForm((s) => ({ ...s, id: e.target.value }))}
-                    placeholder="留空表示新建"
-                  />
-                </label>
-                <label className="field">
-                  <span>预算项名称</span>
-                  <input
-                    value={`${budgetItemForm.name ?? ""}`}
-                    onChange={(e) => setBudgetItemForm((s) => ({ ...s, name: e.target.value }))}
-                    placeholder="如：日常开销"
-                  />
-                </label>
-                <label className="field">
-                  <span>月预算金额（元）</span>
-                  <input
-                    value={`${budgetItemForm.monthly_amount ?? ""}`}
-                    onChange={(e) => setBudgetItemForm((s) => ({ ...s, monthly_amount: e.target.value }))}
-                    placeholder="3000.00"
-                  />
-                </label>
-                <label className="field">
-                  <span>排序</span>
-                  <input
-                    value={`${budgetItemForm.sort_order ?? ""}`}
-                    onChange={(e) => setBudgetItemForm((s) => ({ ...s, sort_order: e.target.value }))}
-                    placeholder="1000"
-                  />
-                </label>
-                <BoolField
-                  label="是否启用"
-                  value={budgetItemForm.is_active ?? "true"}
-                  onChange={(value) => setBudgetItemForm((s) => ({ ...s, is_active: value }))}
-                />
-              </div>
-
-              <div className="db-actions">
-                <button type="button" className="primary-btn" onClick={() => void handleMonthlyBudgetItemsQuery()} disabled={budgetItemsBusy}>
-                  {budgetItemsBusy ? "执行中..." : "刷新预算项"}
-                </button>
-                <button type="button" className="secondary-btn" onClick={() => void handleUpsertMonthlyBudgetItem()} disabled={budgetItemUpsertBusy}>
-                  {budgetItemUpsertBusy ? "执行中..." : "写入预算项"}
-                </button>
-              </div>
-
-              {budgetItemsError ? <div className="inline-error" role="alert">{budgetItemsError}</div> : null}
-              {budgetItemUpsertError ? <div className="inline-error" role="alert">{budgetItemUpsertError}</div> : null}
-
-              <div className="query-form-grid query-form-grid-compact">
-                <label className="field">
-                  <span>删除预算项 ID</span>
-                  <input
-                    value={`${budgetItemDeleteForm.id ?? ""}`}
-                    onChange={(e) => setBudgetItemDeleteForm({ id: e.target.value })}
-                    placeholder="budget_item_xxx 或 uuid"
-                  />
+                  <span>提取率（0~1）</span>
+                  <select
+                    value={`${fireProgressQuery.withdrawal_rate ?? ""}`}
+                    onChange={(e) => setFireProgressQuery((s) => ({ ...s, withdrawal_rate: e.target.value }))}
+                  >
+                    <option value="0.03">3%</option>
+                    <option value="0.04">4%</option>
+                    <option value="0.05">5%</option>
+                  </select>
                 </label>
               </div>
-              <div className="db-actions">
-                <button
-                  type="button"
-                  className="secondary-btn"
-                  onClick={() => void handleDeleteMonthlyBudgetItem()}
-                  disabled={budgetItemDeleteBusy || !`${budgetItemDeleteForm.id ?? ""}`.trim()}
-                >
-                  {budgetItemDeleteBusy ? "执行中..." : "删除预算项"}
-                </button>
-              </div>
-              {budgetItemDeleteError ? <div className="inline-error" role="alert">{budgetItemDeleteError}</div> : null}
-
-              {budgetItemUpsertResult ? <JsonResultCard title="预算项写入结果" data={budgetItemUpsertResult} emptyText="暂无结果。" /> : null}
-              {budgetItemDeleteResult ? <JsonResultCard title="预算项删除结果" data={budgetItemDeleteResult} emptyText="暂无结果。" /> : null}
-
-              <BudgetItemsPreview data={budgetItemsResult} />
-              {showRawJson ? (
-                <JsonResultCard title="预算项列表 JSON" data={budgetItemsResult} emptyText="暂无预算项结果。" />
-              ) : null}
+              <AutoRefreshHint busy={fireProgressBusy}>进入本 TAB 或调整参数后将自动刷新结果。</AutoRefreshHint>
+              {fireProgressError ? <div className="inline-error" role="alert">{fireProgressError}</div> : null}
+              <FireProgressPreview data={fireProgressResult} />
+              {showRawJson ? <JsonResultCard title="FIRE 进度 JSON" data={fireProgressResult} emptyText="暂无 FIRE 进度结果。" /> : null}
             </section>
           ) : null}
 
@@ -5984,11 +7545,7 @@ function App() {
                 </label>
               </div>
 
-              <div className="db-actions">
-                <button type="button" className="primary-btn" onClick={() => void handleSalaryIncomeOverviewQuery()} disabled={salaryIncomeBusy}>
-                  {salaryIncomeBusy ? "执行中..." : "查询工资收入概览"}
-                </button>
-              </div>
+              <AutoRefreshHint busy={salaryIncomeBusy}>工资收入概览已启用自动刷新：进入本 TAB 或修改年份后会自动更新。</AutoRefreshHint>
 
               {salaryIncomeError ? <div className="inline-error" role="alert">{salaryIncomeError}</div> : null}
               <SalaryIncomeOverviewPreview data={salaryIncomeResult} />
@@ -6001,93 +7558,160 @@ function App() {
           {isTab("budget-fire") ? (
             <section className="card panel">
               <div className="panel-header">
-                <h2>预算概览</h2>
-                <p>按年查看预算、实际支出、年剩余与 YTD 偏差。</p>
+                <h2>预算概览与复盘</h2>
+                <p>按年份查看预算执行情况与月度复盘明细，用于跟踪全年预算节奏。</p>
               </div>
-              <div className="query-form-grid query-form-grid-compact">
+
+              <div
+                className="query-form-grid query-form-grid-compact"
+                onKeyDown={makeEnterToQueryHandler(async () => {
+                  await Promise.all([handleBudgetOverviewQuery(), handleBudgetMonthlyReviewQuery()]);
+                })}
+              >
                 <label className="field">
                   <span>年份</span>
-                  <input
-                    value={`${budgetOverviewQuery.year ?? ""}`}
-                    onChange={(e) => setBudgetOverviewQuery((s) => ({ ...s, year: e.target.value }))}
-                    placeholder="2026"
-                  />
+                  <select
+                    value={`${budgetOverviewQuery.year ?? budgetReviewQuery.year ?? currentYearText}`}
+                    onChange={(e) => {
+                      const nextYear = e.target.value;
+                      setBudgetOverviewQuery((s) => ({ ...s, year: nextYear }));
+                      setBudgetReviewQuery((s) => ({ ...s, year: nextYear }));
+                    }}
+                  >
+                    {budgetYearOptions.map((year) => (
+                      <option key={year} value={year}>
+                        {year}年
+                      </option>
+                    ))}
+                  </select>
                 </label>
               </div>
-              <div className="db-actions">
-                <button type="button" className="primary-btn" onClick={() => void handleBudgetOverviewQuery()} disabled={budgetOverviewBusy}>
-                  {budgetOverviewBusy ? "执行中..." : "查询预算概览"}
-                </button>
-              </div>
+
+              <AutoRefreshHint busy={budgetOverviewBusy || budgetReviewBusy}>进入本 TAB 或调整年份后将自动刷新结果。</AutoRefreshHint>
               {budgetOverviewError ? <div className="inline-error" role="alert">{budgetOverviewError}</div> : null}
-              <BudgetOverviewPreview data={budgetOverviewResult} />
-              {showRawJson ? <JsonResultCard title="预算概览 JSON" data={budgetOverviewResult} emptyText="暂无预算概览结果。" /> : null}
-            </section>
-          ) : null}
-
-          {isTab("budget-fire") ? (
-            <section className="card panel">
-              <div className="panel-header">
-                <h2>预算月度复盘</h2>
-                <p>按月份查看预算/支出/偏差/状态（超预算、低于预算、持平）。</p>
-              </div>
-              <div className="query-form-grid query-form-grid-compact">
-                <label className="field">
-                  <span>年份</span>
-                  <input
-                    value={`${budgetReviewQuery.year ?? ""}`}
-                    onChange={(e) => setBudgetReviewQuery((s) => ({ ...s, year: e.target.value }))}
-                    placeholder="2026"
-                  />
-                </label>
-              </div>
-              <div className="db-actions">
-                <button type="button" className="primary-btn" onClick={() => void handleBudgetMonthlyReviewQuery()} disabled={budgetReviewBusy}>
-                  {budgetReviewBusy ? "执行中..." : "查询预算月度复盘"}
-                </button>
-              </div>
               {budgetReviewError ? <div className="inline-error" role="alert">{budgetReviewError}</div> : null}
+              <BudgetOverviewPreview data={budgetOverviewResult} />
               <BudgetMonthlyReviewPreview data={budgetReviewResult} />
-              {showRawJson ? <JsonResultCard title="预算月度复盘 JSON" data={budgetReviewResult} emptyText="暂无预算月度复盘结果。" /> : null}
+              {showRawJson ? (
+                <div className="stack">
+                  <JsonResultCard title="预算概览 JSON" data={budgetOverviewResult} emptyText="暂无预算概览结果。" />
+                  <JsonResultCard title="预算月度复盘 JSON" data={budgetReviewResult} emptyText="暂无预算月度复盘结果。" />
+                </div>
+              ) : null}
             </section>
           ) : null}
 
           {isTab("budget-fire") ? (
             <section className="card panel">
               <div className="panel-header">
-                <h2>FIRE 进度</h2>
-                <p>基于年预算与可投资产（投资 + 现金）计算覆盖年数、自由度与目标差额。</p>
-              </div>
-              <div className="query-form-grid query-form-grid-compact">
-                <label className="field">
-                  <span>年份</span>
-                  <input
-                    value={`${fireProgressQuery.year ?? ""}`}
-                    onChange={(e) => setFireProgressQuery((s) => ({ ...s, year: e.target.value }))}
-                    placeholder="2026"
-                  />
-                </label>
-                <label className="field">
-                  <span>提取率（0~1）</span>
-                  <input
-                    value={`${fireProgressQuery.withdrawal_rate ?? ""}`}
-                    onChange={(e) => setFireProgressQuery((s) => ({ ...s, withdrawal_rate: e.target.value }))}
-                    placeholder="0.04"
-                  />
-                </label>
+                <h2>预算项管理</h2>
+                <p>默认展示预算项列表；支持行内删除与新建预算项。变更后会自动刷新预算概览、月度复盘与 FIRE 进度。</p>
               </div>
               <div className="db-actions">
-                <button type="button" className="primary-btn" onClick={() => void handleFireProgressQuery()} disabled={fireProgressBusy}>
-                  {fireProgressBusy ? "执行中..." : "查询 FIRE 进度"}
+                <button type="button" className="secondary-btn" onClick={openBudgetItemCreateModal} disabled={budgetItemUpsertBusy}>
+                  新建预算项
                 </button>
               </div>
-              {fireProgressError ? <div className="inline-error" role="alert">{fireProgressError}</div> : null}
-              <FireProgressPreview data={fireProgressResult} />
-              {showRawJson ? <JsonResultCard title="FIRE 进度 JSON" data={fireProgressResult} emptyText="暂无 FIRE 进度结果。" /> : null}
+              <AutoRefreshHint busy={budgetItemsBusy}>进入本 TAB 会自动加载预算项；新增或删除后将自动刷新列表与相关分析结果。</AutoRefreshHint>
+
+              {budgetItemsError ? <div className="inline-error" role="alert">{budgetItemsError}</div> : null}
+              {budgetItemDeleteError ? <div className="inline-error" role="alert">{budgetItemDeleteError}</div> : null}
+              {budgetItemUpsertError && !budgetItemCreateOpen ? <div className="inline-error" role="alert">{budgetItemUpsertError}</div> : null}
+
+              {budgetItemUpsertResult && showDebugJson ? <JsonResultCard title="预算项写入结果" data={budgetItemUpsertResult} emptyText="暂无结果。" /> : null}
+              {budgetItemDeleteResult && showDebugJson ? <JsonResultCard title="预算项删除结果" data={budgetItemDeleteResult} emptyText="暂无结果。" /> : null}
+
+              <BudgetItemsPreview
+                data={budgetItemsResult}
+                deleteBusy={budgetItemDeleteBusy}
+                deletingItemId={budgetItemDeletingRowId}
+                onDeleteRow={(id, name) => {
+                  const ok = window.confirm(`确认删除预算项「${name}」？\n${id}`);
+                  if (!ok) return;
+                  void handleDeleteMonthlyBudgetItem(id);
+                }}
+              />
+              {showRawJson ? (
+                <JsonResultCard title="预算项列表 JSON" data={budgetItemsResult} emptyText="暂无预算项结果。" />
+              ) : null}
+
+              {budgetItemCreateOpen ? (
+                <div className="kw-modal-overlay" role="presentation" onClick={closeBudgetItemCreateModal}>
+                  <div
+                    className="kw-modal-card"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="budget-item-create-modal-title"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="kw-modal-head">
+                      <div>
+                        <p className="eyebrow">预算项管理</p>
+                        <h3 id="budget-item-create-modal-title">新建预算项</h3>
+                      </div>
+                      <button type="button" className="secondary-btn table-inline-btn" onClick={closeBudgetItemCreateModal} disabled={budgetItemUpsertBusy}>
+                        关闭
+                      </button>
+                    </div>
+
+                    <div className="query-form-grid query-form-grid-compact">
+                      <label className="field">
+                        <span>预算项名称</span>
+                        <input
+                          autoFocus
+                          value={`${budgetItemForm.name ?? ""}`}
+                          onChange={(e) => setBudgetItemForm((s) => ({ ...s, id: "", name: e.target.value }))}
+                          placeholder="如：日常开销"
+                        />
+                      </label>
+                      <label className="field">
+                        <span>月预算金额（元）</span>
+                        <input
+                          value={`${budgetItemForm.monthly_amount ?? ""}`}
+                          onChange={(e) => setBudgetItemForm((s) => ({ ...s, monthly_amount: e.target.value }))}
+                          placeholder="3000.00"
+                        />
+                      </label>
+                      <label className="field">
+                        <span>排序</span>
+                        <input
+                          value={`${budgetItemForm.sort_order ?? ""}`}
+                          onChange={(e) => setBudgetItemForm((s) => ({ ...s, sort_order: e.target.value }))}
+                          placeholder="1000"
+                        />
+                      </label>
+                      <BoolField
+                        label="是否启用"
+                        value={budgetItemForm.is_active ?? "true"}
+                        onChange={(value) => setBudgetItemForm((s) => ({ ...s, is_active: value }))}
+                      />
+                    </div>
+
+                    <p className="inline-hint">新建后将自动刷新预算项列表、预算概览、月度复盘与 FIRE 进度。</p>
+
+                    {budgetItemUpsertError ? <div className="inline-error" role="alert">{budgetItemUpsertError}</div> : null}
+
+                    <div className="db-actions">
+                      <button
+                        type="button"
+                        className="primary-btn"
+                        onClick={() => void handleUpsertMonthlyBudgetItem()}
+                        disabled={
+                          budgetItemUpsertBusy ||
+                          !`${budgetItemForm.name ?? ""}`.trim() ||
+                          !`${budgetItemForm.monthly_amount ?? ""}`.trim()
+                        }
+                      >
+                        {budgetItemUpsertBusy ? "保存中..." : "保存预算项"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
             </section>
           ) : null}
 
-      {isTab("admin") && status === "error" && (
+      {isAdminDeveloperMode && status === "error" && (
         <section className="card alert-card" role="alert">
           <h2>命令探针失败</h2>
           <p>
@@ -6098,7 +7722,7 @@ function App() {
         </section>
       )}
 
-      {isTab("admin") ? <section className="panel-grid">
+      {isAdminDeveloperMode ? <section className="panel-grid">
         <section className="card panel">
           <div className="panel-header">
             <h2>命令探针</h2>
@@ -6164,7 +7788,9 @@ function App() {
         </section>
       </section> : null}
 
-      {isTab("admin") ? <section className="card panel">
+      {accountCatalogAdminPanel}
+
+      {isAdminDeveloperMode ? <section className="card panel">
         <div className="panel-header">
           <h2>桌面账本数据库（SQLite）</h2>
           <p>第一条真实基础能力：在 Tauri desktop 内初始化数据库并执行嵌入迁移脚本。</p>
@@ -6723,7 +8349,10 @@ function App() {
         ) : null}
 
         <AdminDbStatsPreview data={adminDbStatsResult} />
-        <div className="subcard danger-zone">
+        {!developerMode ? (
+          <p className="inline-hint">更多管理员操作（重置、运行库健康检查、验证流程等）已隐藏。打开“开发者模式”后可见。</p>
+        ) : null}
+        {developerMode ? <div className="subcard danger-zone">
           <h3>管理员重置</h3>
           <p className="inline-hint">
             Desktop 侧管理员重置能力（破坏性操作）。需输入确认口令 <code>{readString(adminDbStatsResult, "confirm_phrase") ?? "RESET KEEPWISE"}</code>。
@@ -6786,8 +8415,8 @@ function App() {
               emptyText="暂无全量重置结果。"
             />
           ) : null}
-        </div>
-        {showRawJson ? (
+        </div> : null}
+        {showDebugJson ? (
           <JsonResultCard
             title="管理员数据库统计 JSON"
             data={adminDbStatsResult}
@@ -6796,7 +8425,7 @@ function App() {
         ) : null}
       </section> : null}
 
-      {isTab("admin") ? <section className="card panel">
+      {isAdminDeveloperMode ? <section className="card panel">
         <div className="panel-header">
           <h2>核心分析冒烟验证（桌面）</h2>
           <p>批量执行 4 个核心 Rust 接口，快速确认当前 desktop 本地库是否能稳定返回成功态。</p>
@@ -6873,7 +8502,7 @@ function App() {
         </div>
       </section> : null}
 
-      {isTab("admin") ? <section className="card panel">
+      {isAdminDeveloperMode ? <section className="card panel">
         <div className="panel-header">
           <h2>运行库健康检查</h2>
           <p>非破坏性健康巡检：组合 `db-stats`、基础表探针、财富总览与组合收益曲线检查。</p>
@@ -6909,270 +8538,15 @@ function App() {
         ) : null}
       </section> : null}
 
-      {isTab("return-analysis") ? <section className="card panel">
-        <div className="panel-header">
-          <h2>投资收益率对比</h2>
-          <p>批量账户收益率对比：`investment-returns`（用于账户横向比较与异常账户识别）。</p>
-        </div>
 
-        <div className="query-form-grid">
-          <label className="field">
-            <span>预设区间</span>
-            <select
-              value={`${invBatchQuery.preset ?? "ytd"}`}
-              onChange={(e) => setInvBatchQuery((s) => ({ ...s, preset: e.target.value }))}
-            >
-              <option value="ytd">ytd</option>
-              <option value="1y">1y</option>
-              <option value="3y">3y</option>
-              <option value="since_inception">since_inception</option>
-              <option value="custom">custom</option>
-            </select>
-          </label>
-          <label className="field">
-            <span>开始日期（自定义）</span>
-            <input
-              value={`${invBatchQuery.from ?? ""}`}
-              onChange={(e) => setInvBatchQuery((s) => ({ ...s, from: e.target.value }))}
-              placeholder="YYYY-MM-DD"
-            />
-          </label>
-          <label className="field">
-            <span>结束日期（可选）</span>
-            <input
-              value={`${invBatchQuery.to ?? ""}`}
-              onChange={(e) => setInvBatchQuery((s) => ({ ...s, to: e.target.value }))}
-              placeholder="YYYY-MM-DD"
-            />
-          </label>
-          <label className="field">
-            <span>关键词（可选）</span>
-            <input
-              value={`${invBatchQuery.keyword ?? ""}`}
-              onChange={(e) => setInvBatchQuery((s) => ({ ...s, keyword: e.target.value }))}
-              placeholder="账户 ID / 名称"
-            />
-          </label>
-          <label className="field">
-            <span>数量</span>
-            <input
-              type="number"
-              min={1}
-              max={500}
-              value={safeNumericInputValue(invBatchQuery.limit, 200)}
-              onChange={(e) =>
-                setInvBatchQuery((s) => ({
-                  ...s,
-                  limit: parseNumericInputWithFallback(e.target.value || "200", 200),
-                }))
-              }
-            />
-          </label>
-        </div>
 
-        <div className="db-actions">
-          <button type="button" className="primary-btn" onClick={() => void handleInvestmentReturnsQuery()} disabled={invBatchBusy}>
-            {invBatchBusy ? "执行中..." : "查询账户收益率对比"}
-          </button>
-        </div>
-
-        {invBatchError ? (
-          <div className="inline-error" role="alert">
-            {invBatchError}
-          </div>
-        ) : null}
-
-        <InvestmentReturnsPreview data={invBatchResult} />
-        {showRawJson ? (
-          <JsonResultCard
-            title="投资收益率对比 JSON"
-            data={invBatchResult}
-            emptyText="暂无结果。请先导入桌面数据库后再查询账户收益率对比。"
-          />
-        ) : null}
-      </section> : null}
-
-      {isTab("manual-entry", "consumption-analysis", "base-query") ? <section className="card panel workbench-shell-panel">
+      {showQueryWorkbench ? <section className="card panel workbench-shell-panel">
         <div className="panel-header">
           <h2>{queryWorkbenchHeader.title}</h2>
           <p>按功能分区展示操作面板，优先支持“查询 → 校正 → 复查”的桌面工作流。</p>
         </div>
 
         <div className={`workbench-card-grid ${queryWorkbenchGridModeClass}`}>
-          {isManualEntryTab ? <div className="subcard">
-            <h3>账户目录维护</h3>
-
-            <div className="query-form-grid query-form-grid-compact">
-              <label className="field">
-                <span>查询类型</span>
-                <select
-                  value={acctCatalogQuery.kind ?? "all"}
-                  onChange={(e) =>
-                    setAcctCatalogQuery((s) => ({
-                      ...s,
-                      kind: e.target.value as QueryAccountCatalogRequest["kind"],
-                    }))
-                  }
-                >
-                  <option value="all">all</option>
-                  <option value="investment">investment</option>
-                  <option value="cash">cash</option>
-                  <option value="real_estate">real_estate</option>
-                  <option value="bank">bank</option>
-                  <option value="credit_card">credit_card</option>
-                  <option value="wallet">wallet</option>
-                  <option value="liability">liability</option>
-                  <option value="other">other</option>
-                </select>
-              </label>
-              <label className="field">
-                <span>查询关键词</span>
-                <input
-                  value={`${acctCatalogQuery.keyword ?? ""}`}
-                  onChange={(e) => setAcctCatalogQuery((s) => ({ ...s, keyword: e.target.value }))}
-                  placeholder="账户 ID / 名称 / 类型"
-                />
-              </label>
-              <label className="field">
-                <span>查询数量</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={1000}
-                  value={safeNumericInputValue(acctCatalogQuery.limit, 200)}
-                  onChange={(e) =>
-                    setAcctCatalogQuery((s) => ({
-                      ...s,
-                      limit: parseNumericInputWithFallback(e.target.value || "200", 200),
-                    }))
-                  }
-                />
-              </label>
-            </div>
-
-            <div className="db-actions">
-              <button type="button" className="primary-btn" onClick={() => void handleAccountCatalogQuery()} disabled={acctCatalogBusy}>
-                {acctCatalogBusy ? "执行中..." : "查询账户目录"}
-              </button>
-            </div>
-
-            {acctCatalogError ? (
-              <div className="inline-error" role="alert">
-                {acctCatalogError}
-              </div>
-            ) : null}
-
-            <div className="query-form-grid query-form-grid-compact">
-              <label className="field">
-                <span>写入账户 ID（编辑时可填）</span>
-                <input
-                  value={`${acctCatalogUpsertForm.account_id ?? ""}`}
-                  onChange={(e) => setAcctCatalogUpsertForm((s) => ({ ...s, account_id: e.target.value }))}
-                  placeholder="留空则按 account_kind + name 生成"
-                />
-              </label>
-              <label className="field">
-                <span>写入账户名称</span>
-                <input
-                  value={`${acctCatalogUpsertForm.account_name ?? ""}`}
-                  onChange={(e) => setAcctCatalogUpsertForm((s) => ({ ...s, account_name: e.target.value }))}
-                  placeholder="账户名称"
-                />
-              </label>
-              <label className="field">
-                <span>写入账户类型</span>
-                <select
-                  value={acctCatalogUpsertForm.account_kind ?? "cash"}
-                  onChange={(e) =>
-                    setAcctCatalogUpsertForm((s) => ({
-                      ...s,
-                      account_kind: e.target.value as UpsertAccountCatalogEntryRequest["account_kind"],
-                    }))
-                  }
-                >
-                  <option value="investment">investment</option>
-                  <option value="cash">cash</option>
-                  <option value="real_estate">real_estate</option>
-                  <option value="bank">bank</option>
-                  <option value="credit_card">credit_card</option>
-                  <option value="wallet">wallet</option>
-                  <option value="liability">liability</option>
-                  <option value="other">other</option>
-                </select>
-              </label>
-            </div>
-
-            <div className="db-actions">
-              <button
-                type="button"
-                className="secondary-btn"
-                onClick={() => void handleAccountCatalogUpsert()}
-                disabled={acctCatalogUpsertBusy}
-              >
-                {acctCatalogUpsertBusy ? "执行中..." : "写入账户目录条目"}
-              </button>
-            </div>
-
-            {acctCatalogUpsertError ? (
-              <div className="inline-error" role="alert">
-                {acctCatalogUpsertError}
-              </div>
-            ) : null}
-
-            {acctCatalogUpsertResult ? (
-              <JsonResultCard
-                title="账户目录 Upsert Result"
-                data={acctCatalogUpsertResult}
-                emptyText="No upsert result."
-              />
-            ) : null}
-
-            <div className="query-form-grid query-form-grid-compact">
-              <label className="field">
-                <span>删除账户 ID</span>
-                <input
-                  value={acctCatalogDeleteId}
-                  onChange={(e) => setAcctCatalogDeleteId(e.target.value)}
-                  placeholder="acct_xxx"
-                />
-              </label>
-            </div>
-
-            <div className="db-actions">
-              <button
-                type="button"
-                className="secondary-btn"
-                onClick={() => void handleAccountCatalogDelete()}
-                disabled={acctCatalogDeleteBusy || !acctCatalogDeleteId.trim()}
-              >
-                {acctCatalogDeleteBusy ? "执行中..." : "删除账户目录条目"}
-              </button>
-            </div>
-
-            {acctCatalogDeleteError ? (
-              <div className="inline-error" role="alert">
-                {acctCatalogDeleteError}
-              </div>
-            ) : null}
-
-            {acctCatalogDeleteResult ? (
-              <JsonResultCard
-                title="账户目录 Delete Result"
-                data={acctCatalogDeleteResult}
-                emptyText="No delete result."
-              />
-            ) : null}
-
-            <AccountCatalogPreview data={acctCatalogResult} />
-            {showDebugJson ? (
-              <JsonResultCard
-                title="账户目录 JSON"
-                data={acctCatalogResult}
-                emptyText="暂无结果。请先查询账户目录。"
-              />
-            ) : null}
-          </div> : null}
-
           {isManualEntryTab ? <div className="subcard">
             <h3>记录维护</h3>
             <p className="inline-hint">
@@ -7182,18 +8556,22 @@ function App() {
             <div className="query-form-grid query-form-grid-compact">
               <label className="field">
                 <span>投资写入快照日期</span>
-                <input
+                <DateInput
                   value={`${manualInvForm.snapshot_date ?? ""}`}
                   onChange={(e) => setManualInvForm((s) => ({ ...s, snapshot_date: e.target.value }))}
+                  type="date"
                   placeholder="YYYY-MM-DD"
                 />
               </label>
               <label className="field">
                 <span>投资写入账户 ID（可选）</span>
-                <input
+                <AccountIdSelect
                   value={`${manualInvForm.account_id ?? ""}`}
-                  onChange={(e) => setManualInvForm((s) => ({ ...s, account_id: e.target.value }))}
-                  placeholder="acct_inv_xxx"
+                  onChange={(value) => setManualInvForm((s) => ({ ...s, account_id: value }))}
+                  options={accountSelectOptions}
+                  kinds={["investment"]}
+                  emptyLabel={accountSelectOptionsLoading ? "加载账户中..." : "留空（按账户名称自动生成）"}
+                  disabled={accountSelectOptionsLoading}
                 />
               </label>
               <label className="field">
@@ -7240,18 +8618,22 @@ function App() {
               </label>
               <label className="field">
                 <span>投资更新快照日期</span>
-                <input
+                <DateInput
                   value={`${updateInvForm.snapshot_date ?? ""}`}
                   onChange={(e) => setUpdateInvForm((s) => ({ ...s, snapshot_date: e.target.value }))}
+                  type="date"
                   placeholder="YYYY-MM-DD"
                 />
               </label>
               <label className="field">
                 <span>投资更新账户 ID（可选）</span>
-                <input
+                <AccountIdSelect
                   value={`${updateInvForm.account_id ?? ""}`}
-                  onChange={(e) => setUpdateInvForm((s) => ({ ...s, account_id: e.target.value }))}
-                  placeholder="acct_inv_xxx"
+                  onChange={(value) => setUpdateInvForm((s) => ({ ...s, account_id: value }))}
+                  options={accountSelectOptions}
+                  kinds={["investment"]}
+                  emptyLabel={accountSelectOptionsLoading ? "加载账户中..." : "留空（按账户名称自动生成）"}
+                  disabled={accountSelectOptionsLoading}
                 />
               </label>
               <label className="field">
@@ -7330,18 +8712,22 @@ function App() {
               </label>
               <label className="field">
                 <span>资产写入快照日期</span>
-                <input
+                <DateInput
                   value={`${manualAssetForm.snapshot_date ?? ""}`}
                   onChange={(e) => setManualAssetForm((s) => ({ ...s, snapshot_date: e.target.value }))}
+                  type="date"
                   placeholder="YYYY-MM-DD"
                 />
               </label>
               <label className="field">
                 <span>资产写入账户 ID（可选）</span>
-                <input
+                <AccountIdSelect
                   value={`${manualAssetForm.account_id ?? ""}`}
-                  onChange={(e) => setManualAssetForm((s) => ({ ...s, account_id: e.target.value }))}
-                  placeholder="acct_cash_xxx / acct_re_xxx / acct_liab_xxx"
+                  onChange={(value) => setManualAssetForm((s) => ({ ...s, account_id: value }))}
+                  options={accountSelectOptions}
+                  kinds={accountKindsForAssetClass(manualAssetForm.asset_class ?? "cash") ?? undefined}
+                  emptyLabel={accountSelectOptionsLoading ? "加载账户中..." : "留空（按账户名称自动生成）"}
+                  disabled={accountSelectOptionsLoading}
                 />
               </label>
               <label className="field">
@@ -7401,18 +8787,22 @@ function App() {
               </label>
               <label className="field">
                 <span>资产更新快照日期</span>
-                <input
+                <DateInput
                   value={`${updateAssetForm.snapshot_date ?? ""}`}
                   onChange={(e) => setUpdateAssetForm((s) => ({ ...s, snapshot_date: e.target.value }))}
+                  type="date"
                   placeholder="YYYY-MM-DD"
                 />
               </label>
               <label className="field">
                 <span>资产更新账户 ID（可选）</span>
-                <input
+                <AccountIdSelect
                   value={`${updateAssetForm.account_id ?? ""}`}
-                  onChange={(e) => setUpdateAssetForm((s) => ({ ...s, account_id: e.target.value }))}
-                  placeholder="acct_xxx"
+                  onChange={(value) => setUpdateAssetForm((s) => ({ ...s, account_id: value }))}
+                  options={accountSelectOptions}
+                  kinds={accountKindsForAssetClass(updateAssetForm.asset_class ?? "cash") ?? undefined}
+                  emptyLabel={accountSelectOptionsLoading ? "加载账户中..." : "留空（按账户名称自动生成）"}
+                  disabled={accountSelectOptionsLoading}
                 />
               </label>
               <label className="field">
@@ -7465,7 +8855,7 @@ function App() {
             {deleteAssetResult ? <JsonResultCard title="资产估值删除结果" data={deleteAssetResult} emptyText="暂无结果。" /> : null}
           </div> : null}
 
-          {isBaseQueryTab ? <div className="subcard">
+          {isAdminVisibleWorkbench ? <div className="subcard">
             <h3>账户元数据查询</h3>
             <div className="query-form-grid query-form-grid-compact">
               <label className="field">
@@ -7486,11 +8876,7 @@ function App() {
                 </select>
               </label>
             </div>
-            <div className="db-actions">
-              <button type="button" className="primary-btn" onClick={() => void handleMetaAccountsQuery()} disabled={metaAccountsBusy}>
-                {metaAccountsBusy ? "执行中..." : "查询账户元数据"}
-              </button>
-            </div>
+            <AutoRefreshHint busy={metaAccountsBusy}>账户元数据已启用自动刷新：进入高级管理或修改筛选后会自动更新。</AutoRefreshHint>
             {metaAccountsError ? (
               <div className="inline-error" role="alert">
                 {metaAccountsError}
@@ -7508,7 +8894,7 @@ function App() {
 
           {isConsumptionAnalysisTab ? <div className="subcard">
             <h3>交易查询</h3>
-            <div className="query-form-grid">
+            <div className="query-form-grid" onKeyDown={makeEnterToQueryHandler(handleTransactionsQuery)}>
               <label className="field">
                 <span>数量</span>
                 <input
@@ -7543,9 +8929,10 @@ function App() {
               </label>
               <label className="field">
                 <span>月份</span>
-                <input
+                <MonthInput
                   value={`${txListQuery.month_key ?? ""}`}
                   onChange={(e) => setTxListQuery((s) => ({ ...s, month_key: e.target.value }))}
+                  type="month"
                   placeholder="YYYY-MM"
                 />
               </label>
@@ -7567,18 +8954,16 @@ function App() {
               </label>
               <label className="field">
                 <span>账户 ID</span>
-                <input
+                <AccountIdSelect
                   value={`${txListQuery.account_id ?? ""}`}
-                  onChange={(e) => setTxListQuery((s) => ({ ...s, account_id: e.target.value }))}
-                  placeholder="acct_xxx"
+                  onChange={(value) => setTxListQuery((s) => ({ ...s, account_id: value }))}
+                  options={accountSelectOptions}
+                  emptyLabel={accountSelectOptionsLoading ? "加载账户中..." : "全部账户"}
+                  disabled={accountSelectOptionsLoading}
                 />
               </label>
             </div>
-            <div className="db-actions">
-              <button type="button" className="primary-btn" onClick={() => void handleTransactionsQuery()} disabled={txListBusy}>
-                {txListBusy ? "执行中..." : "查询交易记录"}
-              </button>
-            </div>
+            <AutoRefreshHint busy={txListBusy}>交易列表已启用自动刷新：修改筛选条件后会自动更新。</AutoRefreshHint>
             {txListError ? (
               <div className="inline-error" role="alert">
                 {txListError}
@@ -7655,9 +9040,9 @@ function App() {
             ) : null}
           </div> : null}
 
-          {isBaseQueryTab ? <div className="subcard">
+          {isAdminVisibleWorkbench ? <div className="subcard">
             <h3>投资记录查询</h3>
-            <div className="query-form-grid query-form-grid-compact">
+            <div className="query-form-grid query-form-grid-compact" onKeyDown={makeEnterToQueryHandler(handleInvestmentsListQuery)}>
               <label className="field">
                 <span>数量</span>
                 <input
@@ -7675,17 +9060,19 @@ function App() {
               </label>
               <label className="field">
                 <span>开始日期</span>
-                <input
+                <DateInput
                   value={`${invListQuery.from ?? ""}`}
                   onChange={(e) => setInvListQuery((s) => ({ ...s, from: e.target.value }))}
+                  type="date"
                   placeholder="YYYY-MM-DD"
                 />
               </label>
               <label className="field">
                 <span>结束日期</span>
-                <input
+                <DateInput
                   value={`${invListQuery.to ?? ""}`}
                   onChange={(e) => setInvListQuery((s) => ({ ...s, to: e.target.value }))}
+                  type="date"
                   placeholder="YYYY-MM-DD"
                 />
               </label>
@@ -7699,18 +9086,17 @@ function App() {
               </label>
               <label className="field">
                 <span>账户 ID</span>
-                <input
+                <AccountIdSelect
                   value={`${invListQuery.account_id ?? ""}`}
-                  onChange={(e) => setInvListQuery((s) => ({ ...s, account_id: e.target.value }))}
-                  placeholder="acct_inv_xxx"
+                  onChange={(value) => setInvListQuery((s) => ({ ...s, account_id: value }))}
+                  options={accountSelectOptions}
+                  kinds={["investment"]}
+                  emptyLabel={accountSelectOptionsLoading ? "加载账户中..." : "全部投资账户"}
+                  disabled={accountSelectOptionsLoading}
                 />
               </label>
             </div>
-            <div className="db-actions">
-              <button type="button" className="primary-btn" onClick={() => void handleInvestmentsListQuery()} disabled={invListBusy}>
-                {invListBusy ? "执行中..." : "查询投资记录"}
-              </button>
-            </div>
+            <AutoRefreshHint busy={invListBusy}>投资记录列表已启用自动刷新：进入高级管理或修改筛选后会自动更新。</AutoRefreshHint>
             {invListError ? (
               <div className="inline-error" role="alert">
                 {invListError}
@@ -7722,9 +9108,9 @@ function App() {
             ) : null}
           </div> : null}
 
-          {isBaseQueryTab ? <div className="subcard">
+          {isAdminVisibleWorkbench ? <div className="subcard">
             <h3>资产估值查询</h3>
-            <div className="query-form-grid query-form-grid-compact">
+            <div className="query-form-grid query-form-grid-compact" onKeyDown={makeEnterToQueryHandler(handleAssetValuationsQuery)}>
               <label className="field">
                 <span>数量</span>
                 <input
@@ -7742,17 +9128,19 @@ function App() {
               </label>
               <label className="field">
                 <span>开始日期</span>
-                <input
+                <DateInput
                   value={`${assetListQuery.from ?? ""}`}
                   onChange={(e) => setAssetListQuery((s) => ({ ...s, from: e.target.value }))}
+                  type="date"
                   placeholder="YYYY-MM-DD"
                 />
               </label>
               <label className="field">
                 <span>结束日期</span>
-                <input
+                <DateInput
                   value={`${assetListQuery.to ?? ""}`}
                   onChange={(e) => setAssetListQuery((s) => ({ ...s, to: e.target.value }))}
+                  type="date"
                   placeholder="YYYY-MM-DD"
                 />
               </label>
@@ -7775,18 +9163,17 @@ function App() {
               </label>
               <label className="field">
                 <span>账户 ID</span>
-                <input
+                <AccountIdSelect
                   value={`${assetListQuery.account_id ?? ""}`}
-                  onChange={(e) => setAssetListQuery((s) => ({ ...s, account_id: e.target.value }))}
-                  placeholder="acct_xxx"
+                  onChange={(value) => setAssetListQuery((s) => ({ ...s, account_id: value }))}
+                  options={accountSelectOptions}
+                  kinds={accountKindsForAssetClass(assetListQuery.asset_class ?? "") ?? undefined}
+                  emptyLabel={accountSelectOptionsLoading ? "加载账户中..." : "全部账户"}
+                  disabled={accountSelectOptionsLoading}
                 />
               </label>
             </div>
-            <div className="db-actions">
-              <button type="button" className="primary-btn" onClick={() => void handleAssetValuationsQuery()} disabled={assetListBusy}>
-                {assetListBusy ? "执行中..." : "查询资产估值"}
-              </button>
-            </div>
+            <AutoRefreshHint busy={assetListBusy}>资产估值列表已启用自动刷新：进入高级管理或修改筛选后会自动更新。</AutoRefreshHint>
             {assetListError ? (
               <div className="inline-error" role="alert">
                 {assetListError}
@@ -7806,294 +9193,310 @@ function App() {
 
       {isTab("return-analysis") ? <section className="card panel">
         <div className="panel-header">
-          <h2>投资区间收益率</h2>
-          <p>
-            第一条业务口径迁移：`investment-return`（当前已支持单账户与 `__portfolio__` 组合查询，直接读取 desktop
-            SQLite）。
-          </p>
+          <h2>投资收益率与曲线</h2>
+          <p>在同一视图中查看区间收益指标与资产变化趋势，便于连续观察投资表现。</p>
         </div>
 
-        <div className="query-form-grid">
+        <div
+          className="query-form-grid"
+          onKeyDown={makeEnterToQueryHandler(async () => {
+            await Promise.all([handleInvestmentReturnQuery(), handleInvestmentCurveQuery()]);
+          })}
+        >
           <label className="field">
-            <span>账户 ID</span>
-            <input
-              value={invQuery.account_id}
-              onChange={(e) => setInvQuery((s) => ({ ...s, account_id: e.target.value }))}
-              placeholder="acct_xxx or __portfolio__"
-            />
-          </label>
-          <label className="field">
-            <span>预设区间</span>
-            <select
-              value={invQuery.preset}
-              onChange={(e) => setInvQuery((s) => ({ ...s, preset: e.target.value }))}
-            >
-              <option value="ytd">ytd</option>
-              <option value="1y">1y</option>
-              <option value="3y">3y</option>
-              <option value="since_inception">since_inception</option>
-              <option value="custom">custom</option>
-            </select>
-          </label>
-          <label className="field">
-            <span>开始日期（自定义）</span>
-            <input
-              value={invQuery.from}
-              onChange={(e) => setInvQuery((s) => ({ ...s, from: e.target.value }))}
-              placeholder="YYYY-MM-DD"
-            />
-          </label>
-          <label className="field">
-            <span>结束日期（可选）</span>
-            <input
-              value={invQuery.to}
-              onChange={(e) => setInvQuery((s) => ({ ...s, to: e.target.value }))}
-              placeholder="YYYY-MM-DD"
-            />
-          </label>
-        </div>
-
-        <div className="db-actions">
-          <button type="button" className="primary-btn" onClick={() => void handleInvestmentReturnQuery()} disabled={invBusy}>
-            {invBusy ? "执行中..." : "查询投资区间收益率"}
-          </button>
-        </div>
-
-        {invError ? (
-          <div className="inline-error" role="alert">
-            {invError}
-          </div>
-        ) : null}
-
-        <InvestmentReturnPreview data={invResult} />
-        {showRawJson ? (
-          <JsonResultCard
-            data={invResult}
-            emptyText="暂无结果。请先执行数据库迁移后再查询。"
-          />
-        ) : null}
-      </section> : null}
-
-      {isTab("return-analysis") ? <section className="card panel">
-        <div className="panel-header">
-          <h2>投资曲线</h2>
-          <p>第二条投资分析接口：`investment-curve`（单账户/组合，返回资产曲线与累计收益率曲线）。</p>
-        </div>
-
-        <div className="query-form-grid">
-          <label className="field">
-            <span>账户 ID</span>
-            <input
+            <span>账户</span>
+            <AccountIdSelect
               value={invCurveQuery.account_id}
-              onChange={(e) => setInvCurveQuery((s) => ({ ...s, account_id: e.target.value }))}
-              placeholder="acct_xxx or __portfolio__"
+              onChange={(value) =>
+                setInvestmentAnalysisSharedQuery((s) => ({
+                  ...s,
+                  account_id: value,
+                }))
+              }
+              options={accountSelectOptions}
+              kinds={["investment"]}
+              includePortfolio
+              portfolioLabel="投资组合（全部投资账户）"
+              emptyLabel={accountSelectOptionsLoading ? "加载账户中..." : "请选择账户"}
+              disabled={accountSelectOptionsLoading}
             />
           </label>
           <label className="field">
             <span>预设区间</span>
             <select
               value={invCurveQuery.preset}
-              onChange={(e) => setInvCurveQuery((s) => ({ ...s, preset: e.target.value }))}
+              onChange={(e) =>
+                setInvestmentAnalysisSharedQuery((s) => ({
+                  ...s,
+                  preset: e.target.value,
+                }))
+              }
             >
-              <option value="ytd">ytd</option>
-              <option value="1y">1y</option>
-              <option value="3y">3y</option>
-              <option value="since_inception">since_inception</option>
-              <option value="custom">custom</option>
+              <option value="ytd">年初至今</option>
+              <option value="1y">近1年</option>
+              <option value="3y">近3年</option>
+              <option value="since_inception">成立以来</option>
+              <option value="custom">自定义</option>
             </select>
           </label>
-          <label className="field">
-            <span>开始日期（自定义）</span>
-            <input
-              value={invCurveQuery.from}
-              onChange={(e) => setInvCurveQuery((s) => ({ ...s, from: e.target.value }))}
-              placeholder="YYYY-MM-DD"
-            />
-          </label>
-          <label className="field">
-            <span>结束日期（可选）</span>
-            <input
-              value={invCurveQuery.to}
-              onChange={(e) => setInvCurveQuery((s) => ({ ...s, to: e.target.value }))}
-              placeholder="YYYY-MM-DD"
-            />
-          </label>
+          {invCurveQuery.preset === "custom" ? (
+            <>
+              <label className="field">
+                <span>开始日期（自定义）</span>
+                <DateInput
+                  value={invCurveQuery.from}
+                  onChange={(e) =>
+                    setInvestmentAnalysisSharedQuery((s) => ({
+                      ...s,
+                      from: e.target.value,
+                    }))
+                  }
+                  type="date"
+                  placeholder="YYYY-MM-DD"
+                />
+              </label>
+              <label className="field">
+                <span>结束日期（可选）</span>
+                <DateInput
+                  value={invCurveQuery.to}
+                  onChange={(e) =>
+                    setInvestmentAnalysisSharedQuery((s) => ({
+                      ...s,
+                      to: e.target.value,
+                    }))
+                  }
+                  type="date"
+                  placeholder="YYYY-MM-DD"
+                />
+              </label>
+            </>
+          ) : null}
         </div>
 
-        <div className="db-actions">
-          <button
-            type="button"
-            className="primary-btn"
-            onClick={() => void handleInvestmentCurveQuery()}
-            disabled={invCurveBusy}
-          >
-            {invCurveBusy ? "执行中..." : "查询投资曲线"}
-          </button>
+        <AutoRefreshHint busy={invBusy || invCurveBusy}>调整筛选条件后将自动刷新结果。</AutoRefreshHint>
+        {invError ? <div className="inline-error" role="alert">{invError}</div> : null}
+        {invCurveError ? <div className="inline-error" role="alert">{invCurveError}</div> : null}
+
+        <InvestmentCurvePreview data={invCurveResult} returnData={invResult} />
+        {showRawJson ? (
+          <div className="stack">
+            <JsonResultCard title="投资区间收益率 JSON" data={invResult} emptyText="暂无结果。请先执行数据库迁移后再查询。" />
+            <JsonResultCard title="投资曲线 JSON" data={invCurveResult} emptyText="暂无结果。请先执行数据库迁移后再查询。" />
+          </div>
+        ) : null}
+      </section> : null}
+
+      {isTab("return-analysis") ? <section className="card panel">
+        <div className="panel-header">
+          <h2>投资收益率对比</h2>
+          <p>对比全部投资账户在同一统计区间内的收益表现，便于横向查看差异。</p>
         </div>
 
-        {invCurveError ? (
+        <div className="query-form-grid" onKeyDown={makeEnterToQueryHandler(handleInvestmentReturnsQuery)}>
+          <label className="field">
+            <span>预设区间</span>
+            <select
+              value={`${invBatchQuery.preset ?? "ytd"}`}
+              onChange={(e) => setInvBatchQuery((s) => ({ ...s, preset: e.target.value }))}
+            >
+              <option value="ytd">年初至今</option>
+              <option value="1y">近1年</option>
+              <option value="3y">近3年</option>
+              <option value="since_inception">成立以来</option>
+              <option value="custom">自定义</option>
+            </select>
+          </label>
+          {(invBatchQuery.preset ?? "ytd") === "custom" ? (
+            <>
+              <label className="field">
+                <span>开始日期（自定义）</span>
+                <DateInput
+                  value={`${invBatchQuery.from ?? ""}`}
+                  onChange={(e) => setInvBatchQuery((s) => ({ ...s, from: e.target.value }))}
+                  type="date"
+                  placeholder="YYYY-MM-DD"
+                />
+              </label>
+              <label className="field">
+                <span>结束日期（可选）</span>
+                <DateInput
+                  value={`${invBatchQuery.to ?? ""}`}
+                  onChange={(e) => setInvBatchQuery((s) => ({ ...s, to: e.target.value }))}
+                  type="date"
+                  placeholder="YYYY-MM-DD"
+                />
+              </label>
+            </>
+          ) : null}
+        </div>
+
+        <AutoRefreshHint busy={invBatchBusy}>进入本页或调整筛选条件后将自动刷新结果。</AutoRefreshHint>
+
+        {invBatchError ? (
           <div className="inline-error" role="alert">
-            {invCurveError}
+            {invBatchError}
           </div>
         ) : null}
 
-        <InvestmentCurvePreview data={invCurveResult} />
+        <InvestmentReturnsPreview data={invBatchResult} />
         {showRawJson ? (
           <JsonResultCard
-            data={invCurveResult}
-            emptyText="暂无结果。请先执行数据库迁移后再查询。"
+            title="投资收益率对比 JSON"
+            data={invBatchResult}
+            emptyText="暂无结果。请先导入桌面数据库后再查询账户收益率对比。"
           />
         ) : null}
       </section> : null}
 
       {isTab("wealth-overview") ? <section className="card panel">
         <div className="panel-header">
-          <h2>财富总览</h2>
-          <p>财富总览口径验证：`wealth-overview`（含筛选、对账校验、滞后天数）。</p>
+          <h2>财富总览与趋势</h2>
+          <p>在同一视图中查看财富结构关系与变化趋势，便于连续观察资产构成与净值变化。</p>
         </div>
 
-        <div className="query-form-grid">
+        {(() => {
+          const wealthVisibility = {
+            investment: wealthCurveQuery.include_investment === "true",
+            cash: wealthCurveQuery.include_cash === "true",
+            realEstate: wealthCurveQuery.include_real_estate === "true",
+            liability: wealthCurveQuery.include_liability === "true",
+          };
+          return (
+            <>
+        <div
+          className="query-form-grid"
+          onKeyDown={makeEnterToQueryHandler(async () => {
+            await Promise.all([handleWealthOverviewQuery(), handleWealthCurveQuery()]);
+          })}
+        >
           <label className="field">
-            <span>统计日期（可选）</span>
-            <input
-              value={wealthOverviewQuery.as_of}
-              onChange={(e) => setWealthOverviewQuery((s) => ({ ...s, as_of: e.target.value }))}
-              placeholder="YYYY-MM-DD"
-            />
+            <span>趋势区间</span>
+            <select
+              value={wealthCurveQuery.preset}
+              onChange={(e) => setWealthCurveQuery((s) => ({ ...s, preset: e.target.value }))}
+            >
+              <option value="ytd">年初至今</option>
+              <option value="1y">近1年</option>
+              <option value="3y">近3年</option>
+              <option value="since_inception">成立以来</option>
+              <option value="custom">自定义</option>
+            </select>
           </label>
-          <BoolField
-            label="包含投资"
-            value={wealthOverviewQuery.include_investment}
-            onChange={(value) => setWealthOverviewQuery((s) => ({ ...s, include_investment: value }))}
-          />
-          <BoolField
-            label="包含现金"
-            value={wealthOverviewQuery.include_cash}
-            onChange={(value) => setWealthOverviewQuery((s) => ({ ...s, include_cash: value }))}
-          />
-          <BoolField
-            label="包含不动产"
-            value={wealthOverviewQuery.include_real_estate}
-            onChange={(value) => setWealthOverviewQuery((s) => ({ ...s, include_real_estate: value }))}
-          />
-          <BoolField
-            label="包含负债"
-            value={wealthOverviewQuery.include_liability}
-            onChange={(value) => setWealthOverviewQuery((s) => ({ ...s, include_liability: value }))}
-          />
+          {wealthCurveQuery.preset === "custom" ? (
+            <>
+              <label className="field">
+                <span>开始日期（自定义）</span>
+                <DateInput
+                  value={wealthCurveQuery.from}
+                  onChange={(e) => setWealthCurveQuery((s) => ({ ...s, from: e.target.value }))}
+                  type="date"
+                  placeholder="YYYY-MM-DD"
+                />
+              </label>
+              <label className="field">
+                <span>结束日期（可选）</span>
+                <DateInput
+                  value={wealthCurveQuery.to}
+                  onChange={(e) => setWealthCurveQuery((s) => ({ ...s, to: e.target.value }))}
+                  type="date"
+                  placeholder="YYYY-MM-DD"
+                />
+              </label>
+            </>
+          ) : null}
+          <div className="field wealth-asset-filter-field">
+            <span>资产类型</span>
+            <div className="wealth-asset-chip-group">
+              <button
+                type="button"
+                className={`consumption-chip ${
+                  wealthCurveQuery.include_investment === "true" &&
+                  wealthCurveQuery.include_cash === "true" &&
+                  wealthCurveQuery.include_real_estate === "true" &&
+                  wealthCurveQuery.include_liability === "true"
+                    ? "active"
+                    : ""
+                }`}
+                onClick={() =>
+                  setWealthSharedAssetFilters((prev) => ({
+                    ...prev,
+                    include_investment: "true",
+                    include_cash: "true",
+                    include_real_estate: "true",
+                    include_liability: "true",
+                  }))
+                }
+              >
+                全部
+              </button>
+              <button
+                type="button"
+                className={`consumption-chip ${wealthCurveQuery.include_investment === "true" ? "active" : ""}`}
+                onClick={() => toggleWealthAssetFilter("include_investment")}
+              >
+                投资
+              </button>
+              <button
+                type="button"
+                className={`consumption-chip ${wealthCurveQuery.include_cash === "true" ? "active" : ""}`}
+                onClick={() => toggleWealthAssetFilter("include_cash")}
+              >
+                现金
+              </button>
+              <button
+                type="button"
+                className={`consumption-chip ${wealthCurveQuery.include_real_estate === "true" ? "active" : ""}`}
+                onClick={() => toggleWealthAssetFilter("include_real_estate")}
+              >
+                不动产
+              </button>
+              <button
+                type="button"
+                className={`consumption-chip ${wealthCurveQuery.include_liability === "true" ? "active" : ""}`}
+                onClick={() => toggleWealthAssetFilter("include_liability")}
+              >
+                负债
+              </button>
+            </div>
+          </div>
         </div>
 
-        <div className="db-actions">
-          <button
-            type="button"
-            className="primary-btn"
-            onClick={() => void handleWealthOverviewQuery()}
-            disabled={wealthOverviewBusy}
-          >
-            {wealthOverviewBusy ? "执行中..." : "查询财富总览"}
-          </button>
-        </div>
+        <AutoRefreshHint busy={wealthOverviewBusy || wealthCurveBusy}>调整筛选条件后将自动刷新结果。</AutoRefreshHint>
 
         {wealthOverviewError ? (
           <div className="inline-error" role="alert">
             {wealthOverviewError}
           </div>
         ) : null}
-
-        <WealthOverviewPreview data={wealthOverviewResult} />
-        {showRawJson ? (
-          <JsonResultCard
-            data={wealthOverviewResult}
-            emptyText="暂无结果。请先执行迁移，并确认桌面数据库已有样本/真实数据。"
-          />
-        ) : null}
-      </section> : null}
-
-      {isTab("wealth-overview") ? <section className="card panel">
-        <div className="panel-header">
-          <h2>财富曲线</h2>
-          <p>财富曲线口径验证：`wealth-curve`（区间预设 + 资产类型筛选）。</p>
-        </div>
-
-        <div className="query-form-grid">
-          <label className="field">
-            <span>预设区间</span>
-            <select
-              value={wealthCurveQuery.preset}
-              onChange={(e) => setWealthCurveQuery((s) => ({ ...s, preset: e.target.value }))}
-            >
-              <option value="ytd">ytd</option>
-              <option value="1y">1y</option>
-              <option value="3y">3y</option>
-              <option value="since_inception">since_inception</option>
-              <option value="custom">custom</option>
-            </select>
-          </label>
-          <label className="field">
-            <span>开始日期（自定义）</span>
-            <input
-              value={wealthCurveQuery.from}
-              onChange={(e) => setWealthCurveQuery((s) => ({ ...s, from: e.target.value }))}
-              placeholder="YYYY-MM-DD"
-            />
-          </label>
-          <label className="field">
-            <span>结束日期（可选）</span>
-            <input
-              value={wealthCurveQuery.to}
-              onChange={(e) => setWealthCurveQuery((s) => ({ ...s, to: e.target.value }))}
-              placeholder="YYYY-MM-DD"
-            />
-          </label>
-          <BoolField
-            label="包含投资"
-            value={wealthCurveQuery.include_investment}
-            onChange={(value) => setWealthCurveQuery((s) => ({ ...s, include_investment: value }))}
-          />
-          <BoolField
-            label="包含现金"
-            value={wealthCurveQuery.include_cash}
-            onChange={(value) => setWealthCurveQuery((s) => ({ ...s, include_cash: value }))}
-          />
-          <BoolField
-            label="包含不动产"
-            value={wealthCurveQuery.include_real_estate}
-            onChange={(value) => setWealthCurveQuery((s) => ({ ...s, include_real_estate: value }))}
-          />
-          <BoolField
-            label="包含负债"
-            value={wealthCurveQuery.include_liability}
-            onChange={(value) => setWealthCurveQuery((s) => ({ ...s, include_liability: value }))}
-          />
-        </div>
-
-        <div className="db-actions">
-          <button
-            type="button"
-            className="primary-btn"
-            onClick={() => void handleWealthCurveQuery()}
-            disabled={wealthCurveBusy}
-          >
-            {wealthCurveBusy ? "执行中..." : "查询财富曲线"}
-          </button>
-        </div>
-
         {wealthCurveError ? (
           <div className="inline-error" role="alert">
             {wealthCurveError}
           </div>
         ) : null}
 
-        <WealthCurvePreview data={wealthCurveResult} />
+        <WealthOverviewPreview data={wealthOverviewResult} visibility={wealthVisibility} />
+        <WealthCurvePreview data={wealthCurveResult} visibility={wealthVisibility} />
+
         {showRawJson ? (
-          <JsonResultCard
-            data={wealthCurveResult}
-            emptyText="暂无结果。请先执行迁移，并确认桌面数据库已有样本/真实数据。"
-          />
+          <div className="stack">
+            <JsonResultCard
+              title="财富总览 JSON"
+              data={wealthOverviewResult}
+              emptyText="暂无结果。请先执行迁移，并确认桌面数据库已有样本/真实数据。"
+            />
+            <JsonResultCard
+              title="财富曲线 JSON"
+              data={wealthCurveResult}
+              emptyText="暂无结果。请先执行迁移，并确认桌面数据库已有样本/真实数据。"
+            />
+          </div>
         ) : null}
+            </>
+          );
+        })()}
       </section> : null}
 
-      {isTab("admin") ? <section className="card panel roadmap-panel">
+      {isAdminDeveloperMode ? <section className="card panel roadmap-panel">
         <div className="panel-header">
           <h2>后续迁移计划</h2>
           <p>基座稳定后，按低风险到高价值的顺序推进。</p>
