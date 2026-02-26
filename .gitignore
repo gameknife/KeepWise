@@ -3,6 +3,9 @@
 __pycache__/
 *.py[cod]
 
+# Build / CI artifacts
+.artifacts/
+
 # Local databases / temp
 data/db/
 *.log
