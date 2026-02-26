@@ -1796,7 +1796,7 @@ def build_config(root: Path) -> AppConfig:
         rules_dir=root_dir / "data" / "rules",
         db_path=work_dir / "ledger" / "keepwise.db",
         migrations_dir=root_dir / "db" / "migrations",
-        assets_dir=root_dir / "scripts" / "assets",
+        assets_dir=root_dir / "apps" / "keepwise-legacy" / "scripts" / "assets",
         session_dir=work_dir / "import_sessions",
     )
 

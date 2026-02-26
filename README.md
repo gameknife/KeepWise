@@ -21,7 +21,7 @@ KeepWise 已进入 **Tauri Desktop（React + Rust）产品化阶段**。当前�
 - 产品基础文档：`/Users/gameknife/github/BeyondYZYX/docs/foundation`
 - 差分工具与用例：`/Users/gameknife/github/BeyondYZYX/tools/migration`
 - 测试契约（人工参考）：`/Users/gameknife/github/BeyondYZYX/tests/contracts/analytics`
-- 旧版脚本/Web 工作台：`/Users/gameknife/github/BeyondYZYX/scripts`
+- 旧版脚本/Web 工作台：`/Users/gameknife/github/BeyondYZYX/apps/keepwise-legacy`
 
 ## 快速开始（桌面端，推荐）
 

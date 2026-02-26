@@ -36,7 +36,7 @@ execution:
 datasets:
   - ref: m1_analytics_minimal
     status: planned
-    source_hint: scripts/validate_m1_analytics.py
+    source_hint: apps/keepwise-legacy/scripts/validate_m1_analytics.py
     description: >
       Small deterministic seeded SQLite dataset covering investment + wealth baseline paths.
     fixture_keys:

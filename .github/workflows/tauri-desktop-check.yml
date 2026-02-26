@@ -5,16 +5,16 @@ on:
   pull_request:
     paths:
       - "apps/keepwise-tauri/**"
-      - "scripts/validate_tauri_desktop_rust_regression.sh"
-      - "scripts/validate_tauri_core_diff_regression.sh"
+      - "apps/keepwise-tauri/scripts/validate_tauri_desktop_rust_regression.sh"
+      - "apps/keepwise-tauri/scripts/validate_tauri_core_diff_regression.sh"
       - "tools/migration/**"
       - "db/migrations/**"
   push:
     branches: [main]
     paths:
       - "apps/keepwise-tauri/**"
-      - "scripts/validate_tauri_desktop_rust_regression.sh"
-      - "scripts/validate_tauri_core_diff_regression.sh"
+      - "apps/keepwise-tauri/scripts/validate_tauri_desktop_rust_regression.sh"
+      - "apps/keepwise-tauri/scripts/validate_tauri_core_diff_regression.sh"
       - "tools/migration/**"
       - "db/migrations/**"
 

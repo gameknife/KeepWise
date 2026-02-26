@@ -33,7 +33,7 @@ from typing import Any
 
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
-SCRIPTS_DIR = ROOT_DIR / "scripts"
+SCRIPTS_DIR = ROOT_DIR / "apps" / "keepwise-legacy" / "scripts"
 
 
 def _ensure_scripts_on_path() -> None:

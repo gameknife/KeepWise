@@ -9,14 +9,14 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
-    "test:rust:regression": "bash ../../scripts/validate_tauri_desktop_rust_regression.sh",
-    "test:diff:core": "bash ../../scripts/validate_tauri_core_diff_regression.sh",
+    "test:rust:regression": "bash scripts/validate_tauri_desktop_rust_regression.sh",
+    "test:diff:core": "bash scripts/validate_tauri_core_diff_regression.sh",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "tauri:build:debug": "tauri build --debug",
     "tauri:build:mac": "tauri build --bundles app,dmg",
-    "desktop:release:check": "bash ../../scripts/validate_tauri_desktop_release_check.sh",
-    "desktop:release:prepare": "bash ../../scripts/prepare_keepwise_desktop_release.sh"
+    "desktop:release:check": "bash scripts/validate_tauri_desktop_release_check.sh",
+    "desktop:release:prepare": "bash scripts/prepare_keepwise_desktop_release.sh"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

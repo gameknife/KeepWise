@@ -41,7 +41,9 @@ pub struct FireProgressQueryRequest {
 }
 
 #[derive(Debug, Default, Deserialize)]
-pub struct ConsumptionReportQueryRequest {}
+pub struct ConsumptionReportQueryRequest {
+    pub year: Option<String>,
+}
 
 #[derive(Debug)]
 struct MonthlyBudgetItemRow {
@@ -649,12 +651,83 @@ pub fn query_budget_monthly_review_at_db_path(
 
 pub fn query_consumption_report_at_db_path(
     db_path: &Path,
-    _req: ConsumptionReportQueryRequest,
+    req: ConsumptionReportQueryRequest,
 ) -> Result<Value, String> {
     let conn = Connection::open(db_path).map_err(|e| format!("打开数据库失败: {e}"))?;
 
-    let mut tx_stmt = conn
-        .prepare(
+    // 先查询所有可用年份（不受 year 参数影响）
+    let available_years = {
+        let mut stmt = conn
+            .prepare(
+                r#"
+                SELECT DISTINCT SUBSTR(COALESCE(month_key, SUBSTR(COALESCE(posted_at, occurred_at), 1, 7)), 1, 4) AS yr
+                FROM transactions
+                WHERE direction = 'expense' AND currency = 'CNY'
+                  AND yr IS NOT NULL AND yr != ''
+                ORDER BY yr DESC
+                "#,
+            )
+            .map_err(|e| format!("查询可用年份失败: {e}"))?;
+        let rows = stmt
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|e| format!("查询可用年份失败: {e}"))?;
+        let mut years = Vec::<String>::new();
+        for row in rows {
+            let y = row.map_err(|e| format!("读取可用年份失败: {e}"))?;
+            if !y.is_empty() && y.len() == 4 {
+                years.push(y);
+            }
+        }
+        years
+    };
+
+    // 解析 year 参数：若指定则按年度筛选，否则返回全量
+    let year_filter: Option<i32> = if let Some(ref y) = req.year {
+        let trimmed = y.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(parse_year_param(
+                Some(trimmed),
+                Local::now().date_naive().year(),
+            )?)
+        }
+    } else {
+        None
+    };
+
+    let (sql, params_vec): (String, Vec<String>) = if let Some(year) = year_filter {
+        let month_start = format!("{year:04}-01");
+        let month_end = format!("{year:04}-12");
+        (
+            r#"
+            SELECT
+                t.id,
+                t.month_key,
+                t.posted_at,
+                t.occurred_at,
+                t.amount_cents,
+                t.description,
+                t.merchant_normalized,
+                t.source_file,
+                t.source_type,
+                t.confidence,
+                t.needs_review,
+                t.excluded_in_analysis,
+                COALESCE(c.name, '待分类') AS expense_category
+            FROM transactions t
+            LEFT JOIN categories c ON c.id = t.category_id
+            WHERE t.direction = 'expense'
+              AND t.currency = 'CNY'
+              AND COALESCE(t.month_key, SUBSTR(COALESCE(t.posted_at, t.occurred_at), 1, 7)) >= ?1
+              AND COALESCE(t.month_key, SUBSTR(COALESCE(t.posted_at, t.occurred_at), 1, 7)) <= ?2
+            ORDER BY COALESCE(t.posted_at, t.occurred_at) DESC, t.id DESC
+            "#
+            .to_string(),
+            vec![month_start, month_end],
+        )
+    } else {
+        (
             r#"
             SELECT
                 t.id,
@@ -675,29 +748,61 @@ pub fn query_consumption_report_at_db_path(
             WHERE t.direction = 'expense'
               AND t.currency = 'CNY'
             ORDER BY COALESCE(t.posted_at, t.occurred_at) DESC, t.id DESC
-            "#,
+            "#
+            .to_string(),
+            vec![],
         )
+    };
+
+    let mut tx_stmt = conn
+        .prepare(&sql)
         .map_err(|e| format!("查询消费总览交易失败: {e}"))?;
 
-    let tx_iter = tx_stmt
-        .query_map([], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, Option<String>>(1)?,
-                row.get::<_, Option<String>>(2)?,
-                row.get::<_, Option<String>>(3)?,
-                row.get::<_, i64>(4)?,
-                row.get::<_, Option<String>>(5)?,
-                row.get::<_, Option<String>>(6)?,
-                row.get::<_, Option<String>>(7)?,
-                row.get::<_, Option<String>>(8)?,
-                row.get::<_, Option<f64>>(9)?,
-                row.get::<_, i64>(10)?,
-                row.get::<_, i64>(11)?,
-                row.get::<_, String>(12)?,
-            ))
-        })
-        .map_err(|e| format!("查询消费总览交易失败: {e}"))?;
+    type TxRow = (
+        String,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        i64,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<f64>,
+        i64,
+        i64,
+        String,
+    );
+    let row_mapper = |row: &rusqlite::Row<'_>| -> rusqlite::Result<TxRow> {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, Option<String>>(1)?,
+            row.get::<_, Option<String>>(2)?,
+            row.get::<_, Option<String>>(3)?,
+            row.get::<_, i64>(4)?,
+            row.get::<_, Option<String>>(5)?,
+            row.get::<_, Option<String>>(6)?,
+            row.get::<_, Option<String>>(7)?,
+            row.get::<_, Option<String>>(8)?,
+            row.get::<_, Option<f64>>(9)?,
+            row.get::<_, i64>(10)?,
+            row.get::<_, i64>(11)?,
+            row.get::<_, String>(12)?,
+        ))
+    };
+    let tx_rows: Vec<TxRow> = if params_vec.len() == 2 {
+        tx_stmt
+            .query_map(params![params_vec[0], params_vec[1]], row_mapper)
+            .map_err(|e| format!("查询消费总览交易失败: {e}"))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("读取消费总览交易失败: {e}"))?
+    } else {
+        tx_stmt
+            .query_map([], row_mapper)
+            .map_err(|e| format!("查询消费总览交易失败: {e}"))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("读取消费总览交易失败: {e}"))?
+    };
 
     let import_jobs_exists = conn
         .query_row(
@@ -726,7 +831,7 @@ pub fn query_consumption_report_at_db_path(
     };
 
     let mut all_consume_rows = Vec::<Value>::new();
-    for row in tx_iter {
+    for row in tx_rows {
         let (
             id,
             month_key_opt,
@@ -741,7 +846,7 @@ pub fn query_consumption_report_at_db_path(
             needs_review_i,
             excluded_in_analysis_i,
             expense_category,
-        ) = row.map_err(|e| format!("读取消费总览交易失败: {e}"))?;
+        ) = row;
 
         let amount_cents_abs = amount_cents.abs();
         let tx_date = posted_at_opt
@@ -874,6 +979,7 @@ pub fn query_consumption_report_at_db_path(
         merchant_bucket.1 += 1;
 
         transactions.push(json!({
+            "id": rec.get("id").cloned().unwrap_or(Value::String(String::new())),
             "month": month,
             "date": rec.get("date").cloned().unwrap_or(Value::String(String::new())),
             "merchant": merchant,
@@ -977,6 +1083,8 @@ pub fn query_consumption_report_at_db_path(
     let raw_total_cents = consumption_total_cents + excluded_total_cents;
     Ok(json!({
         "generated_at": Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+        "year": year_filter.map(|y| format!("{y:04}")),
+        "available_years": available_years,
         "input_files_count": source_files.len(),
         "failed_files_count": failed_jobs_count,
         "consumption_count": consume_rows.len(),
@@ -1352,7 +1460,11 @@ mod tests {
     }
 
     fn create_temp_test_db() -> PathBuf {
-        let unique = format!("keepwise_budget_fire_test_{}_{}.db", std::process::id(), Uuid::new_v4());
+        let unique = format!(
+            "keepwise_budget_fire_test_{}_{}.db",
+            std::process::id(),
+            Uuid::new_v4()
+        );
         std::env::temp_dir().join(unique)
     }
 
@@ -1446,7 +1558,9 @@ mod tests {
     fn v_i64(v: &Value, path: &[&str]) -> i64 {
         let mut cur = v;
         for key in path {
-            cur = cur.get(*key).unwrap_or_else(|| panic!("missing key: {}", key));
+            cur = cur
+                .get(*key)
+                .unwrap_or_else(|| panic!("missing key: {}", key));
         }
         cur.as_i64()
             .unwrap_or_else(|| panic!("expected i64 at path {:?}", path))
@@ -1455,7 +1569,9 @@ mod tests {
     fn v_f64(v: &Value, path: &[&str]) -> f64 {
         let mut cur = v;
         for key in path {
-            cur = cur.get(*key).unwrap_or_else(|| panic!("missing key: {}", key));
+            cur = cur
+                .get(*key)
+                .unwrap_or_else(|| panic!("missing key: {}", key));
         }
         cur.as_f64()
             .unwrap_or_else(|| panic!("expected f64 at path {:?}", path))
@@ -1464,7 +1580,9 @@ mod tests {
     fn v_str<'a>(v: &'a Value, path: &[&str]) -> &'a str {
         let mut cur = v;
         for key in path {
-            cur = cur.get(*key).unwrap_or_else(|| panic!("missing key: {}", key));
+            cur = cur
+                .get(*key)
+                .unwrap_or_else(|| panic!("missing key: {}", key));
         }
         cur.as_str()
             .unwrap_or_else(|| panic!("expected str at path {:?}", path))
@@ -1501,9 +1619,18 @@ mod tests {
             },
         )
         .expect("query budget overview");
-        assert_eq!(v_i64(&budget_overview, &["budget", "annual_total_cents"]), 1_200_000);
-        assert_eq!(v_i64(&budget_overview, &["actual", "spent_total_cents"]), 50_000);
-        assert_eq!(v_i64(&budget_overview, &["metrics", "annual_remaining_cents"]), 1_150_000);
+        assert_eq!(
+            v_i64(&budget_overview, &["budget", "annual_total_cents"]),
+            1_200_000
+        );
+        assert_eq!(
+            v_i64(&budget_overview, &["actual", "spent_total_cents"]),
+            50_000
+        );
+        assert_eq!(
+            v_i64(&budget_overview, &["metrics", "annual_remaining_cents"]),
+            1_150_000
+        );
         approx_eq(
             v_f64(&budget_overview, &["metrics", "usage_rate"]),
             50_000_f64 / 1_200_000_f64,
@@ -1522,7 +1649,10 @@ mod tests {
             .and_then(Value::as_array)
             .expect("rows array");
         assert_eq!(review_rows.len(), 12);
-        assert_eq!(v_i64(&budget_review, &["summary", "annual_spent_cents"]), 50_000);
+        assert_eq!(
+            v_i64(&budget_review, &["summary", "annual_spent_cents"]),
+            50_000
+        );
         let jan = review_rows
             .iter()
             .find(|row| row.get("month_key").and_then(Value::as_str) == Some("2026-01"))
@@ -1543,27 +1673,35 @@ mod tests {
             },
         )
         .expect("query salary overview");
-        assert_eq!(v_i64(&salary, &["summary", "salary_total_cents"]), 2_100_000);
+        assert_eq!(
+            v_i64(&salary, &["summary", "salary_total_cents"]),
+            2_100_000
+        );
         assert_eq!(
             v_i64(&salary, &["summary", "housing_fund_total_cents"]),
             200_000
         );
-        assert_eq!(v_i64(&salary, &["summary", "total_income_cents"]), 2_300_000);
+        assert_eq!(
+            v_i64(&salary, &["summary", "total_income_cents"]),
+            2_300_000
+        );
         assert_eq!(v_i64(&salary, &["summary", "months_with_salary"]), 2);
         assert_eq!(v_i64(&salary, &["summary", "months_with_housing_fund"]), 1);
         assert_eq!(v_i64(&salary, &["summary", "employer_count"]), 1);
 
-        let consumption = query_consumption_report_at_db_path(
-            &db_path,
-            ConsumptionReportQueryRequest::default(),
-        )
-        .expect("query consumption report");
+        let consumption =
+            query_consumption_report_at_db_path(&db_path, ConsumptionReportQueryRequest::default())
+                .expect("query consumption report");
         assert_eq!(v_i64(&consumption, &["consumption_count"]), 3);
         assert_eq!(v_i64(&consumption, &["excluded_consumption_count"]), 1);
         assert_eq!(v_i64(&consumption, &["raw_consumption_count"]), 4);
         assert_eq!(v_i64(&consumption, &["needs_review_count"]), 1);
         assert_eq!(v_i64(&consumption, &["failed_files_count"]), 1);
-        approx_eq(v_f64(&consumption, &["consumption_total_value"]), 600.0, 1e-6);
+        approx_eq(
+            v_f64(&consumption, &["consumption_total_value"]),
+            600.0,
+            1e-6,
+        );
         let categories = consumption
             .get("categories")
             .and_then(Value::as_array)
@@ -1599,12 +1737,30 @@ mod tests {
         )
         .expect("query fire progress");
 
-        assert_eq!(v_i64(&payload, &["budget", "annual_total_cents"]), 1_200_000);
-        assert_eq!(v_i64(&payload, &["investable_assets", "investment_cents"]), 5_000_000);
-        assert_eq!(v_i64(&payload, &["investable_assets", "cash_cents"]), 2_000_000);
-        assert_eq!(v_i64(&payload, &["investable_assets", "total_cents"]), 7_000_000);
-        assert_eq!(v_i64(&payload, &["metrics", "required_assets_cents"]), 30_000_000);
-        assert_eq!(v_i64(&payload, &["metrics", "remaining_to_goal_cents"]), 23_000_000);
+        assert_eq!(
+            v_i64(&payload, &["budget", "annual_total_cents"]),
+            1_200_000
+        );
+        assert_eq!(
+            v_i64(&payload, &["investable_assets", "investment_cents"]),
+            5_000_000
+        );
+        assert_eq!(
+            v_i64(&payload, &["investable_assets", "cash_cents"]),
+            2_000_000
+        );
+        assert_eq!(
+            v_i64(&payload, &["investable_assets", "total_cents"]),
+            7_000_000
+        );
+        assert_eq!(
+            v_i64(&payload, &["metrics", "required_assets_cents"]),
+            30_000_000
+        );
+        assert_eq!(
+            v_i64(&payload, &["metrics", "remaining_to_goal_cents"]),
+            23_000_000
+        );
         approx_eq(
             v_f64(&payload, &["metrics", "coverage_years"]),
             7_000_000_f64 / 1_200_000_f64,

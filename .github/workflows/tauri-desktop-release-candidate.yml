@@ -117,7 +117,7 @@ jobs:
           KEEPWISE_SKIP_PREFLIGHT: ${{ inputs.run_prechecks && '1' || '0' }}
           KEEPWISE_ARTIFACT_PREFIX: keepwise-desktop-rc-v${{ inputs.target_version }}-${{ github.run_number }}
           KEEPWISE_DESKTOP_EXPORT_ROOT: ${{ github.workspace }}/.artifacts/desktop-builds
-        run: bash scripts/build_keepwise_desktop_local.sh mac
+        run: bash apps/keepwise-tauri/scripts/build_keepwise_desktop_local.sh mac
 
       - name: Write release-candidate manifest
         if: always()

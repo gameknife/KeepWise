@@ -2517,6 +2517,205 @@ h3 {
     rgba(10, 17, 23, 0.82);
 }
 
+/* ── Consumption: Year tabs ── */
+.consumption-year-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 0.8rem;
+}
+
+.consumption-year-tab {
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  color: #ece6d8;
+  border-radius: 999px;
+  padding: 0.32rem 0.72rem;
+  font-size: 0.82rem;
+  cursor: pointer;
+  font-weight: 500;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease;
+}
+
+.consumption-year-tab:hover {
+  border-color: rgba(var(--kw-accent-rgb), 0.32);
+  background: rgba(var(--kw-accent-rgb), 0.08);
+}
+
+.consumption-year-tab.active {
+  border-color: rgba(var(--kw-accent-rgb), 0.42);
+  background: rgba(var(--kw-accent-rgb), 0.16);
+  color: #eafffb;
+  font-weight: 600;
+}
+
+/* ── Consumption: Transaction section ── */
+.consumption-tx-section {
+  margin-top: 1rem;
+}
+
+.consumption-tx-header {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+}
+
+.consumption-tx-header h4 {
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: #f6f2e9;
+  white-space: nowrap;
+}
+
+.consumption-tx-search {
+  display: inline-flex;
+  align-items: center;
+  position: relative;
+  flex: 1 1 180px;
+  max-width: 320px;
+}
+
+.consumption-tx-search input {
+  width: 100%;
+  padding: 0.35rem 2rem 0.35rem 0.6rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #ece6d8;
+  font-size: 0.8rem;
+}
+
+.consumption-tx-search input::placeholder {
+  color: rgba(243, 239, 229, 0.38);
+}
+
+.consumption-tx-search input:focus {
+  outline: none;
+  border-color: rgba(var(--kw-accent-rgb), 0.45);
+}
+
+.consumption-tx-search-clear {
+  position: absolute;
+  right: 0.35rem;
+  top: 50%;
+  transform: translateY(-50%);
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: rgba(243, 239, 229, 0.5);
+  cursor: pointer;
+  font-size: 0.82rem;
+  padding: 0.15rem 0.25rem;
+  border-radius: 4px;
+  line-height: 1;
+}
+
+.consumption-tx-search-clear:hover {
+  color: #f6f2e9;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.consumption-tx-count {
+  font-size: 0.78rem;
+  color: rgba(243, 239, 229, 0.55);
+  white-space: nowrap;
+}
+
+/* ── Consumption: Transaction table ── */
+.consumption-tx-table td {
+  white-space: normal;
+  word-break: break-all;
+}
+
+.consumption-tx-table td:last-child {
+  white-space: nowrap;
+}
+
+.row-needs-review {
+  background: rgba(220, 176, 106, 0.06);
+}
+
+.row-needs-review:hover {
+  background: rgba(220, 176, 106, 0.1);
+}
+
+/* ── Consumption: Inline action buttons ── */
+.consumption-tx-confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.78rem;
+  color: rgba(243, 239, 229, 0.72);
+}
+
+.consumption-tx-action-btn {
+  appearance: none;
+  border: 1px solid rgba(124, 195, 255, 0.28);
+  background: rgba(124, 195, 255, 0.06);
+  color: #d8efff;
+  border-radius: 6px;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+  font-weight: 500;
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.consumption-tx-action-btn:hover {
+  border-color: rgba(124, 195, 255, 0.5);
+  background: rgba(124, 195, 255, 0.12);
+}
+
+.consumption-tx-action-btn.danger {
+  border-color: rgba(255, 122, 106, 0.35);
+  background: rgba(255, 122, 106, 0.08);
+  color: #ffe7e2;
+}
+
+.consumption-tx-action-btn.danger:hover {
+  border-color: rgba(255, 122, 106, 0.6);
+  background: rgba(255, 122, 106, 0.16);
+}
+
+/* ── Consumption: Pagination ── */
+.consumption-tx-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.7rem;
+  margin-top: 0.6rem;
+  font-size: 0.8rem;
+  color: rgba(243, 239, 229, 0.6);
+}
+
+.consumption-tx-pagination button {
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: #ece6d8;
+  border-radius: 6px;
+  padding: 0.25rem 0.6rem;
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.consumption-tx-pagination button:hover:not(:disabled) {
+  border-color: rgba(var(--kw-accent-rgb), 0.35);
+  background: rgba(var(--kw-accent-rgb), 0.08);
+}
+
+.consumption-tx-pagination button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
 @media (max-width: 980px) {
   .workspace-layout {
     grid-template-columns: 1fr;

@@ -1,69 +1,181 @@
-# BeyondYZYX - Session Notes / Agent Quickstart
+# BeyondYZYX / KeepWise - Agent Guide
 
-本文件用于帮助后续会话快速接手，内容只保留当前有效状态（精简版）。
+Tauri Desktop app (React 19 + TypeScript 5.8 + Vite 7 frontend, Rust 2021 + SQLite backend).
+Personal finance tool: import bank/investment data, analyze wealth, track budgets.
 
-## 当前结论（2026-02）
+## Repository Layout
 
-项目主线已从早期 Python/Web 工作台迁移到 **Tauri Desktop（React + Rust）**。
-
-当前桌面端已经具备：
-
-- 本地 SQLite 账本迁移与管理
-- 三类导入（YZXY CSV/XLSX、招行 EML、招行银行流水 PDF）
-- 核心分析（投资收益、投资曲线、财富总览、财富曲线）
-- 规则管理（商户映射、分类规则、白名单、分析排除、商户建议）
-- 高级管理（数据库健康、查询维护、管理员操作）
-- 产品化 UI（TAB 工作台、设置、隐私模式、图表）
-
-## 当前主线目标（桌面端）
-
-1. 产品化 UI 收尾（降低调试感）
-2. 自动化回归覆盖扩展
-3. 桌面发布流程收口（签名/公证）
-4. 移动端后续再做
-
-## 常用路径（接手必看）
-
-- 桌面应用：`/Users/gameknife/github/BeyondYZYX/apps/keepwise-tauri`
-- Rust 端：`/Users/gameknife/github/BeyondYZYX/apps/keepwise-tauri/src-tauri`
-- 工程文档：`/Users/gameknife/github/BeyondYZYX/docs/engineering`
-- 差分工具：`/Users/gameknife/github/BeyondYZYX/tools/migration`
-- 导入/旧脚本：`/Users/gameknife/github/BeyondYZYX/scripts`
-
-## 常用命令
-
-```bash
-# 启动桌面应用
-cd /Users/gameknife/github/BeyondYZYX/apps/keepwise-tauri
-npm run tauri dev
-
-# 桌面端综合检查（推荐）
-npm run desktop:release:check
-
-# 核心 4 分析接口差分
-npm run test:diff:core
-
-# Rust 回归子集
-npm run test:rust:regression
+```
+apps/keepwise-tauri/          # Main (only) application
+  src/App.tsx                 # Entire React UI (single-file, ~10K lines)
+  src/lib/desktopApi.ts       # Typed Tauri invoke wrappers
+  src-tauri/src/              # Rust backend (flat module-per-domain)
+    lib.rs                    # Module declarations + pub use re-exports
+    commands.rs               # Health ping, app metadata, paths
+    ledger_db.rs              # SQLite migration & DB path resolution
+    investment_analytics.rs   # Investment return/curve queries
+    wealth_analytics.rs       # Wealth overview/curve queries
+    budget_fire_analytics.rs  # Budget, income, consumption, FIRE
+    rules_management.rs       # CSV-based rule CRUD
+    cmb_eml_import.rs         # CMB credit card EML import
+    cmb_bank_pdf_import.rs    # CMB bank statement PDF import
+    yzxy_import.rs            # YZXY CSV/XLSX import
+    bin/kw_migration_adapter.rs  # CLI adapter for diff regression
+  scripts/                    # Tauri build/validation shell scripts
+apps/keepwise-legacy/         # Legacy Python/BS app (deprecated)
+  scripts/                    # Python analytics & web app scripts
+  examples/                   # Demo examples
+db/migrations/                # SQLite migration SQL files (0001-0006)
+tools/migration/              # Python-vs-Rust diff regression framework
+docs/engineering/             # Architecture & runbook docs
 ```
 
-## 关键工程事实（避免重复踩坑）
+## Build & Dev Commands
 
-- 核心 4 分析接口已完成 Python vs Rust 差分（当前基线通过）。
-- `CMB EML` 导入已修复：
-  - HTML 行解析重复计数问题
-  - 二次导入重复交易（ID 不稳定）问题
-- `CMB PDF` 导入已修复中文短商户误判“个人转账”问题。
-- 规则运行时目录已切到 app 本地规则目录（首次从仓库 `data/rules` seed）。
+All npm commands run from `apps/keepwise-tauri/`:
 
-## 当前 UI 约定（桌面端）
+```bash
+npm run tauri dev              # Start dev (Vite + Rust hot-reload)
+npm run build                  # Frontend only: tsc && vite build
+npm run tauri:build            # Full production bundle
+npm run tauri:build:debug      # Debug production bundle
+npm run tauri:build:mac        # macOS app + dmg only
+```
 
-- 左侧 TAB 为产品入口；`更新收益` 为快捷弹窗入口（不切页）
-- 调试类能力默认收敛在 `高级管理`，部分需开发者模式显示
-- 设置项已支持 `localStorage` 持久化（隐私模式、着色方案、动画开关）
+## Test Commands
 
-## 文档入口
+```bash
+# All Rust unit tests (14 tests across 5 files)
+npm run test:rust
+# Equivalent: cargo test --manifest-path src-tauri/Cargo.toml
 
-- `/Users/gameknife/github/BeyondYZYX/README.md`
-- `/Users/gameknife/github/BeyondYZYX/docs/engineering/TAURI_STACK_MIGRATION_MASTER_PLAN.md`
-- `/Users/gameknife/github/BeyondYZYX/docs/engineering/TAURI_DESKTOP_BUILD_RUNBOOK.md`
+# Run a single Rust test by name
+cargo test --manifest-path src-tauri/Cargo.toml <test_name>
+# Example:
+cargo test --manifest-path src-tauri/Cargo.toml investment_returns_query_sorts_by_return_rate
+
+# Run tests in a single Rust module
+cargo test --manifest-path src-tauri/Cargo.toml --lib cmb_eml_import
+
+# Curated Rust regression subset (7 named tests via shell script)
+npm run test:rust:regression
+
+# Core analytics diff regression (Python baseline vs Rust, 25 cases)
+npm run test:diff:core
+
+# Full release gate (regression + diff + frontend build + cargo check)
+npm run desktop:release:check
+```
+
+## CI/CD
+
+GitHub Actions at `.github/workflows/`:
+- `tauri-desktop-check.yml` - Auto on PR/push: frontend build, cargo check, rust regression, diff regression
+- `tauri-desktop-release-candidate.yml` - Manual: version check + RC bundle
+- `tauri-desktop-release-signed-macos-template.yml` - Manual: signing + notarization
+
+## TypeScript Code Style
+
+**No ESLint/Prettier/Biome configured.** Linting relies on `tsc --strict` only.
+
+### tsconfig strictness
+- `strict: true`, `noUnusedLocals`, `noUnusedParameters`, `noFallthroughCasesInSwitch`
+- Target: ES2020, module: ESNext, JSX: react-jsx
+
+### Imports
+1. React core: `import { useState, useEffect } from "react"`
+2. Third-party: `react-datepicker`, `d3-sankey`, `@tauri-apps/*`
+3. CSS/assets: `"./App.css"`, SVG imports
+4. Local modules: `"./lib/desktopApi"` with inline `type` keyword for type imports
+
+### Naming
+- Components: **PascalCase** function declarations - `function LineAreaChart(...)`
+- Functions/variables: **camelCase** - `formatCentsShort()`, `amountPrivacyMaskedGlobal`
+- Types: **PascalCase** with `type` keyword (never `interface`) - `type LoadStatus`, `type AppSettings`
+- API types: PascalCase with suffixes - `*Request`, `*Payload`, `*QueryRequest`
+- Constants: **UPPER_SNAKE_CASE** - `PRODUCT_TABS`, `APP_SETTINGS_STORAGE_KEY`
+
+### Types
+- Always use `type`, never `interface`
+- Inline object types for component props (no separate `Props` type)
+- API response types are often aliased to `unknown` (loose response, strict request)
+- Union literals for state: `type LoadStatus = "idle" | "loading" | "ready" | "error"`
+
+### Exports
+- Named exports everywhere (`export type`, `export async function`)
+- Only `App.tsx` uses `export default`
+
+### Error Handling
+```typescript
+catch (err) {
+  const msg = err instanceof Error ? err.message : typeof err === "string" ? err : "Unknown error";
+}
+```
+- `RootErrorBoundary` class component in `main.tsx` for unhandled errors
+- `desktopApi.ts` functions propagate Rust errors as rejected Promises (no try/catch in API layer)
+
+### UI Strings & Comments
+- All user-facing strings are in **Chinese**
+- Code comments are minimal and mostly in Chinese
+- No JSDoc/TSDoc
+
+### Architecture Notes
+- Entire UI lives in `App.tsx` (monolithic single-file, ~10K lines) - no component splitting
+- State management: raw `useState` only (no Redux/Zustand)
+- CSS: single `App.css` with BEM-like classes (`preview-stat-label`, `line-area-chart-wrap`)
+- Conditional rendering: ternary `{cond ? <X /> : null}` (not `&&` short-circuit)
+
+## Rust Code Style
+
+### Module Organization
+- Flat structure: one file per domain, all declared as `mod` in `lib.rs`
+- Public API: `#[tauri::command] pub fn foo(app, req) -> Result<Value, String>`
+- Testable internals: `*_at_db_path` variants that accept a DB path directly
+- Re-exports in `lib.rs` via `pub use` for external consumption
+
+### Naming
+- Structs: **PascalCase** - `InvestmentReturnQueryRequest`, `ModifiedDietzCalc`
+- Functions: **snake_case** - `resolve_window`, `build_single_account_investment_return_payload`
+- Constants: **UPPER_SNAKE_CASE** - `PORTFOLIO_ACCOUNT_ID`, `SUPPORTED_PRESETS`
+- Tauri commands: snake_case matching JS invoke name
+
+### Error Handling
+- Universal return type: `Result<Value, String>` (no custom error types, no `thiserror`)
+- Error conversion: `.map_err(|e| format!("描述: {e}"))`
+- Error messages are in **Chinese**: `"打开数据库失败"`, `"account_id 必填"`
+- Early returns with `?` operator; `let Some(x) = y else { return Err(...) };`
+
+### Response Construction
+- `serde_json::json!` macro for all responses (no typed response structs)
+- Request types: `#[derive(Debug, Deserialize)]` with `Option<String>` fields
+- `#[serde(rename = "from")]` for Rust reserved-word field names
+
+### Imports (Rust)
+1. External crates: `chrono`, `rusqlite`, `serde`, `serde_json`, `csv`, `std::*`
+2. Internal: `use crate::ledger_db::resolve_ledger_db_path`
+3. No blank-line separation between groups
+
+### Test Patterns
+- Inline `#[cfg(test)] mod tests` in each source file
+- Each test module duplicates helpers: `create_temp_test_db()`, `apply_all_migrations_for_test()`, `repo_root()`, `approx_eq()`
+- Tests create temp SQLite DBs with `uuid::Uuid` filenames
+- Idempotency testing: import data twice, verify no duplicates
+- ID stability: deterministic transaction IDs across repeated parses
+- Conditional skip for real-data tests: `if !sample_dir.exists() { return; }`
+- No `[dev-dependencies]` in Cargo.toml - tests use production deps
+
+## Key Engineering Facts
+
+- Core 4 analytics APIs have Python-vs-Rust differential regression (baseline passing)
+- CMB EML import: fixed HTML line parsing duplication + ID instability on re-import
+- CMB PDF import: fixed Chinese short-merchant false "personal transfer" classification
+- Rules runtime directory: app-local rules dir (seeded from repo `data/rules` on first run)
+- Version must be synced across: `package.json`, `Cargo.toml`, `tauri.conf.json`
+
+## Documentation
+
+- Migration master plan: `docs/engineering/TAURI_STACK_MIGRATION_MASTER_PLAN.md`
+- Build runbook: `docs/engineering/TAURI_DESKTOP_BUILD_RUNBOOK.md`
+- Release checklist: `docs/engineering/TAURI_DESKTOP_RELEASE_EXECUTION_CHECKLIST.md`
+- Data dictionary: `docs/foundation/DATA_DICTIONARY_V1.md`
+- Product flow: `docs/foundation/PRODUCT_FLOW.md`

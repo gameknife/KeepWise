@@ -164,7 +164,9 @@ export type FireProgressQueryRequest = {
 };
 
 export type MonthlyBudgetItemsQueryRequest = Record<string, never>;
-export type ConsumptionReportQueryRequest = Record<string, never>;
+export type ConsumptionReportQueryRequest = {
+  year?: string;
+};
 
 export type MonthlyBudgetItemUpsertRequest = {
   id?: string;

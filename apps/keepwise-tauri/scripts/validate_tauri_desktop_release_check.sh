@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 APP_DIR="$ROOT_DIR/apps/keepwise-tauri"
 ARTIFACT_DIR="${KEEPWISE_DESKTOP_CHECK_ARTIFACT_DIR:-$ROOT_DIR/.artifacts/tauri-desktop-check}"
 mkdir -p "$ARTIFACT_DIR"
@@ -66,12 +66,12 @@ trap on_exit EXIT
 
 echo "[1/4] Rust regression subset"
 rust_regression_status="running"
-bash "$ROOT_DIR/scripts/validate_tauri_desktop_rust_regression.sh"
+bash "$ROOT_DIR/apps/keepwise-tauri/scripts/validate_tauri_desktop_rust_regression.sh"
 rust_regression_status="pass"
 
 echo "[2/4] Core analytics diff regression"
 core_diff_status="running"
-KEEPWISE_DIFF_REPORT_DIR="$ARTIFACT_DIR" bash "$ROOT_DIR/scripts/validate_tauri_core_diff_regression.sh"
+KEEPWISE_DIFF_REPORT_DIR="$ARTIFACT_DIR" bash "$ROOT_DIR/apps/keepwise-tauri/scripts/validate_tauri_core_diff_regression.sh"
 core_diff_status="pass"
 
 echo "[3/4] Frontend build"

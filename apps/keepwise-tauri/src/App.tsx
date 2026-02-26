@@ -117,8 +117,6 @@ import {
   type BankTransferWhitelistDeleteRequest,
   type BankTransferWhitelistQueryRequest,
   type BankTransferWhitelistUpsertRequest,
-  type UpdateTransactionAnalysisExclusionRequest,
-  type TransactionAnalysisExclusionMutationPayload,
   type UpdateAssetValuationRequest,
   type UpdateInvestmentRecordRequest,
   type UpsertManualAssetValuationRequest,
@@ -279,26 +277,6 @@ function formatDateInputValue(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
-function parseMonthInputValue(value: string): Date | null {
-  const match = /^(\d{4})-(\d{2})$/.exec(value);
-  if (!match) {
-    return null;
-  }
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const parsed = new Date(year, month - 1, 1);
-  if (Number.isNaN(parsed.getTime()) || parsed.getFullYear() !== year || parsed.getMonth() !== month - 1) {
-    return null;
-  }
-  return parsed;
-}
-
-function formatMonthInputValue(date: Date): string {
-  const year = `${date.getFullYear()}`;
-  const month = `${date.getMonth() + 1}`.padStart(2, "0");
-  return `${year}-${month}`;
-}
-
 function emitPickerInputChange(onChange: PickerInputProps["onChange"], nextValue: string) {
   if (!onChange) {
     return;
@@ -347,50 +325,6 @@ function DateInput({
         todayButton="今天"
         isClearable
         clearButtonTitle="清空日期"
-      />
-    </div>
-  );
-}
-
-function MonthInput({
-  value,
-  onChange,
-  placeholder,
-  disabled,
-  className,
-  title,
-  id,
-  name,
-  autoFocus,
-  onBlur,
-  onKeyDown,
-}: PickerInputProps) {
-  const selected = parseMonthInputValue(value == null ? "" : String(value));
-  const mergedClassName = ["kw-date-picker-input", className].filter(Boolean).join(" ");
-
-  return (
-    <div className="kw-date-input-shell">
-      <DatePicker
-        selected={selected}
-        onChange={(date: Date | null) => emitPickerInputChange(onChange, date instanceof Date ? formatMonthInputValue(date) : "")}
-        dateFormat="yyyy-MM"
-        placeholderText={placeholder}
-        className={mergedClassName}
-        calendarClassName="kw-date-calendar"
-        popperClassName="kw-date-popper"
-        showPopperArrow={false}
-        showMonthYearPicker
-        shouldCloseOnSelect
-        disabled={disabled}
-        title={title}
-        id={id}
-        name={name}
-        autoFocus={autoFocus}
-        onBlur={onBlur as never}
-        onKeyDown={onKeyDown as never}
-        todayButton="本月"
-        isClearable
-        clearButtonTitle="清空月份"
       />
     </div>
   );
@@ -2269,7 +2203,17 @@ function SalaryIncomeOverviewPreview({ data }: { data: unknown }) {
   );
 }
 
-function ConsumptionOverviewPreview({ data }: { data: unknown }) {
+function ConsumptionOverviewPreview({
+  data,
+  selectedYear,
+  onYearChange,
+  onExcludeTransaction,
+}: {
+  data: unknown;
+  selectedYear: string;
+  onYearChange: (year: string) => void;
+  onExcludeTransaction?: (id: string, action: "exclude" | "restore", reason: string) => Promise<void>;
+}) {
   const [catSortKey, setCatSortKey] = useState<string>("amount");
   const [catSortDir, setCatSortDir] = useState<TableSortDirection>("desc");
   const [monthSortKey, setMonthSortKey] = useState<string>("month");
@@ -2280,9 +2224,15 @@ function ConsumptionOverviewPreview({ data }: { data: unknown }) {
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [selectedMerchants, setSelectedMerchants] = useState<string[]>([]);
   const [excludeNeedsReview, setExcludeNeedsReview] = useState(true);
+  const [txSearchKeyword, setTxSearchKeyword] = useState<string>("");
+  const [txPage, setTxPage] = useState<number>(0);
+  const [pendingExcludeId, setPendingExcludeId] = useState<string>("");
+  const [excludeBusy, setExcludeBusy] = useState(false);
+  const TX_PAGE_SIZE = 50;
   if (!isRecord(data)) return null;
 
   type TxRow = {
+    id: string;
     month: string;
     date: string;
     merchant: string;
@@ -2296,6 +2246,7 @@ function ConsumptionOverviewPreview({ data }: { data: unknown }) {
 
   const transactions = readArray(data, "transactions").filter(isRecord);
   const txRows: TxRow[] = transactions.map((row) => ({
+    id: typeof row.id === "string" ? row.id : "",
     month: typeof row.month === "string" ? row.month : "",
     date: typeof row.date === "string" ? row.date : "",
     merchant: typeof row.merchant === "string" && row.merchant ? row.merchant : "未知商户",
@@ -2307,18 +2258,16 @@ function ConsumptionOverviewPreview({ data }: { data: unknown }) {
     sourcePath: typeof row.source_path === "string" ? row.source_path : "",
   }));
 
+  const availableYears = readArray(data, "available_years")
+    .map((v) => (typeof v === "string" ? v : ""))
+    .filter((v) => v.length === 4);
+
   const total = readNumber(data, "consumption_total_value");
   const totalText = readString(data, "consumption_total") ?? "-";
   const count = readNumber(data, "consumption_count");
   const reviewCount = readNumber(data, "needs_review_count");
-  const reviewRatio = readNumber(data, "needs_review_ratio");
   const excludedCount = readNumber(data, "excluded_consumption_count");
   const excludedTotalText = readString(data, "excluded_consumption_total") ?? "-";
-  const rawCount = readNumber(data, "raw_consumption_count");
-  const rawTotalText = readString(data, "raw_consumption_total") ?? "-";
-  const inputFiles = readNumber(data, "input_files_count");
-  const failedFiles = readNumber(data, "failed_files_count");
-  const generatedAt = readString(data, "generated_at") ?? "-";
 
   const monthOptions = Array.from(new Set(txRows.map((r) => r.month).filter((m) => m)))
     .sort((a, b) => a.localeCompare(b, "zh-Hans-CN", { numeric: true, sensitivity: "base" }));
@@ -2371,8 +2320,6 @@ function ConsumptionOverviewPreview({ data }: { data: unknown }) {
       merchant: x.key as string,
       amount: x.amount as number,
       count: x.count as number,
-      category: (x.category as string) || "待分类",
-      review_count: x.review_count as number,
     }))
     .sort((a, b) => b.amount - a.amount);
 
@@ -2396,7 +2343,6 @@ function ConsumptionOverviewPreview({ data }: { data: unknown }) {
       count: x.count as number,
       review_count: x.review_count as number,
     }))
-    .filter((x) => x.month)
     .sort((a, b) => a.month.localeCompare(b.month, "zh-Hans-CN", { numeric: true, sensitivity: "base" }));
 
   const merchants = buildAgg(filteredTx, (r) => r.merchant)
@@ -2410,8 +2356,6 @@ function ConsumptionOverviewPreview({ data }: { data: unknown }) {
     .sort((a, b) => b.amount - a.amount);
 
   const filteredTotalCents = filteredTx.reduce((sum, r) => sum + Math.round(r.amount * 100), 0);
-  const filteredReviewCount = filteredTx.filter((r) => r.needsReview).length;
-  const filteredReviewRatio = filteredTx.length > 0 ? filteredReviewCount / filteredTx.length : 0;
 
   const categorySorted = [...categories].sort((a, b) => {
     const cmp = compareSortValues(
@@ -2484,12 +2428,61 @@ function ConsumptionOverviewPreview({ data }: { data: unknown }) {
     ...selectedMerchants.map((v) => ({ kind: "merchant" as const, value: v, label: `商户: ${v}` })),
   ];
 
+  // 交易明细：基于筛选后数据 + 搜索
+  const searchedTx = txSearchKeyword.trim()
+    ? filteredTx.filter((r) => {
+        const kw = txSearchKeyword.trim().toLowerCase();
+        return (
+          r.merchant.toLowerCase().includes(kw) ||
+          r.description.toLowerCase().includes(kw) ||
+          r.category.toLowerCase().includes(kw)
+        );
+      })
+    : filteredTx;
+  const txTotalPages = Math.max(1, Math.ceil(searchedTx.length / TX_PAGE_SIZE));
+  const safeTxPage = Math.min(txPage, txTotalPages - 1);
+  const pagedTx = searchedTx.slice(safeTxPage * TX_PAGE_SIZE, (safeTxPage + 1) * TX_PAGE_SIZE);
+
+  // 月均消费
+  const monthCount = months.length || 1;
+  const monthlyAvgCents = Math.round(filteredTotalCents / monthCount);
+
   return (
     <div className="subcard preview-card">
-      <div className="preview-header">
-        <h3>消费总览</h3>
-        <div className="preview-subtle">生成时间 {generatedAt}</div>
-      </div>
+      {/* 年度 Tab */}
+      {availableYears.length > 0 ? (
+        <div className="consumption-year-tabs">
+          {availableYears.map((year) => (
+            <button
+              key={year}
+              type="button"
+              className={`consumption-year-tab ${selectedYear === year ? "active" : ""}`}
+              onClick={() => {
+                onYearChange(year);
+                setSelectedMonth("");
+                setSelectedCategories([]);
+                setSelectedMerchants([]);
+                setTxPage(0);
+              }}
+            >
+              {year}年
+            </button>
+          ))}
+          <button
+            type="button"
+            className={`consumption-year-tab ${selectedYear === "" ? "active" : ""}`}
+            onClick={() => {
+              onYearChange("");
+              setSelectedMonth("");
+              setSelectedCategories([]);
+              setSelectedMerchants([]);
+              setTxPage(0);
+            }}
+          >
+            全部
+          </button>
+        </div>
+      ) : null}
 
       <div className="consumption-filter-bar">
         <div className="consumption-filter-row">
@@ -2502,7 +2495,7 @@ function ConsumptionOverviewPreview({ data }: { data: unknown }) {
             />
           </label>
           <div className="consumption-filter-inline">
-            <span className="consumption-filter-label">月份单选</span>
+            <span className="consumption-filter-label">月份</span>
             <div className="consumption-chip-group">
               <button
                 type="button"
@@ -2518,7 +2511,7 @@ function ConsumptionOverviewPreview({ data }: { data: unknown }) {
                   className={`consumption-chip ${selectedMonth === month ? "active" : ""}`}
                   onClick={() => setSelectedMonth(month)}
                 >
-                  {month}
+                  {month.length >= 7 ? month.slice(5) + "月" : month}
                 </button>
               ))}
             </div>
@@ -2526,14 +2519,14 @@ function ConsumptionOverviewPreview({ data }: { data: unknown }) {
         </div>
 
         <div className="consumption-filter-inline">
-          <span className="consumption-filter-label">分类筛选（多选）</span>
+          <span className="consumption-filter-label">分类（多选）</span>
           <div className="consumption-chip-group">
             <button
               type="button"
               className={`consumption-chip ${selectedCategories.length === 0 ? "active" : ""}`}
               onClick={() => setSelectedCategories([])}
             >
-              全部分类
+              全部
             </button>
             {categoryOptionsAgg.slice(0, 24).map((row) => (
               <button
@@ -2550,14 +2543,14 @@ function ConsumptionOverviewPreview({ data }: { data: unknown }) {
         </div>
 
         <div className="consumption-filter-inline">
-          <span className="consumption-filter-label">商户筛选（多选）</span>
+          <span className="consumption-filter-label">商户（多选）</span>
           <div className="consumption-chip-group">
             <button
               type="button"
               className={`consumption-chip ${selectedMerchants.length === 0 ? "active" : ""}`}
               onClick={() => setSelectedMerchants([])}
             >
-              全部商户
+              全部
             </button>
             {merchantOptionsAgg.slice(0, 30).map((row) => (
               <button
@@ -2606,27 +2599,21 @@ function ConsumptionOverviewPreview({ data }: { data: unknown }) {
                 setExcludeNeedsReview(true);
               }}
             >
-              清空筛选（恢复默认）
+              清空筛选
             </button>
           </div>
         ) : null}
       </div>
 
       <div className="preview-stat-grid">
-        <PreviewStat label="筛选后消费总额(元)" value={formatCentsShort(filteredTotalCents)} tone={filteredTotalCents > 0 ? "good" : "warn"} />
-        <PreviewStat label="筛选后消费笔数" value={filteredTx.length} />
-        <PreviewStat label="筛选后待确认笔数" value={filteredReviewCount} tone={filteredReviewCount > 0 ? "warn" : "good"} />
-        <PreviewStat label="筛选后待确认占比" value={formatRatePct(filteredReviewRatio)} />
+        <PreviewStat label="消费总额(元)" value={formatCentsShort(filteredTotalCents)} tone={filteredTotalCents > 0 ? "good" : "warn"} />
+        <PreviewStat label="消费笔数" value={filteredTx.length} />
+        <PreviewStat label="月均消费(元)" value={formatCentsShort(monthlyAvgCents)} />
+        <PreviewStat label="待确认笔数" value={(reviewCount ?? 0)} tone={(reviewCount ?? 0) > 0 ? "warn" : "good"} />
+        <PreviewStat label="已剔除笔数" value={excludedCount ?? 0} />
+        <PreviewStat label="已剔除金额(元)" value={excludedTotalText} />
         <PreviewStat label="全量消费总额(元)" value={totalText} tone={(total ?? 0) > 0 ? "default" : "warn"} />
-        <PreviewStat label="全量消费笔数" value={count ?? 0} />
-        <PreviewStat label="全量待确认笔数" value={reviewCount ?? 0} tone={(reviewCount ?? 0) > 0 ? "warn" : "good"} />
-        <PreviewStat label="全量待确认占比" value={formatRatePct(reviewRatio)} />
-        <PreviewStat label="排除笔数" value={excludedCount ?? 0} />
-        <PreviewStat label="排除金额(元)" value={excludedTotalText} />
-        <PreviewStat label="原始笔数" value={rawCount ?? 0} />
-        <PreviewStat label="原始金额(元)" value={rawTotalText} />
-        <PreviewStat label="输入文件数" value={inputFiles ?? 0} />
-        <PreviewStat label="失败文件数" value={failedFiles ?? 0} tone={(failedFiles ?? 0) > 0 ? "warn" : "good"} />
+        <PreviewStat label="全量笔数" value={count ?? 0} />
       </div>
 
       <div className="preview-chart-grid">
@@ -2649,7 +2636,7 @@ function ConsumptionOverviewPreview({ data }: { data: unknown }) {
             <div className="consumption-donut" style={donutStyle}>
               <div className="consumption-donut-hole">
                 <div className="consumption-donut-total-label">总额</div>
-                <div className="consumption-donut-total-value">{totalText}</div>
+                <div className="consumption-donut-total-value">{formatCentsShort(filteredTotalCents)}</div>
               </div>
             </div>
             <div className="consumption-donut-legend">
@@ -2694,13 +2681,13 @@ function ConsumptionOverviewPreview({ data }: { data: unknown }) {
               {categorySorted.map((row, idx) => {
                 const category = row.category;
                 const amount = row.amount;
-                const count = row.count;
+                const rowCount = row.count;
                 const review = row.review_count;
                 return (
                   <tr key={`${category}-${idx}`}>
                     <td className="truncate-cell" title={category}>{category}</td>
                     <td className="num">{amount.toFixed(2)}</td>
-                    <td className="num">{count}</td>
+                    <td className="num">{rowCount}</td>
                     <td className={`num ${review > 0 ? "warn-text" : ""}`}>{review}</td>
                   </tr>
                 );
@@ -2774,6 +2761,96 @@ function ConsumptionOverviewPreview({ data }: { data: unknown }) {
                 </tbody>
               </table>
             </div>
+          </div>
+        ) : null}
+      </div>
+
+      {/* 交易明细表格（内联） */}
+      <div className="consumption-tx-section">
+        <div className="consumption-tx-header">
+          <h4>交易明细</h4>
+          <div className="consumption-tx-search">
+            <input
+              type="text"
+              placeholder="搜索商户 / 摘要 / 分类..."
+              value={txSearchKeyword}
+              onChange={(e) => { setTxSearchKeyword(e.target.value); setTxPage(0); }}
+            />
+            {txSearchKeyword ? (
+              <button type="button" className="consumption-tx-search-clear" onClick={() => { setTxSearchKeyword(""); setTxPage(0); }}>×</button>
+            ) : null}
+          </div>
+          <span className="consumption-tx-count">{searchedTx.length} 笔</span>
+        </div>
+        {pagedTx.length > 0 ? (
+          <div className="preview-table-wrap">
+            <table className="preview-table consumption-tx-table">
+              <thead>
+                <tr>
+                  <th>日期</th>
+                  <th>商户</th>
+                  <th>分类</th>
+                  <th className="num">金额(元)</th>
+                  <th>摘要</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pagedTx.map((row) => (
+                  <tr key={row.id || `${row.date}-${row.merchant}-${row.amount}`} className={row.needsReview ? "row-needs-review" : ""}>
+                    <td>{row.date}</td>
+                    <td className="truncate-cell" title={row.merchant}>{row.merchant}</td>
+                    <td>{row.category}</td>
+                    <td className="num">{row.amount.toFixed(2)}</td>
+                    <td className="truncate-cell" title={row.description}>{row.description}</td>
+                    <td>
+                      {pendingExcludeId === row.id ? (
+                        <span className="consumption-tx-confirm">
+                          <span>确认剔除？</span>
+                          <button
+                            type="button"
+                            className="consumption-tx-action-btn danger"
+                            disabled={excludeBusy}
+                            onClick={async () => {
+                              if (!onExcludeTransaction) return;
+                              setExcludeBusy(true);
+                              try {
+                                await onExcludeTransaction(row.id, "exclude", "消费分析页剔除");
+                              } finally {
+                                setExcludeBusy(false);
+                                setPendingExcludeId("");
+                              }
+                            }}
+                          >
+                            {excludeBusy ? "..." : "确认"}
+                          </button>
+                          <button type="button" className="consumption-tx-action-btn" onClick={() => setPendingExcludeId("")}>取消</button>
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          className="consumption-tx-action-btn danger"
+                          title="从分析统计中剔除此交易"
+                          disabled={!row.id || !onExcludeTransaction}
+                          onClick={() => setPendingExcludeId(row.id)}
+                        >
+                          剔除
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="placeholder">暂无交易数据。</p>
+        )}
+        {txTotalPages > 1 ? (
+          <div className="consumption-tx-pagination">
+            <button type="button" disabled={safeTxPage <= 0} onClick={() => setTxPage(safeTxPage - 1)}>上一页</button>
+            <span>{safeTxPage + 1} / {txTotalPages}</span>
+            <button type="button" disabled={safeTxPage >= txTotalPages - 1} onClick={() => setTxPage(safeTxPage + 1)}>下一页</button>
           </div>
         ) : null}
       </div>
@@ -3121,94 +3198,6 @@ function MetaAccountsPreview({ data }: { data: unknown }) {
                     <td>{typeOrClass}</td>
                     <td className="num">{String(count)}</td>
                     <td>{latest}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function TransactionsPreview({ data }: { data: unknown }) {
-  const [sortKey, setSortKey] = useState<string>("posted_at");
-  const [sortDir, setSortDir] = useState<TableSortDirection>("desc");
-  if (!isRecord(data)) return null;
-  const rows = readArray(data, "rows").filter(isRecord);
-  const count = readNumber(data, "summary.count");
-  const total = readNumber(data, "summary.total_amount_cents");
-  const excluded = readNumber(data, "summary.excluded_count_in_rows");
-  const sort = readString(data, "summary.sort") ?? "-";
-  const sortedRows = [...rows].sort((a, b) => {
-    const valueFor = (row: Record<string, unknown>) => {
-      switch (sortKey) {
-        case "posted_at":
-          return (typeof row.posted_at === "string" && row.posted_at) ||
-            (typeof row.occurred_at === "string" ? row.occurred_at : "");
-        case "merchant":
-          return (typeof row.merchant === "string" && row.merchant) ||
-            (typeof row.merchant_normalized === "string" ? row.merchant_normalized : "");
-        case "expense_category":
-          return row.expense_category;
-        case "amount_cents":
-          return row.amount_cents;
-        case "manual_excluded":
-          return row.manual_excluded === true ? 1 : 0;
-        default:
-          return "";
-      }
-    };
-    const cmp = compareSortValues(valueFor(a), valueFor(b));
-    return sortDir === "asc" ? cmp : -cmp;
-  });
-  const toggleSort = (key: string) => {
-    const next = nextSortState(sortKey, sortDir, key);
-    setSortKey(next.key);
-    setSortDir(next.dir);
-  };
-  return (
-    <div className="subcard preview-card">
-      <div className="preview-header">
-        <h3>交易查询</h3>
-        <div className="preview-subtle">sort <code>{sort}</code></div>
-      </div>
-      <div className="preview-stat-grid">
-        <PreviewStat label="Count" value={count ?? 0} />
-        <PreviewStat label="Total (Yuan)" value={formatCentsShort(total)} />
-        <PreviewStat label="排除数 In Rows" value={excluded ?? 0} tone={(excluded ?? 0) > 0 ? "warn" : "default"} />
-      </div>
-      {sortedRows.length > 0 ? (
-        <div className="preview-table-wrap">
-          <table className="preview-table">
-            <thead>
-              <tr>
-                <th><SortableHeaderButton label="日期" sortKey="posted_at" activeSortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} /></th>
-                <th><SortableHeaderButton label="商户" sortKey="merchant" activeSortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} /></th>
-                <th><SortableHeaderButton label="分类" sortKey="expense_category" activeSortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} /></th>
-                <th className="num"><SortableHeaderButton label="金额" sortKey="amount_cents" activeSortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} /></th>
-                <th><SortableHeaderButton label="标记" sortKey="manual_excluded" activeSortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} /></th>
-              </tr>
-            </thead>
-            <tbody>
-              {sortedRows.map((row, idx) => {
-                const date =
-                  (typeof row.posted_at === "string" && row.posted_at) ||
-                  (typeof row.occurred_at === "string" ? row.occurred_at : "-");
-                const merchant =
-                  (typeof row.merchant === "string" && row.merchant) ||
-                  (typeof row.merchant_normalized === "string" ? row.merchant_normalized : "-");
-                const cat = typeof row.expense_category === "string" ? row.expense_category : "-";
-                const amt = typeof row.amount_cents === "number" ? formatCentsShort(row.amount_cents) : "-";
-                const manual排除数 = row.manual_excluded === true;
-                return (
-                  <tr key={`${date}-${idx}`}>
-                    <td>{date}</td>
-                    <td className="truncate-cell" title={merchant}>{merchant}</td>
-                    <td>{cat}</td>
-                    <td className="num">{amt}</td>
-                    <td>{manual排除数 ? "manual_excluded" : "-"}</td>
                   </tr>
                 );
               })}
@@ -5387,29 +5376,21 @@ function App() {
   const [consumptionOverviewBusy, setConsumptionOverviewBusy] = useState(false);
   const [consumptionOverviewError, setConsumptionOverviewError] = useState("");
   const [consumptionOverviewResult, setConsumptionOverviewResult] = useState<ConsumptionReportPayload | null>(null);
+  const [consumptionYear, setConsumptionYear] = useState<string>(currentYearText);
   const [metaAccountsBusy, setMetaAccountsBusy] = useState(false);
   const [metaAccountsError, setMetaAccountsError] = useState("");
   const [metaAccountsResult, setMetaAccountsResult] = useState<MetaAccountsPayload | null>(null);
   const [metaAccountsQuery, setMetaAccountsQuery] = useState<MetaAccountsQueryRequest>({ kind: "all" });
-  const [txListBusy, setTxListBusy] = useState(false);
-  const [txListError, setTxListError] = useState("");
-  const [txListResult, setTxListResult] = useState<QueryTransactionsPayload | null>(null);
-  const [txListQuery, setTxListQuery] = useState<QueryTransactionsRequest>({
+  const [_txListBusy, setTxListBusy] = useState(false);
+  const [_txListError, setTxListError] = useState("");
+  const [_txListResult, setTxListResult] = useState<QueryTransactionsPayload | null>(null);
+  const [txListQuery, _setTxListQuery] = useState<QueryTransactionsRequest>({
     limit: 100,
     sort: "date_desc",
     month_key: "",
     source_type: "",
     account_id: "",
     keyword: "",
-  });
-  const [txExclusionBusy, setTxExclusionBusy] = useState(false);
-  const [txExclusionError, setTxExclusionError] = useState("");
-  const [txExclusionResult, setTxExclusionResult] =
-    useState<TransactionAnalysisExclusionMutationPayload | null>(null);
-  const [txExclusionForm, setTxExclusionForm] = useState<UpdateTransactionAnalysisExclusionRequest>({
-    id: "",
-    action: "exclude",
-    reason: "",
   });
   const [invListBusy, setInvListBusy] = useState(false);
   const [invListError, setInvListError] = useState("");
@@ -6331,7 +6312,7 @@ function App() {
     setConsumptionOverviewBusy(true);
     setConsumptionOverviewError("");
     try {
-      const payload = await queryConsumptionReport();
+      const payload = await queryConsumptionReport({ year: consumptionYear || undefined });
       startTransition(() => {
         setConsumptionOverviewResult(payload);
       });
@@ -7060,27 +7041,6 @@ function App() {
     }
   }
 
-  async function handleTransactionAnalysisExclusionMutation() {
-    setTxExclusionBusy(true);
-    setTxExclusionError("");
-    try {
-      const payload = await updateTransactionAnalysisExclusion({
-        id: `${txExclusionForm.id ?? ""}`.trim(),
-        action: txExclusionForm.action,
-        reason: `${txExclusionForm.reason ?? ""}`.trim(),
-      });
-      startTransition(() => {
-        setTxExclusionResult(payload);
-      });
-      void handleTransactionsQuery();
-      void handleConsumptionOverviewQuery();
-    } catch (err) {
-      setTxExclusionError(toErrorMessage(err));
-    } finally {
-      setTxExclusionBusy(false);
-    }
-  }
-
   async function handleInvestmentsListQuery() {
     setInvListBusy(true);
     setInvListError("");
@@ -7188,37 +7148,26 @@ function App() {
   const shouldPrefetchWealthTabQuickMetric = Boolean(dbStatus?.ready) && wealthCurveResult === null && !wealthCurveBusy;
   const shouldPrefetchFireTabQuickMetric = Boolean(dbStatus?.ready) && fireProgressResult === null && !fireProgressBusy;
   const shouldPrefetchManualEntryTabQuickMetric = Boolean(dbStatus?.ready) && manualEntryTabMonthCount === null && !manualEntryTabMonthCountBusy;
-  const showQueryWorkbench = isConsumptionAnalysisTab || isAdminVisibleWorkbench;
+  const showQueryWorkbench = isAdminVisibleWorkbench;
   const showDebugJson = showRawJson && isAdminDeveloperMode;
   const queryWorkbenchHeader = isManualEntryTab
     ? {
         title: "手动录入",
         description: "集中处理投资记录与资产估值的手工录入/修改/删除，形成桌面端数据修正闭环。",
       }
-    : isConsumptionAnalysisTab
-      ? {
-          title: "消费交易查询与剔除",
-          description: "聚焦消费交易查询与分析剔除操作，便于校正统计口径并快速回看交易明细。",
-        }
-      : {
-          title: "数据查询与维护",
-          description: "高级管理中的底层数据核查入口：账户元数据、投资记录与资产估值查询。",
-        };
+    : {
+        title: "数据查询与维护",
+        description: "高级管理中的底层数据核查入口：账户元数据、投资记录与资产估值查询。",
+      };
   const queryWorkbenchModules = isManualEntryTab
     ? ["投资记录维护", "资产估值维护"]
-    : isConsumptionAnalysisTab
-      ? ["交易查询", "分析剔除", "消费总览联动"]
-      : ["账户元数据查询", "投资记录查询", "资产估值查询"];
+    : ["账户元数据查询", "投资记录查询", "资产估值查询"];
   const queryWorkbenchFlow = isManualEntryTab
     ? ["如需新增/维护账户目录，请切换到高级管理（开发者模式）", "执行写入/修改/删除", "回到收益分析或财富总览验证结果"]
-    : isConsumptionAnalysisTab
-      ? ["先刷新消费总览", "在交易查询中定位交易", "执行剔除/恢复并回看总览变化"]
-      : ["先刷新管理员数据库健康", "执行基础查询定位数据问题", "在查询表格内进行修正或删除后回到业务 TAB 复查结果"];
+    : ["先刷新管理员数据库健康", "执行基础查询定位数据问题", "在查询表格内进行修正或删除后回到业务 TAB 复查结果"];
   const queryWorkbenchGridModeClass = isManualEntryTab
     ? "mode-manual"
-    : isConsumptionAnalysisTab
-      ? "mode-consumption"
-      : "mode-base";
+    : "mode-base";
   const showManualEntryWorkbench = false;
 
   useDebouncedAutoRun(
@@ -7254,19 +7203,8 @@ function App() {
     ],
     { enabled: isAdminTab, delayMs: 220 },
   );
-  useDebouncedAutoRun(
-    handleTransactionsQuery,
-    [
-      txListQuery.limit ?? 100,
-      txListQuery.sort ?? "date_desc",
-      txListQuery.month_key ?? "",
-      txListQuery.keyword ?? "",
-      txListQuery.source_type ?? "",
-      txListQuery.account_id ?? "",
-    ],
-    { enabled: isConsumptionAnalysisTab, delayMs: 260 },
-  );
-  useDebouncedAutoRun(handleConsumptionOverviewQuery, [], { enabled: isConsumptionAnalysisTab, delayMs: 220 });
+
+  useDebouncedAutoRun(handleConsumptionOverviewQuery, [consumptionYear], { enabled: isConsumptionAnalysisTab, delayMs: 220 });
   useDebouncedAutoRun(
     handleInvestmentReturnQuery,
     [invQuery.account_id, invQuery.preset, invQuery.from, invQuery.to],
@@ -7997,11 +7935,11 @@ function App() {
           {isTab("consumption-analysis") ? (
             <section className="card panel">
               <div className="panel-header">
-                <h2>消费总览</h2>
-                <p>基于账本交易数据直接渲染消费分析（分类分布、月度趋势、商户分布），不再嵌入独立 HTML 报告。</p>
+                <h2>消费分析</h2>
+                <p>按年度查看消费分析（分类分布、月度趋势、商户分布），支持交易检索与剔除管理。</p>
               </div>
 
-              <AutoRefreshHint busy={consumptionOverviewBusy}>消费总览已启用自动刷新：进入本 TAB 会自动加载；导入/剔除后也会自动更新。</AutoRefreshHint>
+              <AutoRefreshHint busy={consumptionOverviewBusy}>消费总览已启用自动刷新：切换年份、导入或剔除后自动更新。</AutoRefreshHint>
 
               {consumptionOverviewError ? (
                 <div className="inline-error" role="alert">
@@ -8009,7 +7947,19 @@ function App() {
                 </div>
               ) : null}
 
-              <ConsumptionOverviewPreview data={consumptionOverviewResult} />
+              <ConsumptionOverviewPreview
+                data={consumptionOverviewResult}
+                selectedYear={consumptionYear}
+                onYearChange={setConsumptionYear}
+                onExcludeTransaction={async (id, action, reason) => {
+                  try {
+                    await updateTransactionAnalysisExclusion({ id, action, reason });
+                    void handleConsumptionOverviewQuery();
+                  } catch (err) {
+                    setConsumptionOverviewError(toErrorMessage(err));
+                  }
+                }}
+              />
               {showDebugJson ? (
                 <JsonResultCard
                   title="消费总览 JSON"
@@ -9421,153 +9371,7 @@ function App() {
             ) : null}
           </div> : null}
 
-          {isConsumptionAnalysisTab ? <div className="subcard">
-            <h3>交易查询</h3>
-            <div className="query-form-grid" onKeyDown={makeEnterToQueryHandler(handleTransactionsQuery)}>
-              <label className="field">
-                <span>数量</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={500}
-                  value={safeNumericInputValue(txListQuery.limit, 100)}
-                  onChange={(e) =>
-                    setTxListQuery((s) => ({
-                      ...s,
-                      limit: parseNumericInputWithFallback(e.target.value || "100", 100),
-                    }))
-                  }
-                />
-              </label>
-              <label className="field">
-                <span>排序</span>
-                <select
-                  value={txListQuery.sort ?? "date_desc"}
-                  onChange={(e) =>
-                    setTxListQuery((s) => ({
-                      ...s,
-                      sort: e.target.value as QueryTransactionsRequest["sort"],
-                    }))
-                  }
-                >
-                  <option value="date_desc">date_desc</option>
-                  <option value="date_asc">date_asc</option>
-                  <option value="amount_desc">amount_desc</option>
-                  <option value="amount_asc">amount_asc</option>
-                </select>
-              </label>
-              <label className="field">
-                <span>月份</span>
-                <MonthInput
-                  value={`${txListQuery.month_key ?? ""}`}
-                  onChange={(e) => setTxListQuery((s) => ({ ...s, month_key: e.target.value }))}
-                  type="month"
-                  placeholder="YYYY-MM"
-                />
-              </label>
-              <label className="field">
-                <span>关键词</span>
-                <input
-                  value={`${txListQuery.keyword ?? ""}`}
-                  onChange={(e) => setTxListQuery((s) => ({ ...s, keyword: e.target.value }))}
-                  placeholder="商户/摘要/分类"
-                />
-              </label>
-              <label className="field">
-                <span>来源类型</span>
-                <input
-                  value={`${txListQuery.source_type ?? ""}`}
-                  onChange={(e) => setTxListQuery((s) => ({ ...s, source_type: e.target.value }))}
-                  placeholder="cmb_eml / cmb_bank_pdf"
-                />
-              </label>
-              <label className="field">
-                <span>账户 ID</span>
-                <AccountIdSelect
-                  value={`${txListQuery.account_id ?? ""}`}
-                  onChange={(value) => setTxListQuery((s) => ({ ...s, account_id: value }))}
-                  options={accountSelectOptions}
-                  emptyLabel={accountSelectOptionsLoading ? "加载账户中..." : "全部账户"}
-                  disabled={accountSelectOptionsLoading}
-                />
-              </label>
-            </div>
-            <AutoRefreshHint busy={txListBusy}>交易列表已启用自动刷新：修改筛选条件后会自动更新。</AutoRefreshHint>
-            {txListError ? (
-              <div className="inline-error" role="alert">
-                {txListError}
-              </div>
-            ) : null}
-            <TransactionsPreview data={txListResult} />
-            {showDebugJson ? (
-              <JsonResultCard title="交易查询 JSON" data={txListResult} emptyText="暂无结果。请先查询交易记录。" />
-            ) : null}
-          </div> : null}
 
-          {isConsumptionAnalysisTab ? <div className="subcard">
-            <h3>交易分析剔除</h3>
-            <p className="inline-hint">
-              对齐 Web `update_transaction_analysis_exclusion`：可手动剔除/恢复交易的分析统计状态。先在 `交易查询` 中取 `id`。
-            </p>
-
-            <div className="query-form-grid query-form-grid-compact">
-              <label className="field">
-                <span>交易 ID</span>
-                <input
-                  value={`${txExclusionForm.id ?? ""}`}
-                  onChange={(e) => setTxExclusionForm((s) => ({ ...s, id: e.target.value }))}
-                  placeholder="transactions.id"
-                />
-              </label>
-              <label className="field">
-                <span>操作</span>
-                <select
-                  value={txExclusionForm.action ?? "exclude"}
-                  onChange={(e) =>
-                    setTxExclusionForm((s) => ({
-                      ...s,
-                      action: e.target.value as UpdateTransactionAnalysisExclusionRequest["action"],
-                    }))
-                  }
-                >
-                  <option value="exclude">剔除</option>
-                  <option value="restore">恢复</option>
-                </select>
-              </label>
-              <label className="field">
-                <span>原因（仅剔除时）</span>
-                <input
-                  value={`${txExclusionForm.reason ?? ""}`}
-                  onChange={(e) => setTxExclusionForm((s) => ({ ...s, reason: e.target.value }))}
-                  placeholder="手动剔除（查询页）"
-                />
-              </label>
-            </div>
-
-            <div className="db-actions">
-              <button
-                type="button"
-                className="secondary-btn"
-                onClick={() => void handleTransactionAnalysisExclusionMutation()}
-                disabled={txExclusionBusy || !`${txExclusionForm.id ?? ""}`.trim()}
-              >
-                {txExclusionBusy ? "执行中..." : "执行交易分析剔除"}
-              </button>
-            </div>
-
-            {txExclusionError ? (
-              <div className="inline-error" role="alert">
-                {txExclusionError}
-              </div>
-            ) : null}
-            {txExclusionResult ? (
-              <JsonResultCard
-                title="交易分析剔除结果"
-                data={txExclusionResult}
-                emptyText="暂无变更结果。"
-              />
-            ) : null}
-          </div> : null}
 
           {isAdminVisibleWorkbench ? <div className="subcard workbench-span-full">
             <h3>投资记录查询</h3>

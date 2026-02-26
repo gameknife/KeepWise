@@ -30,7 +30,7 @@ npm run desktop:release:check
 ## 本地构建产物（未签名）
 
 ```bash
-bash /Users/gameknife/github/BeyondYZYX/scripts/build_keepwise_desktop_local.sh
+bash /Users/gameknife/github/BeyondYZYX/apps/keepwise-tauri/scripts/build_keepwise_desktop_local.sh
 ```
 
 产物输出目录：

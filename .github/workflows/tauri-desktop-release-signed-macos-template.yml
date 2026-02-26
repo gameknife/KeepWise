@@ -76,7 +76,7 @@ jobs:
           KEEPWISE_SKIP_PREFLIGHT: ${{ inputs.run_prechecks && '1' || '0' }}
           KEEPWISE_ARTIFACT_PREFIX: keepwise-desktop-signed-template-v${{ inputs.target_version }}-${{ github.run_number }}
           KEEPWISE_DESKTOP_EXPORT_ROOT: ${{ github.workspace }}/.artifacts/desktop-builds
-        run: bash scripts/build_keepwise_desktop_local.sh mac
+        run: bash apps/keepwise-tauri/scripts/build_keepwise_desktop_local.sh mac
 
       - name: Locate mac artifacts for signing template
         id: locate
@@ -113,7 +113,7 @@ jobs:
           XCRUN_NOTARYTOOL_PROFILE: ${{ secrets.XCRUN_NOTARYTOOL_PROFILE }}
         run: |
           set -euo pipefail
-          cmd=(bash scripts/macos_sign_notarize_template.sh --app "${{ steps.locate.outputs.app_path }}")
+          cmd=(bash apps/keepwise-tauri/scripts/macos_sign_notarize_template.sh --app "${{ steps.locate.outputs.app_path }}")
           if [[ -n "${{ steps.locate.outputs.dmg_path }}" ]]; then
             cmd+=(--dmg "${{ steps.locate.outputs.dmg_path }}")
           fi

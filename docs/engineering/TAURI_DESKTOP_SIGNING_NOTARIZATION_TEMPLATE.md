@@ -4,7 +4,7 @@
 
 ## 模板脚本
 
-- `/Users/gameknife/github/BeyondYZYX/scripts/macos_sign_notarize_template.sh`
+- `/Users/gameknife/github/BeyondYZYX/apps/keepwise-tauri/scripts/macos_sign_notarize_template.sh`
 
 默认行为为 `--check-only`（只校验参数与环境变量，不执行真实签名）。
 
@@ -24,7 +24,7 @@
 ## 使用方式（检查模式）
 
 ```bash
-bash /Users/gameknife/github/BeyondYZYX/scripts/macos_sign_notarize_template.sh --check-only --app <path-to-app> --dmg <path-to-dmg>
+bash /Users/gameknife/github/BeyondYZYX/apps/keepwise-tauri/scripts/macos_sign_notarize_template.sh --check-only --app <path-to-app> --dmg <path-to-dmg>
 ```
 
 ## 当前状态

@@ -2,13 +2,14 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$ROOT_DIR/../.." && pwd)"
 SCRIPT_PATH="$ROOT_DIR/scripts/parse_cmb_statements.py"
 DB_MIGRATE_SCRIPT="$ROOT_DIR/scripts/migrate_ledger_db.py"
 DB_IMPORT_SCRIPT="$ROOT_DIR/scripts/import_classified_to_ledger.py"
-INPUT_DIR="$ROOT_DIR/data/input/raw/eml/cmb"
-WORK_DIR="$ROOT_DIR/data/work/processed"
-RULES_DIR="$ROOT_DIR/data/rules"
-REPORT_DIR="$ROOT_DIR/data/output/reports"
+INPUT_DIR="$REPO_ROOT/data/input/raw/eml/cmb"
+WORK_DIR="$REPO_ROOT/data/work/processed"
+RULES_DIR="$REPO_ROOT/data/rules"
+REPORT_DIR="$REPO_ROOT/data/output/reports"
 WORK_REPORT_DIR="$WORK_DIR/reports"
 REPORT_PATH="$REPORT_DIR/consumption_report.html"
 DB_PATH="$WORK_DIR/ledger/keepwise.db"

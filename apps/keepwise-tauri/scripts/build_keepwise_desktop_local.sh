@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 APP_DIR="$ROOT_DIR/apps/keepwise-tauri"
 PACKAGE_JSON="$APP_DIR/package.json"
 
@@ -34,7 +34,7 @@ if [[ "${KEEPWISE_SKIP_PREFLIGHT:-0}" == "1" ]]; then
   echo "[preflight] skipped (KEEPWISE_SKIP_PREFLIGHT=1)"
 else
   echo "[preflight] desktop rust regression subset"
-  bash "$ROOT_DIR/scripts/validate_tauri_desktop_rust_regression.sh"
+  bash "$ROOT_DIR/apps/keepwise-tauri/scripts/validate_tauri_desktop_rust_regression.sh"
 
   echo "[preflight] frontend build"
   cd "$APP_DIR"
