@@ -11,6 +11,10 @@
 - 开始进行移动端的页面适配（纯前端逻辑）
 
 # 已完成
+- 收入分析的年份选项，已复用预算概览与复盘的下拉年份选择
+- 预算概览与复盘下的卡片已精简，重复项已剔除
+- 预算管理栏目已去掉四个指标卡片
+- 投资收益栏目已完成调整：曲线切换下拉内嵌到图表内；指标新增期初资产与最大回撤比例并移除期末累计收益率；账户列表新增资金占总体比例列
 - 对前端框架作第八阶段拆分：`App` 内请求构建与输入清洗函数下沉到 `app/requestBuilders.ts`，主组件内嵌函数继续收敛
 - 对前端框架作第七阶段拆分：`App` 的 summary/helper/金额格式化函数下沉到 `app/summaries.ts`、`app/helpers.ts`、`app/amountFormatting.ts`
 - 对前端框架作第六阶段拆分：通用 UI 原语（`PathRow/DateInput/LineAreaChart/SortableHeader` 等）下沉到 `features/shared/UiPrimitives.tsx`

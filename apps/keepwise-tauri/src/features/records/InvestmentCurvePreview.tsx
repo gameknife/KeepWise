@@ -42,9 +42,9 @@ export function InvestmentCurvePreview({
   const returnPayload = isRecord(returnData) ? returnData : null;
   const from = readString(data, "range.effective_from") ?? "-";
   const to = readString(data, "range.effective_to") ?? "-";
+  const beginAssets = readNumber(data, "summary.start_assets_cents");
   const endAssets = readNumber(data, "summary.end_assets_cents");
   const endNetGrowth = readNumber(data, "summary.end_net_growth_cents");
-  const endReturn = readNumber(data, "summary.end_cumulative_return_rate");
   const annualizedRate = readNumber(returnPayload, "metrics.annualized_rate");
   const intervalReturnRate = readNumber(returnPayload, "metrics.return_rate");
   const returnNote = readString(returnPayload, "metrics.note") ?? "";
@@ -70,6 +70,20 @@ export function InvestmentCurvePreview({
       return label && Number.isFinite(value) ? { label, value } : null;
     })
     .filter((v): v is { label: string; value: number } => v !== null);
+  const maxDrawdownRatio = (() => {
+    let peak = Number.NEGATIVE_INFINITY;
+    let worstDrawdown = 0;
+    for (const point of assetPoints) {
+      if (point.value > peak) peak = point.value;
+      if (peak <= 0) continue;
+      const drawdown = (point.value - peak) / peak;
+      if (drawdown < worstDrawdown) worstDrawdown = drawdown;
+    }
+    return Math.abs(worstDrawdown);
+  })();
+  const maxDrawdownText = `${(maxDrawdownRatio * 100).toFixed(2)}%`;
+  const maxDrawdownTone: "default" | "good" | "warn" =
+    maxDrawdownRatio >= 0.2 ? "warn" : maxDrawdownRatio <= 0.05 ? "good" : "default";
   const activeCurve =
     selectedCurveKind === "total_assets"
       ? {
@@ -114,28 +128,29 @@ export function InvestmentCurvePreview({
         </div>
         <div className="preview-stat-grid return-analysis-stat-grid">
           <PreviewStat label="年化收益率" value={formatRatePct(annualizedRate)} />
+          <PreviewStat label="期初资产（元）" value={formatCentsShort(beginAssets)} />
           <PreviewStat label="期末资产（元）" value={formatCentsShort(endAssets)} />
           <PreviewStat label="期末净增长（元）" value={formatCentsShort(endNetGrowth)} tone={signedMetricTone(endNetGrowth)} />
-          <PreviewStat label="期末累计收益率" value={formatRatePct(endReturn)} tone={signedMetricTone(endReturn)} />
+          <PreviewStat label="最大回撤比例" value={maxDrawdownText} tone={maxDrawdownTone} />
         </div>
       </div>
       {returnNote ? <div className="preview-note">{returnNote}</div> : null}
-      <div className="return-curve-switch">
-        <label className="field return-curve-switch-field">
-          <span>曲线切换</span>
-          <select
-            value={selectedCurveKind}
-            onChange={(e) => setSelectedCurveKind(e.target.value as "return_rate" | "net_growth" | "total_assets")}
-          >
-            <option value="return_rate">累计收益率曲线</option>
-            <option value="net_growth">累计净增长曲线</option>
-            <option value="total_assets">总资产曲线</option>
-          </select>
-        </label>
-      </div>
       <div className="preview-chart-stack">
         <div className="sparkline-card full-width-chart-panel">
-          <div className="sparkline-title">{activeCurve.title}</div>
+          <div className="sparkline-title-row">
+            <div className="sparkline-title">{activeCurve.title}</div>
+            <label className="return-curve-inline-field">
+              <span>曲线</span>
+              <select
+                value={selectedCurveKind}
+                onChange={(e) => setSelectedCurveKind(e.target.value as "return_rate" | "net_growth" | "total_assets")}
+              >
+                <option value="return_rate">累计收益率</option>
+                <option value="net_growth">累计净增长</option>
+                <option value="total_assets">总资产</option>
+              </select>
+            </label>
+          </div>
           <LineAreaChart
             points={activeCurve.points}
             color={activeCurve.color}

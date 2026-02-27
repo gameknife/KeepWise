@@ -45,13 +45,29 @@ export function InvestmentReturnsPreview({
   if (!isRecord(data)) return null;
   const rows = readArray(data, "rows").filter(isRecord);
   const errors = readArray(data, "errors").filter(isRecord);
+  const totalEndAssetsCents = rows.reduce((sum, row) => {
+    const endAssets = typeof row.end_assets_cents === "number" ? row.end_assets_cents : 0;
+    return sum + endAssets;
+  }, 0);
+  const formatAssetShareText = (row: Record<string, unknown>) => {
+    const endAssets = typeof row.end_assets_cents === "number" ? row.end_assets_cents : 0;
+    if (totalEndAssetsCents <= 0 || endAssets < 0) return "-";
+    return `${((endAssets / totalEndAssetsCents) * 100).toFixed(2)}%`;
+  };
   const sortedRows = [...rows].sort((a, b) => {
+    const calcAssetShareRatio = (row: Record<string, unknown>) => {
+      const endAssets = typeof row.end_assets_cents === "number" ? row.end_assets_cents : 0;
+      if (totalEndAssetsCents <= 0) return -1;
+      return endAssets / totalEndAssetsCents;
+    };
     const valueFor = (row: Record<string, unknown>) => {
       switch (sortKey) {
         case "account_name":
           return typeof row.account_name === "string" && row.account_name
             ? row.account_name
             : row.account_id;
+        case "asset_share_ratio":
+          return calcAssetShareRatio(row);
         case "return_rate_pct":
           return row.return_rate_pct;
         case "annualized_rate_pct":
@@ -105,6 +121,7 @@ export function InvestmentReturnsPreview({
             <thead>
               <tr>
                 <th><SortableHeaderButton label="账户" sortKey="account_name" activeSortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} /></th>
+                <th className="num"><SortableHeaderButton label="资金占比" sortKey="asset_share_ratio" activeSortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} /></th>
                 <th className="num"><SortableHeaderButton label="收益率" sortKey="return_rate_pct" activeSortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} /></th>
                 <th className="num"><SortableHeaderButton label="年化" sortKey="annualized_rate_pct" activeSortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} /></th>
                 <th className="num"><SortableHeaderButton label="收益额" sortKey="profit_cents" activeSortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} /></th>
@@ -124,6 +141,7 @@ export function InvestmentReturnsPreview({
                 return (
                   <tr key={`${name}-${idx}`}>
                     <td className="truncate-cell" title={name}>{name}</td>
+                    <td className="num">{formatAssetShareText(row)}</td>
                     <td className="num">{rr}</td>
                     <td className="num">{ar}</td>
                     <td className="num">{profit}</td>

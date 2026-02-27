@@ -22,7 +22,6 @@ export function BudgetItemsPreview({
   deleteBusy = false,
   deletingItemId = "",
   onDeleteRow,
-  PreviewStat,
   SortableHeaderButton,
   formatCentsShort,
   nextSortState,
@@ -32,7 +31,6 @@ export function BudgetItemsPreview({
   deleteBusy?: boolean;
   deletingItemId?: string;
   onDeleteRow?: (id: string, name: string) => void;
-  PreviewStat: ComponentType<PreviewStatProps>;
   SortableHeaderButton: ComponentType<SortableHeaderButtonProps>;
   formatCentsShort: (cents?: number) => string;
   nextSortState: (
@@ -46,10 +44,6 @@ export function BudgetItemsPreview({
   const [sortDir, setSortDir] = useState<TableSortDirection>("asc");
   if (!isRecord(data)) return null;
   const rows = readArray(data, "rows").filter(isRecord);
-  const totalCount = readNumber(data, "summary.total_count");
-  const activeCount = readNumber(data, "summary.active_count");
-  const monthlyTotal = readNumber(data, "summary.monthly_budget_total_cents");
-  const annualTotal = readNumber(data, "summary.annual_budget_cents");
   const sortedRows = [...rows].sort((a, b) => {
     const valueFor = (row: Record<string, unknown>) => {
       switch (sortKey) {
@@ -83,12 +77,6 @@ export function BudgetItemsPreview({
       <div className="preview-header">
         <h3>预算项预览</h3>
         <div className="preview-subtle">按月预算条目</div>
-      </div>
-      <div className="preview-stat-grid">
-        <PreviewStat label="总条目" value={totalCount ?? rows.length} />
-        <PreviewStat label="启用条目" value={activeCount ?? 0} tone={(activeCount ?? 0) > 0 ? "good" : "warn"} />
-        <PreviewStat label="月预算(元)" value={formatCentsShort(monthlyTotal)} />
-        <PreviewStat label="年预算(元)" value={formatCentsShort(annualTotal)} />
       </div>
       {sortedRows.length > 0 ? (
         <div className="preview-table-wrap">
@@ -164,15 +152,11 @@ export function BudgetOverviewPreview({
   if (!isRecord(data)) return null;
   const year = readNumber(data, "year");
   const asOf = readString(data, "as_of_date") ?? "-";
-  const monthlyBudget = readNumber(data, "budget.monthly_total_cents");
   const annualBudget = readNumber(data, "budget.annual_total_cents");
-  const ytdBudget = readNumber(data, "budget.ytd_budget_cents");
   const actual = readNumber(data, "actual.spent_total_cents");
-  const ytdActual = readNumber(data, "actual.ytd_spent_cents");
   const annualRemaining = readNumber(data, "metrics.annual_remaining_cents");
   const ytdVariance = readNumber(data, "metrics.ytd_variance_cents");
   const usageRateText = readString(data, "metrics.usage_rate_pct_text") ?? "-";
-  const ytdUsageRateText = readString(data, "metrics.ytd_usage_rate_pct_text") ?? "-";
   const elapsedMonths = readNumber(data, "analysis_scope.elapsed_months");
 
   return (
@@ -182,15 +166,11 @@ export function BudgetOverviewPreview({
         <div className="preview-subtle">{year ?? "-"} 年 · as_of {asOf}</div>
       </div>
       <div className="preview-stat-grid">
-        <PreviewStat label="月预算(元)" value={formatCentsShort(monthlyBudget)} />
         <PreviewStat label="年预算(元)" value={formatCentsShort(annualBudget)} />
         <PreviewStat label="累计支出(元)" value={formatCentsShort(actual)} />
         <PreviewStat label="年剩余(元)" value={formatCentsShort(annualRemaining)} tone={signedMetricTone(annualRemaining)} />
-        <PreviewStat label="YTD预算(元)" value={formatCentsShort(ytdBudget)} />
-        <PreviewStat label="YTD支出(元)" value={formatCentsShort(ytdActual)} />
         <PreviewStat label="YTD偏差(元)" value={formatCentsShort(ytdVariance)} tone={signedMetricTone(ytdVariance)} />
         <PreviewStat label="全年使用率" value={usageRateText} />
-        <PreviewStat label="YTD使用率" value={ytdUsageRateText} />
         <PreviewStat label="已过月数" value={elapsedMonths ?? "-"} />
       </div>
     </div>
@@ -202,7 +182,6 @@ export function BudgetMonthlyReviewPreview({
   PreviewStat,
   SortableHeaderButton,
   formatCentsShort,
-  signedMetricTone,
   nextSortState,
   compareSortValues,
 }: {
@@ -210,7 +189,6 @@ export function BudgetMonthlyReviewPreview({
   PreviewStat: ComponentType<PreviewStatProps>;
   SortableHeaderButton: ComponentType<SortableHeaderButtonProps>;
   formatCentsShort: (cents?: number) => string;
-  signedMetricTone: (value?: number) => "default" | "good" | "warn";
   nextSortState: (
     activeSortKey: string,
     activeSortDir: TableSortDirection,
@@ -223,10 +201,6 @@ export function BudgetMonthlyReviewPreview({
   if (!isRecord(data)) return null;
   const rows = readArray(data, "rows").filter(isRecord);
   const year = readNumber(data, "year");
-  const annualBudget = readNumber(data, "summary.annual_budget_cents");
-  const annualSpent = readNumber(data, "summary.annual_spent_cents");
-  const annualVariance = readNumber(data, "summary.annual_variance_cents");
-  const annualUsageRateText = readString(data, "summary.annual_usage_rate_pct_text") ?? "-";
   const overMonths = readNumber(data, "summary.over_budget_months");
   const underMonths = readNumber(data, "summary.under_budget_months");
   const equalMonths = readNumber(data, "summary.equal_months");
@@ -247,10 +221,7 @@ export function BudgetMonthlyReviewPreview({
         <div className="preview-subtle">{year ?? "-"} 年 12 个月</div>
       </div>
       <div className="preview-stat-grid">
-        <PreviewStat label="年预算(元)" value={formatCentsShort(annualBudget)} />
-        <PreviewStat label="年支出(元)" value={formatCentsShort(annualSpent)} />
-        <PreviewStat label="年偏差(元)" value={formatCentsShort(annualVariance)} tone={signedMetricTone(annualVariance)} />
-        <PreviewStat label="年使用率" value={annualUsageRateText} />
+        <PreviewStat label="已出账月数" value={rows.length} />
         <PreviewStat label="超预算月" value={overMonths ?? 0} tone={(overMonths ?? 0) > 0 ? "warn" : "good"} />
         <PreviewStat label="低于预算月" value={underMonths ?? 0} tone={(underMonths ?? 0) > 0 ? "good" : "default"} />
         <PreviewStat label="持平月" value={equalMonths ?? 0} />

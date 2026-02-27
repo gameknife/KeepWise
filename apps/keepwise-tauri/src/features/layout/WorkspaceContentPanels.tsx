@@ -236,11 +236,16 @@ export function WorkspaceContentPanels(props: any) {
               <div className="query-form-grid query-form-grid-compact">
                 <label className="field">
                   <span>年份</span>
-                  <input
-                    value={`${salaryIncomeQuery.year ?? ""}`}
+                  <select
+                    value={`${salaryIncomeQuery.year ?? currentYearText}`}
                     onChange={(e) => setSalaryIncomeQuery((s) => ({ ...s, year: e.target.value }))}
-                    placeholder="2026"
-                  />
+                  >
+                    {budgetYearOptions.map((year) => (
+                      <option key={year} value={year}>
+                        {year}年
+                      </option>
+                    ))}
+                  </select>
                 </label>
               </div>
 
@@ -308,7 +313,6 @@ export function WorkspaceContentPanels(props: any) {
                 PreviewStat={PreviewStat}
                 SortableHeaderButton={SortableHeaderButton}
                 formatCentsShort={formatCentsShort}
-                signedMetricTone={signedMetricTone}
                 nextSortState={nextSortState}
                 compareSortValues={compareSortValues}
               />
@@ -345,7 +349,6 @@ export function WorkspaceContentPanels(props: any) {
                 data={budgetItemsResult}
                 deleteBusy={budgetItemDeleteBusy}
                 deletingItemId={budgetItemDeletingRowId}
-                PreviewStat={PreviewStat}
                 SortableHeaderButton={SortableHeaderButton}
                 formatCentsShort={formatCentsShort}
                 nextSortState={nextSortState}
