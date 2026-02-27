@@ -24,6 +24,8 @@ export type ProductTabKey =
   | "consumption-analysis"
   | "admin";
 
+export type MobileView = "home" | ProductTabKey;
+
 export type SmokeRow = {
   key: SmokeKey;
   label: string;

@@ -27,6 +27,7 @@ import {
 } from "../features/import/ImportSummaryPreviews";
 import { ImportCenterSections } from "../features/import/ImportCenterSections";
 import { SalaryIncomeOverviewPreview } from "../features/income/SalaryIncomeOverviewPreview";
+import { MobileHomeGrid } from "../features/layout/MobileHomeGrid";
 import { WorkspaceSidebar } from "../features/layout/WorkspaceSidebar";
 import { WorkspaceContentPanels } from "../features/layout/WorkspaceContentPanels";
 import { AppSettingsModal } from "../features/modals/AppSettingsModal";
@@ -217,6 +218,7 @@ import {
   type ImportStepStatus,
   type LoadStatus,
   type PipelineStatus,
+  type MobileView,
   type ProductTabDef,
   type ProductTabKey,
   type SmokeRow,
@@ -236,6 +238,11 @@ const PRODUCT_TABS: ProductTabDef[] = [
 
 const APP_SETTINGS_STORAGE_KEY = "keepwise.desktop.app-settings.v1";
 const QUICK_MANUAL_INV_LAST_ACCOUNT_ID_STORAGE_KEY = "keepwise.desktop.quick-manual-investment.last-account-id.v1";
+
+function getVisibleTabsForMode(tabs: ProductTabDef[], isMobileMode: boolean): ProductTabDef[] {
+  if (!isMobileMode) return tabs;
+  return tabs.filter((tab) => tab.key !== "admin" && tab.key !== "import-center");
+}
 
 function JsonResultCard({
   title = "Result JSON",
@@ -1926,7 +1933,11 @@ function App() {
   }, []);
 
   // 壳层 UI 状态：TAB、侧边栏、设置、隐私开关、开发者模式。
+  const isForcedMobilePreview = import.meta.env.VITE_FORCE_MOBILE === "1";
+  const isNativeMobileUA = typeof navigator !== "undefined" && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+  const isMobileMode = isForcedMobilePreview || isNativeMobileUA;
   const [activeTab, setActiveTab] = useState<ProductTabKey>("wealth-overview");
+  const [mobileView, setMobileView] = useState<MobileView>("home");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [appSettings, setAppSettings] = useState<AppSettings>(() => {
     if (typeof window === "undefined") {
@@ -1966,9 +1977,22 @@ function App() {
     }
   }, [quickManualInvLastAccountId]);
 
+  useEffect(() => {
+    if (!isMobileMode) return;
+    setMobileView("home");
+  }, [isMobileMode]);
+
+  const visibleTabs = getVisibleTabsForMode(PRODUCT_TABS, isMobileMode);
+
+  useEffect(() => {
+    if (visibleTabs.some((tab) => tab.key === activeTab)) return;
+    setActiveTab("wealth-overview");
+    if (isMobileMode) setMobileView("home");
+  }, [activeTab, visibleTabs, isMobileMode]);
+
   // 视图模型：将原始查询结果规整为侧边栏指标、提示文案和面板开关。
   const isReady = status === "ready";
-  const activeTabMeta = PRODUCT_TABS.find((tab) => tab.key === activeTab) ?? PRODUCT_TABS[0];
+  const activeTabMeta = visibleTabs.find((tab) => tab.key === activeTab) ?? visibleTabs[0] ?? PRODUCT_TABS[0];
   const isTab = (...keys: ProductTabKey[]) => keys.includes(activeTab);
   const isAdminTab = isTab("admin");
   const isAdminDeveloperMode = isAdminTab && developerMode;
@@ -2033,6 +2057,14 @@ function App() {
   const consumptionTabMonthlyLabel = `${consumptionMonthNumber}月消费`;
   const consumptionTabMonthlyText = formatCentsShort(latestConsumptionMonth?.amountCents ?? 0);
   const consumptionTabMonthlyTone: "warn" = "warn";
+  const mobileQuickMetricsByTab = {
+    "manual-entry": { label: "本月已记", value: manualEntryTabMonthCountText, tone: "default" as const },
+    "return-analysis": { label: returnTabQuickMetricLabel, value: returnTabAnnualizedText, tone: returnTabAnnualizedTone },
+    "wealth-overview": { label: wealthTabMonthlyGrowthLabel, value: wealthTabMonthlyGrowthText, tone: wealthTabMonthlyGrowthTone },
+    "budget-fire": { label: "自由度", value: fireTabFreedomText, tone: fireTabFreedomTone },
+    "income-analysis": { label: incomeTabMonthlyLabel, value: incomeTabMonthlyText, tone: incomeTabMonthlyTone },
+    "consumption-analysis": { label: consumptionTabMonthlyLabel, value: consumptionTabMonthlyText, tone: consumptionTabMonthlyTone },
+  };
   const quickManualAccountId = `${quickManualInvForm.account_id ?? ""}`.trim();
   const quickManualAccountHintText = !quickManualAccountId
     ? ""
@@ -2177,37 +2209,39 @@ function App() {
 
   // 页面装配：左侧导航 + 全局弹窗 + 主内容区各业务面板。
   return (
-    <main className="app-shell">
+    <main className={`app-shell ${isMobileMode ? "mobile-shell" : ""}`}>
       <div
-        className={`workspace-layout ${sidebarCollapsed ? "sidebar-collapsed" : ""} ${appSettings.uiMotionEnabled ? "" : "motion-disabled"}`}
+        className={`workspace-layout ${!isMobileMode && sidebarCollapsed ? "sidebar-collapsed" : ""} ${appSettings.uiMotionEnabled ? "" : "motion-disabled"} ${isMobileMode ? "mobile-layout" : ""}`}
       >
-        <WorkspaceSidebar
-          sidebarCollapsed={sidebarCollapsed}
-          setSidebarCollapsed={setSidebarCollapsed}
-          keepwiseLogoSvg={keepwiseLogoSvg}
-          PRODUCT_TABS={PRODUCT_TABS}
-          activeTab={activeTab}
-          openQuickManualInvestmentModal={openQuickManualInvestmentModal}
-          setActiveTab={setActiveTab}
-          returnTabQuickMetricLabel={returnTabQuickMetricLabel}
-          incomeTabMonthlyLabel={incomeTabMonthlyLabel}
-          consumptionTabMonthlyLabel={consumptionTabMonthlyLabel}
-          wealthTabMonthlyGrowthLabel={wealthTabMonthlyGrowthLabel}
-          returnTabAnnualizedText={returnTabAnnualizedText}
-          manualEntryTabMonthCountText={manualEntryTabMonthCountText}
-          wealthTabMonthlyGrowthText={wealthTabMonthlyGrowthText}
-          fireTabFreedomText={fireTabFreedomText}
-          incomeTabMonthlyText={incomeTabMonthlyText}
-          consumptionTabMonthlyText={consumptionTabMonthlyText}
-          returnTabAnnualizedTone={returnTabAnnualizedTone}
-          wealthTabMonthlyGrowthTone={wealthTabMonthlyGrowthTone}
-          fireTabFreedomTone={fireTabFreedomTone}
-          incomeTabMonthlyTone={incomeTabMonthlyTone}
-          consumptionTabMonthlyTone={consumptionTabMonthlyTone}
-          setSettingsOpen={setSettingsOpen}
-          amountPrivacyMasked={amountPrivacyMasked}
-          setAmountPrivacyMasked={setAmountPrivacyMasked}
-        />
+        {!isMobileMode ? (
+          <WorkspaceSidebar
+            sidebarCollapsed={sidebarCollapsed}
+            setSidebarCollapsed={setSidebarCollapsed}
+            keepwiseLogoSvg={keepwiseLogoSvg}
+            PRODUCT_TABS={PRODUCT_TABS}
+            activeTab={activeTab}
+            openQuickManualInvestmentModal={openQuickManualInvestmentModal}
+            setActiveTab={setActiveTab}
+            returnTabQuickMetricLabel={returnTabQuickMetricLabel}
+            incomeTabMonthlyLabel={incomeTabMonthlyLabel}
+            consumptionTabMonthlyLabel={consumptionTabMonthlyLabel}
+            wealthTabMonthlyGrowthLabel={wealthTabMonthlyGrowthLabel}
+            returnTabAnnualizedText={returnTabAnnualizedText}
+            manualEntryTabMonthCountText={manualEntryTabMonthCountText}
+            wealthTabMonthlyGrowthText={wealthTabMonthlyGrowthText}
+            fireTabFreedomText={fireTabFreedomText}
+            incomeTabMonthlyText={incomeTabMonthlyText}
+            consumptionTabMonthlyText={consumptionTabMonthlyText}
+            returnTabAnnualizedTone={returnTabAnnualizedTone}
+            wealthTabMonthlyGrowthTone={wealthTabMonthlyGrowthTone}
+            fireTabFreedomTone={fireTabFreedomTone}
+            incomeTabMonthlyTone={incomeTabMonthlyTone}
+            consumptionTabMonthlyTone={consumptionTabMonthlyTone}
+            setSettingsOpen={setSettingsOpen}
+            amountPrivacyMasked={amountPrivacyMasked}
+            setAmountPrivacyMasked={setAmountPrivacyMasked}
+          />
+        ) : null}
 
         <QuickManualInvestmentModal
           quickManualInvOpen={quickManualInvOpen}
@@ -2249,7 +2283,102 @@ function App() {
           setAppSettings={setAppSettings}
         />
 
-        <div className="workspace-content">
+        {isMobileMode ? (
+          <div className={`mobile-page-header ${mobileView === "home" ? "mode-home" : "mode-tab"}`}>
+            <div className="mobile-page-header-left">
+              {mobileView !== "home" ? (
+                <button
+                  type="button"
+                  className="mobile-back-btn"
+                  onClick={() => setMobileView("home")}
+                  aria-label="返回首页"
+                >
+                  <span className="mobile-back-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M15 5 8 12l7 7" />
+                    </svg>
+                  </span>
+                </button>
+              ) : null}
+              {mobileView === "home" ? (
+                <div className="workspace-brand mobile-home-brand" aria-label="KeepWise 品牌">
+                  <span className="workspace-brand-icon" aria-hidden="true">
+                    <img src={keepwiseLogoSvg} alt="" />
+                  </span>
+                  <div className="workspace-brand-text">
+                    <div className="workspace-brand-name">KeepWise | 知衡</div>
+                  </div>
+                </div>
+              ) : (
+                <div className="mobile-page-title-group">
+                  <div className="mobile-page-title">{activeTabMeta.label}</div>
+                  <div className="mobile-page-subtitle">{activeTabMeta.subtitle}</div>
+                </div>
+              )}
+            </div>
+            <div className="mobile-page-header-actions">
+              <button
+                type="button"
+                className={`sidebar-tool-btn mobile-icon-btn sidebar-privacy-btn ${amountPrivacyMasked ? "active" : ""}`}
+                onClick={() => setAmountPrivacyMasked((v) => !v)}
+                aria-label={amountPrivacyMasked ? "关闭隐私显示" : "开启隐私显示"}
+                aria-pressed={amountPrivacyMasked}
+              >
+                <span className="sidebar-privacy-icon" aria-hidden="true">
+                  {amountPrivacyMasked ? (
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M3 3l18 18" />
+                      <path d="M10.58 10.58a2 2 0 102.83 2.83" />
+                      <path d="M9.36 5.37A10.9 10.9 0 0112 5c5.05 0 8.73 3.11 10 7-0.47 1.43-1.39 2.79-2.72 3.95" />
+                      <path d="M6.23 6.23C4.85 7.35 3.86 8.74 3 12c1.27 3.89 4.95 7 10 7 1.06 0 2.07-.14 3.01-.4" />
+                    </svg>
+                  ) : (
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M2.5 12s3.5-7 9.5-7 9.5 7 9.5 7-3.5 7-9.5 7-9.5-7-9.5-7z" />
+                      <circle cx="12" cy="12" r="3" />
+                    </svg>
+                  )}
+                </span>
+              </button>
+              <button
+                type="button"
+                className="sidebar-tool-btn mobile-icon-btn"
+                onClick={() => setSettingsOpen(true)}
+                aria-label="打开设置"
+              >
+                <span className="sidebar-tool-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="3.1" />
+                    <circle cx="12" cy="12" r="7.1" />
+                    <path d="M12 2.9v2.2" />
+                    <path d="M12 18.9v2.2" />
+                    <path d="M21.1 12h-2.2" />
+                    <path d="M5.1 12H2.9" />
+                    <path d="M18.4 5.6 16.8 7.2" />
+                    <path d="M7.2 16.8 5.6 18.4" />
+                    <path d="M18.4 18.4 16.8 16.8" />
+                    <path d="M7.2 7.2 5.6 5.6" />
+                  </svg>
+                </span>
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {isMobileMode && mobileView === "home" ? (
+          <MobileHomeGrid
+            tabs={visibleTabs}
+            activeTab={activeTab}
+            onOpenManualEntry={openQuickManualInvestmentModal}
+            onSelectTab={(tabKey: ProductTabKey) => {
+              setActiveTab(tabKey);
+              setMobileView(tabKey);
+            }}
+            quickMetricsByTab={mobileQuickMetricsByTab}
+          />
+        ) : null}
+
+        {!isMobileMode || mobileView !== "home" ? <div className={`workspace-content ${isMobileMode ? "mobile-page-body" : ""}`}>
           <WorkspaceContentPanels
             activeTabMeta={activeTabMeta}
             isAdminTab={isAdminTab}
@@ -2631,7 +2760,7 @@ function App() {
           <li>下一步：把验证通过的接口整理为正式工作台页面（替换临时 JSON probe）。</li>
         </ol>
       </section> : null}
-        </div>
+        </div> : null}
       </div>
     </main>
   );

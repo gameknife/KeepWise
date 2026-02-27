@@ -14,11 +14,16 @@ npm run tauri dev
 
 ```bash
 npm run build
+npm run tauri:dev:mobile-preview
+npm run tauri:ios:init
+npm run tauri:ios:dev
 npm run test:rust:regression
 npm run test:diff:core
 npm run desktop:release:check
 npm run desktop:release:prepare -- 0.2.0-rc.1
 ```
+
+`tauri:dev:mobile-preview` 会强制移动模式，并将窗口锁定为 iPhone 17 Pro Max 竖屏预览尺寸（440x956）。
 
 ## 当前能力（摘要）
 
