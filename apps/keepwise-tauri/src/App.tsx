@@ -531,6 +531,29 @@ function formatMonthDayLabel(dateIso?: string): string {
   return `${month}月${day}日`;
 }
 
+function parseMonthNumberFromMonthKey(monthKey?: string): number | null {
+  if (!monthKey || !/^\d{4}-(\d{2})$/.test(monthKey)) return null;
+  const month = Number(monthKey.slice(5, 7));
+  if (!Number.isFinite(month) || month < 1 || month > 12) return null;
+  return month;
+}
+
+function formatCentsYuanText(valueCents?: number): string {
+  if (typeof valueCents !== "number" || !Number.isFinite(valueCents)) return "-";
+  return (valueCents / 100).toLocaleString("zh-CN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+function parseYuanInputToNumber(raw?: string): number | null {
+  if (typeof raw !== "string") return null;
+  const normalized = raw.replace(/,/g, "").trim();
+  if (!normalized) return null;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function computeMonthlyTotalAssetGrowthFromWealthCurve(data: unknown):
   | { deltaCents: number; baselineDate: string; latestDate: string }
   | undefined {
@@ -967,6 +990,7 @@ function LineAreaChart({
 }
 
 function InvestmentCurvePreview({ data, returnData }: { data: unknown; returnData?: unknown }) {
+  const [selectedCurveKind, setSelectedCurveKind] = useState<"return_rate" | "net_growth" | "total_assets">("return_rate");
   if (!isRecord(data)) return null;
   const rows = readArray(data, "rows").filter(isRecord);
   if (rows.length === 0) return null;
@@ -1001,6 +1025,30 @@ function InvestmentCurvePreview({ data, returnData }: { data: unknown; returnDat
       return label && Number.isFinite(value) ? { label, value } : null;
     })
     .filter((v): v is { label: string; value: number } => v !== null);
+  const activeCurve =
+    selectedCurveKind === "total_assets"
+      ? {
+          title: "总资产曲线",
+          points: assetPoints,
+          color: "#7cc3ff",
+          valueFormatter: (v: number) => formatCentsShort(v),
+          tooltipFormatter: (p: { label: string; value: number }) => `${p.label} · ${formatCentsShort(p.value)} 元`,
+        }
+      : selectedCurveKind === "net_growth"
+        ? {
+            title: "累计净增长曲线",
+            points: netGrowthPoints,
+            color: "#73d7b6",
+            valueFormatter: (v: number) => formatCentsShort(v),
+            tooltipFormatter: (p: { label: string; value: number }) => `${p.label} · ${formatCentsShort(p.value)} 元`,
+          }
+        : {
+            title: "累计收益率曲线",
+            points: returnPoints,
+            color: "#dcb06a",
+            valueFormatter: (v: number) => `${(v * 100).toFixed(1)}%`,
+            tooltipFormatter: (p: { label: string; value: number }) => `${p.label} · ${(p.value * 100).toFixed(2)}%`,
+          };
   return (
     <div className="subcard preview-card">
       <div className="preview-header">
@@ -1026,44 +1074,31 @@ function InvestmentCurvePreview({ data, returnData }: { data: unknown; returnDat
         </div>
       </div>
       {returnNote ? <div className="preview-note">{returnNote}</div> : null}
+      <div className="return-curve-switch">
+        <label className="field return-curve-switch-field">
+          <span>曲线切换</span>
+          <select
+            value={selectedCurveKind}
+            onChange={(e) => setSelectedCurveKind(e.target.value as "return_rate" | "net_growth" | "total_assets")}
+          >
+            <option value="return_rate">累计收益率曲线</option>
+            <option value="net_growth">累计净增长曲线</option>
+            <option value="total_assets">总资产曲线</option>
+          </select>
+        </label>
+      </div>
       <div className="preview-chart-stack">
         <div className="sparkline-card full-width-chart-panel">
-          <div className="sparkline-title">总资产曲线</div>
+          <div className="sparkline-title">{activeCurve.title}</div>
           <LineAreaChart
-            points={assetPoints}
-            color="#7cc3ff"
+            points={activeCurve.points}
+            color={activeCurve.color}
             height={250}
             preferZeroBaseline
             maxXTicks={8}
             xLabelFormatter={(label) => (label.length >= 10 ? label.slice(5) : label)}
-            valueFormatter={(v) => formatCentsShort(v)}
-            tooltipFormatter={(p) => `${p.label} · ${formatCentsShort(p.value)} 元`}
-          />
-        </div>
-        <div className="sparkline-card full-width-chart-panel">
-          <div className="sparkline-title">累计净增长曲线</div>
-          <LineAreaChart
-            points={netGrowthPoints}
-            color="#73d7b6"
-            height={230}
-            preferZeroBaseline
-            maxXTicks={8}
-            xLabelFormatter={(label) => (label.length >= 10 ? label.slice(5) : label)}
-            valueFormatter={(v) => formatCentsShort(v)}
-            tooltipFormatter={(p) => `${p.label} · ${formatCentsShort(p.value)} 元`}
-          />
-        </div>
-        <div className="sparkline-card full-width-chart-panel">
-          <div className="sparkline-title">累计收益率曲线</div>
-          <LineAreaChart
-            points={returnPoints}
-            color="#dcb06a"
-            height={230}
-            preferZeroBaseline
-            maxXTicks={8}
-            xLabelFormatter={(label) => (label.length >= 10 ? label.slice(5) : label)}
-            valueFormatter={(v) => `${(v * 100).toFixed(1)}%`}
-            tooltipFormatter={(p) => `${p.label} · ${(p.value * 100).toFixed(2)}%`}
+            valueFormatter={activeCurve.valueFormatter}
+            tooltipFormatter={activeCurve.tooltipFormatter}
           />
         </div>
       </div>
@@ -2208,11 +2243,15 @@ function ConsumptionOverviewPreview({
   selectedYear,
   onYearChange,
   onExcludeTransaction,
+  onMerchantCategoryChange,
+  merchantCategoryUpdatingMerchant = "",
 }: {
   data: unknown;
   selectedYear: string;
   onYearChange: (year: string) => void;
   onExcludeTransaction?: (id: string, action: "exclude" | "restore", reason: string) => Promise<void>;
+  onMerchantCategoryChange?: (merchant: string, expenseCategory: string) => Promise<void>;
+  merchantCategoryUpdatingMerchant?: string;
 }) {
   const [catSortKey, setCatSortKey] = useState<string>("amount");
   const [catSortDir, setCatSortDir] = useState<TableSortDirection>("desc");
@@ -2268,6 +2307,9 @@ function ConsumptionOverviewPreview({
   const reviewCount = readNumber(data, "needs_review_count");
   const excludedCount = readNumber(data, "excluded_consumption_count");
   const excludedTotalText = readString(data, "excluded_consumption_total") ?? "-";
+  const allExpenseCategoryOptions = readArray(data, "all_expense_categories")
+    .map((v) => (typeof v === "string" ? v.trim() : ""))
+    .filter((v) => v && v !== "待分类");
 
   const monthOptions = Array.from(new Set(txRows.map((r) => r.month).filter((m) => m)))
     .sort((a, b) => a.localeCompare(b, "zh-Hans-CN", { numeric: true, sensitivity: "base" }));
@@ -2354,6 +2396,18 @@ function ConsumptionOverviewPreview({
       review_count: x.review_count as number,
     }))
     .sort((a, b) => b.amount - a.amount);
+  const merchantCategoryOptions = [
+    "待分类",
+    ...Array.from(new Set(
+      [
+        ...allExpenseCategoryOptions,
+        ...categoryOptionsAgg.map((x) => x.category),
+        ...txRows.map((x) => x.category),
+      ]
+        .map((v) => `${v ?? ""}`.trim())
+        .filter((v) => v && v !== "待分类"),
+    )).sort((a, b) => a.localeCompare(b, "zh-Hans-CN", { sensitivity: "base" })),
+  ];
 
   const filteredTotalCents = filteredTx.reduce((sum, r) => sum + Math.round(r.amount * 100), 0);
 
@@ -2749,15 +2803,39 @@ function ConsumptionOverviewPreview({
                   </tr>
                 </thead>
                 <tbody>
-                  {merchantSorted.slice(0, 20).map((row, idx) => (
-                    <tr key={`${String(row.merchant)}-${idx}`}>
-                      <td className="truncate-cell" title={typeof row.merchant === "string" ? row.merchant : undefined}>
-                        {typeof row.merchant === "string" ? row.merchant : "-"}
-                      </td>
-                      <td>{typeof row.category === "string" ? row.category : "-"}</td>
-                      <td className="num">{typeof row.amount === "number" ? row.amount.toFixed(2) : "-"}</td>
-                    </tr>
-                  ))}
+                  {merchantSorted.slice(0, 20).map((row, idx) => {
+                    const merchant = typeof row.merchant === "string" ? row.merchant : "";
+                    const rowCategory = typeof row.category === "string" && row.category ? row.category : "待分类";
+                    const isCategoryUpdating = merchantCategoryUpdatingMerchant === merchant;
+                    return (
+                      <tr key={`${String(row.merchant)}-${idx}`}>
+                        <td className="truncate-cell" title={merchant || undefined}>
+                          {merchant || "-"}
+                        </td>
+                        <td>
+                          {merchant && onMerchantCategoryChange ? (
+                            <select
+                              className="consumption-merchant-category-select"
+                              value={rowCategory}
+                              disabled={isCategoryUpdating}
+                              onChange={(e) => {
+                                const nextCategory = e.target.value;
+                                if (!nextCategory || nextCategory === rowCategory) return;
+                                void onMerchantCategoryChange(merchant, nextCategory);
+                              }}
+                            >
+                              {merchantCategoryOptions.map((option) => (
+                                <option key={`${merchant}-${option}`} value={option}>{option}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            rowCategory
+                          )}
+                        </td>
+                        <td className="num">{typeof row.amount === "number" ? row.amount.toFixed(2) : "-"}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -3017,7 +3095,7 @@ function RuntimeHealthPreview({ data }: { data: unknown }) {
   );
 }
 
-function InvestmentReturnsPreview({ data }: { data: unknown }) {
+function InvestmentReturnsPreview({ data, listOnly = false }: { data: unknown; listOnly?: boolean }) {
   const [sortKey, setSortKey] = useState<string>("return_rate_pct");
   const [sortDir, setSortDir] = useState<TableSortDirection>("desc");
   if (!isRecord(data)) return null;
@@ -3061,18 +3139,22 @@ function InvestmentReturnsPreview({ data }: { data: unknown }) {
 
   return (
     <div className="subcard preview-card">
-      <div className="preview-header">
-        <h3>账户收益率对比结果</h3>
-        <div className="preview-subtle">
-          统计区间：{presetLabel}
-        </div>
-      </div>
-      <div className="preview-stat-grid">
-        <PreviewStat label="账户数" value={accountCount ?? 0} />
-        <PreviewStat label="成功计算" value={computedCount ?? 0} tone={(computedCount ?? 0) > 0 ? "good" : "warn"} />
-        <PreviewStat label="错误数" value={errorCount ?? 0} tone={(errorCount ?? 0) > 0 ? "warn" : "good"} />
-        <PreviewStat label="平均收益率" value={avgReturnPct} />
-      </div>
+      {!listOnly ? (
+        <>
+          <div className="preview-header">
+            <h3>账户收益率对比结果</h3>
+            <div className="preview-subtle">
+              统计区间：{presetLabel}
+            </div>
+          </div>
+          <div className="preview-stat-grid">
+            <PreviewStat label="账户数" value={accountCount ?? 0} />
+            <PreviewStat label="成功计算" value={computedCount ?? 0} tone={(computedCount ?? 0) > 0 ? "good" : "warn"} />
+            <PreviewStat label="错误数" value={errorCount ?? 0} tone={(errorCount ?? 0) > 0 ? "warn" : "good"} />
+            <PreviewStat label="平均收益率" value={avgReturnPct} />
+          </div>
+        </>
+      ) : null}
       {sortedRows.length > 0 ? (
         <div className="preview-table-wrap">
           <table className="preview-table">
@@ -3109,7 +3191,7 @@ function InvestmentReturnsPreview({ data }: { data: unknown }) {
           </table>
         </div>
       ) : null}
-      {errors.length > 0 ? (
+      {!listOnly && errors.length > 0 ? (
         <div className="preview-note">
           <strong>错误示例</strong>
           <ul className="text-list">
@@ -5279,11 +5361,6 @@ function App() {
   const [invBatchBusy, setInvBatchBusy] = useState(false);
   const [invBatchError, setInvBatchError] = useState("");
   const [invBatchResult, setInvBatchResult] = useState<InvestmentReturnsPayload | null>(null);
-  const [invBatchQuery, setInvBatchQuery] = useState<InvestmentReturnsQueryRequest>({
-    preset: "ytd",
-    from: "",
-    to: "",
-  });
   const [invCurveBusy, setInvCurveBusy] = useState(false);
   const [invCurveError, setInvCurveError] = useState("");
   const [invCurveResult, setInvCurveResult] = useState<InvestmentCurvePayload | null>(null);
@@ -5376,6 +5453,7 @@ function App() {
   const [consumptionOverviewBusy, setConsumptionOverviewBusy] = useState(false);
   const [consumptionOverviewError, setConsumptionOverviewError] = useState("");
   const [consumptionOverviewResult, setConsumptionOverviewResult] = useState<ConsumptionReportPayload | null>(null);
+  const [consumptionCategoryUpdatingMerchant, setConsumptionCategoryUpdatingMerchant] = useState("");
   const [consumptionYear, setConsumptionYear] = useState<string>(currentYearText);
   const [metaAccountsBusy, setMetaAccountsBusy] = useState(false);
   const [metaAccountsError, setMetaAccountsError] = useState("");
@@ -5448,6 +5526,10 @@ function App() {
   const [quickManualInvOpen, setQuickManualInvOpen] = useState(false);
   const [quickManualInvBusy, setQuickManualInvBusy] = useState(false);
   const [quickManualInvError, setQuickManualInvError] = useState("");
+  const [quickManualInvAccountAssetsBusy, setQuickManualInvAccountAssetsBusy] = useState(false);
+  const [quickManualInvAccountAssetsError, setQuickManualInvAccountAssetsError] = useState("");
+  const [quickManualInvAccountAssetsCents, setQuickManualInvAccountAssetsCents] = useState<number | null>(null);
+  const [quickManualInvAccountAssetsDate, setQuickManualInvAccountAssetsDate] = useState("");
   const [quickManualInvLastAccountId, setQuickManualInvLastAccountId] = useState<string>(() => {
     if (typeof window === "undefined") return "";
     try {
@@ -5463,6 +5545,7 @@ function App() {
     total_assets: "",
     transfer_amount: "0",
   });
+  const [returnTabYtdAnnualizedRate, setReturnTabYtdAnnualizedRate] = useState<number | null>(null);
   const [manualEntryTabMonthCountBusy, setManualEntryTabMonthCountBusy] = useState(false);
   const [manualEntryTabMonthCount, setManualEntryTabMonthCount] = useState<number | null>(null);
   const [invEditModalOpen, setInvEditModalOpen] = useState(false);
@@ -5956,6 +6039,14 @@ function App() {
     return req;
   }
 
+  function buildReturnTabQuickMetricRequest(): InvestmentReturnQueryRequest {
+    const accountId = `${invQuery.account_id ?? ""}`.trim();
+    return {
+      account_id: accountId || "__portfolio__",
+      preset: "ytd",
+    };
+  }
+
   function buildInvestmentCurveRequest(): InvestmentCurveQueryRequest {
     const req: InvestmentCurveQueryRequest = {
       account_id: invCurveQuery.account_id,
@@ -5983,11 +6074,11 @@ function App() {
 
   function buildInvestmentReturnsRequest(): InvestmentReturnsQueryRequest {
     const req: InvestmentReturnsQueryRequest = {
-      preset: invBatchQuery.preset || "ytd",
+      preset: invCurveQuery.preset || "ytd",
       limit: 500,
     };
-    const from = `${invBatchQuery.from ?? ""}`.trim();
-    const to = `${invBatchQuery.to ?? ""}`.trim();
+    const from = `${invCurveQuery.from ?? ""}`.trim();
+    const to = `${invCurveQuery.to ?? ""}`.trim();
     if (from) req.from = from;
     if (to) req.to = to;
     return req;
@@ -6433,6 +6524,9 @@ function App() {
 
   function openQuickManualInvestmentModal() {
     setQuickManualInvError("");
+    setQuickManualInvAccountAssetsError("");
+    setQuickManualInvAccountAssetsCents(null);
+    setQuickManualInvAccountAssetsDate("");
     resetQuickManualInvestmentForm(quickManualInvLastAccountId);
     void handleRefreshAccountSelectCatalog();
     setQuickManualInvOpen(true);
@@ -6442,6 +6536,9 @@ function App() {
     if (quickManualInvBusy) return;
     setQuickManualInvOpen(false);
     setQuickManualInvError("");
+    setQuickManualInvAccountAssetsError("");
+    setQuickManualInvAccountAssetsCents(null);
+    setQuickManualInvAccountAssetsDate("");
   }
 
   function closeInvestmentEditModal() {
@@ -6456,6 +6553,39 @@ function App() {
       if (typeof value === "string") out[key] = value.trim();
     }
     return out as T;
+  }
+
+  async function handleQuickManualAccountAssetsQuery() {
+    const accountId = `${quickManualInvForm.account_id ?? ""}`.trim();
+    if (!quickManualInvOpen || !accountId) {
+      setQuickManualInvAccountAssetsBusy(false);
+      setQuickManualInvAccountAssetsError("");
+      setQuickManualInvAccountAssetsCents(null);
+      setQuickManualInvAccountAssetsDate("");
+      return;
+    }
+    setQuickManualInvAccountAssetsBusy(true);
+    setQuickManualInvAccountAssetsError("");
+    try {
+      const payload = await queryInvestments({
+        limit: 1,
+        account_id: accountId,
+      });
+      const rows = readArray(payload, "rows").filter(isRecord);
+      const latestAssetsCents = readNumber(payload, "summary.latest_total_assets_cents");
+      const latestSnapshotDate = readString(payload, "rows.0.snapshot_date") ?? "";
+      const hasSnapshot = rows.length > 0;
+      startTransition(() => {
+        setQuickManualInvAccountAssetsCents(hasSnapshot ? (latestAssetsCents ?? 0) : null);
+        setQuickManualInvAccountAssetsDate(hasSnapshot ? latestSnapshotDate : "");
+      });
+    } catch (err) {
+      setQuickManualInvAccountAssetsError(toErrorMessage(err));
+      setQuickManualInvAccountAssetsCents(null);
+      setQuickManualInvAccountAssetsDate("");
+    } finally {
+      setQuickManualInvAccountAssetsBusy(false);
+    }
   }
 
   async function handleQuickManualInvestmentSubmit() {
@@ -6936,9 +7066,14 @@ function App() {
     setInvBusy(true);
     setInvError("");
     try {
-      const payload = await queryInvestmentReturn(buildInvestmentReturnRequest());
+      const [payload, quickMetricPayload] = await Promise.all([
+        queryInvestmentReturn(buildInvestmentReturnRequest()),
+        queryInvestmentReturn(buildReturnTabQuickMetricRequest()),
+      ]);
+      const ytdAnnualizedRate = readNumber(quickMetricPayload, "metrics.annualized_rate");
       startTransition(() => {
         setInvResult(payload);
+        setReturnTabYtdAnnualizedRate(ytdAnnualizedRate ?? null);
       });
     } catch (err) {
       const message = toErrorMessage(err);
@@ -7128,7 +7263,8 @@ function App() {
     isAdminTab || isManualEntryTab || isReturnAnalysisTab || isConsumptionAnalysisTab;
   const accountSelectOptions = buildAccountSelectOptionsFromCatalog(accountSelectCatalogResult);
   const accountSelectOptionsLoading = accountSelectCatalogBusy && accountSelectOptions.length === 0;
-  const returnTabAnnualizedRate = readNumber(invResult, "metrics.annualized_rate");
+  const returnTabAnnualizedRate = returnTabYtdAnnualizedRate ?? undefined;
+  const returnTabQuickMetricLabel = `${new Date().getFullYear()}年预估`;
   const returnTabAnnualizedText = formatRatePct(returnTabAnnualizedRate);
   const returnTabAnnualizedTone = signedMetricTone(returnTabAnnualizedRate);
   const wealthTabMonthlyGrowth = computeMonthlyTotalAssetGrowthFromWealthCurve(wealthCurveResult);
@@ -7144,9 +7280,61 @@ function App() {
   const manualEntryTabMonthCountText = manualEntryTabMonthCountBusy && manualEntryTabMonthCount === null
     ? "..."
     : `${manualEntryTabMonthCount ?? 0}笔`;
-  const shouldPrefetchReturnTabQuickMetric = Boolean(dbStatus?.ready) && invResult === null && !invBusy;
+  const incomeMonthRows = readArray(salaryIncomeResult, "rows").filter(isRecord);
+  const latestIncomeMonthWithData = incomeMonthRows.reduce<{ monthKey: string; totalIncomeCents: number } | null>((best, row) => {
+    const monthKey = typeof row.month_key === "string" ? row.month_key : "";
+    const monthNum = parseMonthNumberFromMonthKey(monthKey);
+    const totalIncomeCents = typeof row.total_income_cents === "number" ? row.total_income_cents : 0;
+    if (totalIncomeCents <= 0) return best;
+    if (monthNum === null) return best;
+    if (!best || monthKey > best.monthKey) return { monthKey, totalIncomeCents };
+    return best;
+  }, null);
+  const salaryIncomeAsOfDate = readString(salaryIncomeResult, "as_of_date") ?? "";
+  const asOfMonthNumber = salaryIncomeAsOfDate.length >= 7 ? Number(salaryIncomeAsOfDate.slice(5, 7)) : NaN;
+  const fallbackIncomeMonthNumber = Number.isFinite(asOfMonthNumber) && asOfMonthNumber >= 1 && asOfMonthNumber <= 12
+    ? asOfMonthNumber
+    : (new Date().getMonth() + 1);
+  const incomeMonthNumber = parseMonthNumberFromMonthKey(latestIncomeMonthWithData?.monthKey) ?? fallbackIncomeMonthNumber;
+  const incomeTabMonthlyLabel = `${incomeMonthNumber}月收入`;
+  const incomeTabMonthlyText = formatCentsShort(latestIncomeMonthWithData?.totalIncomeCents ?? 0);
+  const incomeTabMonthlyTone: "default" = "default";
+  const consumptionMonthRows = readArray(consumptionOverviewResult, "months").filter(isRecord);
+  const latestConsumptionMonth = consumptionMonthRows.reduce<{ monthKey: string; amountCents: number } | null>((best, row) => {
+    const monthKey = typeof row.month === "string" ? row.month : "";
+    const monthNum = parseMonthNumberFromMonthKey(monthKey);
+    const amountYuan = typeof row.amount === "number" ? row.amount : 0;
+    if (monthNum === null || !Number.isFinite(amountYuan)) return best;
+    const amountCents = Math.round(amountYuan * 100);
+    if (!best || monthKey > best.monthKey) return { monthKey, amountCents };
+    return best;
+  }, null);
+  const consumptionMonthNumber = parseMonthNumberFromMonthKey(latestConsumptionMonth?.monthKey) ?? (new Date().getMonth() + 1);
+  const consumptionTabMonthlyLabel = `${consumptionMonthNumber}月消费`;
+  const consumptionTabMonthlyText = formatCentsShort(latestConsumptionMonth?.amountCents ?? 0);
+  const consumptionTabMonthlyTone: "warn" = "warn";
+  const quickManualAccountId = `${quickManualInvForm.account_id ?? ""}`.trim();
+  const quickManualAccountHintText = !quickManualAccountId
+    ? ""
+    : quickManualInvAccountAssetsError
+      ? quickManualInvAccountAssetsError
+      : quickManualInvAccountAssetsBusy
+        ? "当前总资金加载中..."
+        : quickManualInvAccountAssetsCents !== null
+          ? `当前总资金：${formatCentsYuanText(quickManualInvAccountAssetsCents)} 元${
+              quickManualInvAccountAssetsDate ? `（${quickManualInvAccountAssetsDate}）` : ""
+            }`
+          : "当前总资金：暂无历史快照";
+  const quickManualAccountHintToneClass = quickManualInvAccountAssetsError ? "warn-text" : "";
+  const quickManualTotalAssetsInputYuan = parseYuanInputToNumber(`${quickManualInvForm.total_assets ?? ""}`);
+  const quickManualTotalAssetsWanText = quickManualTotalAssetsInputYuan !== null && Math.abs(quickManualTotalAssetsInputYuan) >= 100000
+    ? `${(quickManualTotalAssetsInputYuan / 10000).toFixed(2)} 万`
+    : "";
+  const shouldPrefetchReturnTabQuickMetric = Boolean(dbStatus?.ready) && returnTabYtdAnnualizedRate === null && !invBusy;
   const shouldPrefetchWealthTabQuickMetric = Boolean(dbStatus?.ready) && wealthCurveResult === null && !wealthCurveBusy;
   const shouldPrefetchFireTabQuickMetric = Boolean(dbStatus?.ready) && fireProgressResult === null && !fireProgressBusy;
+  const shouldPrefetchIncomeTabQuickMetric = Boolean(dbStatus?.ready) && salaryIncomeResult === null && !salaryIncomeBusy;
+  const shouldPrefetchConsumptionTabQuickMetric = Boolean(dbStatus?.ready) && consumptionOverviewResult === null && !consumptionOverviewBusy;
   const shouldPrefetchManualEntryTabQuickMetric = Boolean(dbStatus?.ready) && manualEntryTabMonthCount === null && !manualEntryTabMonthCountBusy;
   const showQueryWorkbench = isAdminVisibleWorkbench;
   const showDebugJson = showRawJson && isAdminDeveloperMode;
@@ -7204,7 +7392,16 @@ function App() {
     { enabled: isAdminTab, delayMs: 220 },
   );
 
-  useDebouncedAutoRun(handleConsumptionOverviewQuery, [consumptionYear], { enabled: isConsumptionAnalysisTab, delayMs: 220 });
+  useDebouncedAutoRun(
+    handleQuickManualAccountAssetsQuery,
+    [quickManualInvOpen ? "open" : "closed", `${quickManualInvForm.account_id ?? ""}`],
+    { enabled: quickManualInvOpen, delayMs: 180 },
+  );
+  useDebouncedAutoRun(
+    handleConsumptionOverviewQuery,
+    [consumptionYear],
+    { enabled: isConsumptionAnalysisTab || shouldPrefetchConsumptionTabQuickMetric, delayMs: 220 },
+  );
   useDebouncedAutoRun(
     handleInvestmentReturnQuery,
     [invQuery.account_id, invQuery.preset, invQuery.from, invQuery.to],
@@ -7217,7 +7414,7 @@ function App() {
   );
   useDebouncedAutoRun(
     handleInvestmentReturnsQuery,
-    [invBatchQuery.preset ?? "ytd", invBatchQuery.from ?? "", invBatchQuery.to ?? ""],
+    [invCurveQuery.preset ?? "ytd", invCurveQuery.from ?? "", invCurveQuery.to ?? ""],
     { enabled: isReturnAnalysisTab, delayMs: 260 },
   );
   useDebouncedAutoRun(
@@ -7251,7 +7448,11 @@ function App() {
     [fireProgressQuery.withdrawal_rate ?? ""],
     { enabled: isBudgetFireTab || shouldPrefetchFireTabQuickMetric, delayMs: 260 },
   );
-  useDebouncedAutoRun(handleSalaryIncomeOverviewQuery, [salaryIncomeQuery.year ?? ""], { enabled: isIncomeAnalysisTab, delayMs: 260 });
+  useDebouncedAutoRun(
+    handleSalaryIncomeOverviewQuery,
+    [salaryIncomeQuery.year ?? ""],
+    { enabled: isIncomeAnalysisTab || shouldPrefetchIncomeTabQuickMetric, delayMs: 260 },
+  );
   useDebouncedAutoRun(handleRefreshManualEntryTabMonthCount, [], { enabled: shouldPrefetchManualEntryTabQuickMetric, delayMs: 260 });
 
   const accountCatalogAdminPanel = isTab("admin") ? (
@@ -7465,10 +7666,31 @@ function App() {
               const isReturnTabButton = tab.key === "return-analysis";
               const isWealthTabButton = tab.key === "wealth-overview";
               const isFireTabButton = tab.key === "budget-fire";
+              const isIncomeTabButton = tab.key === "income-analysis";
+              const isConsumptionTabButton = tab.key === "consumption-analysis";
               const isManualEntryLauncherButton = tab.key === "manual-entry";
               const isManualEntryTabButton = tab.key === "manual-entry";
-              const isFeaturedTabButton = (isManualEntryTabButton || isReturnTabButton || isWealthTabButton || isFireTabButton) && !sidebarCollapsed;
-              const quickMetricLabel = isManualEntryTabButton ? "本月已记" : isReturnTabButton ? "年化预估" : isWealthTabButton ? "月度增长" : isFireTabButton ? "自由度" : "";
+              const isFeaturedTabButton =
+                (isManualEntryTabButton
+                || isReturnTabButton
+                || isWealthTabButton
+                || isFireTabButton
+                || isIncomeTabButton
+                || isConsumptionTabButton)
+                && !sidebarCollapsed;
+              const quickMetricLabel = isManualEntryTabButton
+                ? "本月已记"
+                : isReturnTabButton
+                  ? returnTabQuickMetricLabel
+                  : isWealthTabButton
+                    ? "月度增长"
+                    : isFireTabButton
+                      ? "自由度"
+                      : isIncomeTabButton
+                        ? incomeTabMonthlyLabel
+                        : isConsumptionTabButton
+                          ? consumptionTabMonthlyLabel
+                          : "";
               const resolvedQuickMetricLabel = isWealthTabButton ? wealthTabMonthlyGrowthLabel : quickMetricLabel;
               const quickMetricText = isReturnTabButton
                 ? returnTabAnnualizedText
@@ -7478,6 +7700,10 @@ function App() {
                   ? wealthTabMonthlyGrowthText
                   : isFireTabButton
                     ? fireTabFreedomText
+                  : isIncomeTabButton
+                    ? incomeTabMonthlyText
+                    : isConsumptionTabButton
+                      ? consumptionTabMonthlyText
                   : "-";
               const quickMetricTone = isReturnTabButton
                 ? returnTabAnnualizedTone
@@ -7487,6 +7713,10 @@ function App() {
                   ? wealthTabMonthlyGrowthTone
                   : isFireTabButton
                     ? fireTabFreedomTone
+                  : isIncomeTabButton
+                    ? incomeTabMonthlyTone
+                    : isConsumptionTabButton
+                      ? consumptionTabMonthlyTone
                   : "default";
               const quickMetricTextLen = quickMetricText.replace(/\s+/g, "").length;
               const quickMetricSizeClass =
@@ -7499,6 +7729,10 @@ function App() {
                   ? ` · ${resolvedQuickMetricLabel} ${quickMetricText}`
                   : isFireTabButton
                     ? ` · ${resolvedQuickMetricLabel} ${quickMetricText}`
+                  : isIncomeTabButton
+                    ? ` · ${resolvedQuickMetricLabel} ${quickMetricText}`
+                    : isConsumptionTabButton
+                      ? ` · ${resolvedQuickMetricLabel} ${quickMetricText}`
                   : "";
               return (
                 <button
@@ -7615,6 +7849,9 @@ function App() {
                     type="date"
                     placeholder="YYYY-MM-DD"
                   />
+                  <div className="quick-manual-inline-hint-slot" aria-hidden="true">
+                    <div className="quick-manual-inline-hint" />
+                  </div>
                 </label>
                 <label className="field">
                   <span>投资账户</span>
@@ -7626,6 +7863,11 @@ function App() {
                     emptyLabel={accountSelectOptionsLoading ? "加载账户中..." : "请选择投资账户"}
                     disabled={accountSelectOptionsLoading || quickManualInvBusy}
                   />
+                  <div className="quick-manual-inline-hint-slot" aria-live="polite">
+                    <div className={`quick-manual-inline-hint ${quickManualAccountHintToneClass}`}>
+                      {quickManualAccountHintText}
+                    </div>
+                  </div>
                 </label>
                 <label className="field">
                   <span>总资产（元）</span>
@@ -7634,6 +7876,9 @@ function App() {
                     onChange={(e) => setQuickManualInvForm((s) => ({ ...s, total_assets: e.target.value }))}
                     placeholder="10000.00"
                   />
+                  <div className="quick-manual-inline-hint-slot" aria-live="polite">
+                    <div className="quick-manual-inline-hint">{quickManualTotalAssetsWanText ? `约 ${quickManualTotalAssetsWanText}` : ""}</div>
+                  </div>
                 </label>
                 <label className="field">
                   <span>净转入/转出（元）</span>
@@ -7959,6 +8204,23 @@ function App() {
                     setConsumptionOverviewError(toErrorMessage(err));
                   }
                 }}
+                onMerchantCategoryChange={async (merchant, expenseCategory) => {
+                  setConsumptionCategoryUpdatingMerchant(merchant);
+                  try {
+                    await upsertMerchantMapRule({
+                      merchant_normalized: merchant,
+                      expense_category: expenseCategory,
+                      confidence: "0.95",
+                      note: "消费分析页快捷改分类",
+                    });
+                    void handleConsumptionOverviewQuery();
+                  } catch (err) {
+                    setConsumptionOverviewError(toErrorMessage(err));
+                  } finally {
+                    setConsumptionCategoryUpdatingMerchant("");
+                  }
+                }}
+                merchantCategoryUpdatingMerchant={consumptionCategoryUpdatingMerchant}
               />
               {showDebugJson ? (
                 <JsonResultCard
@@ -9545,7 +9807,7 @@ function App() {
         <div
           className="query-form-grid"
           onKeyDown={makeEnterToQueryHandler(async () => {
-            await Promise.all([handleInvestmentReturnQuery(), handleInvestmentCurveQuery()]);
+            await Promise.all([handleInvestmentReturnQuery(), handleInvestmentCurveQuery(), handleInvestmentReturnsQuery()]);
           })}
         >
           <label className="field">
@@ -9618,78 +9880,23 @@ function App() {
           ) : null}
         </div>
 
-        <AutoRefreshHint busy={invBusy || invCurveBusy}>调整筛选条件后将自动刷新结果。</AutoRefreshHint>
+        <AutoRefreshHint busy={invBusy || invCurveBusy || invBatchBusy}>调整筛选条件后将自动刷新结果。</AutoRefreshHint>
         {invError ? <div className="inline-error" role="alert">{invError}</div> : null}
         {invCurveError ? <div className="inline-error" role="alert">{invCurveError}</div> : null}
+        {invBatchError ? <div className="inline-error" role="alert">{invBatchError}</div> : null}
 
         <InvestmentCurvePreview data={invCurveResult} returnData={invResult} />
+        <InvestmentReturnsPreview data={invBatchResult} listOnly />
         {showRawJson ? (
           <div className="stack">
             <JsonResultCard title="投资区间收益率 JSON" data={invResult} emptyText="暂无结果。请先执行数据库迁移后再查询。" />
             <JsonResultCard title="投资曲线 JSON" data={invCurveResult} emptyText="暂无结果。请先执行数据库迁移后再查询。" />
+            <JsonResultCard
+              title="投资收益率对比 JSON"
+              data={invBatchResult}
+              emptyText="暂无结果。请先导入桌面数据库后再查询账户收益率对比。"
+            />
           </div>
-        ) : null}
-      </section> : null}
-
-      {isTab("return-analysis") ? <section className="card panel">
-        <div className="panel-header">
-          <h2>投资收益率对比</h2>
-          <p>对比全部投资账户在同一统计区间内的收益表现，便于横向查看差异。</p>
-        </div>
-
-        <div className="query-form-grid" onKeyDown={makeEnterToQueryHandler(handleInvestmentReturnsQuery)}>
-          <label className="field">
-            <span>预设区间</span>
-            <select
-              value={`${invBatchQuery.preset ?? "ytd"}`}
-              onChange={(e) => setInvBatchQuery((s) => ({ ...s, preset: e.target.value }))}
-            >
-              <option value="ytd">年初至今</option>
-              <option value="1y">近1年</option>
-              <option value="3y">近3年</option>
-              <option value="since_inception">成立以来</option>
-              <option value="custom">自定义</option>
-            </select>
-          </label>
-          {(invBatchQuery.preset ?? "ytd") === "custom" ? (
-            <>
-              <label className="field">
-                <span>开始日期（自定义）</span>
-                <DateInput
-                  value={`${invBatchQuery.from ?? ""}`}
-                  onChange={(e) => setInvBatchQuery((s) => ({ ...s, from: e.target.value }))}
-                  type="date"
-                  placeholder="YYYY-MM-DD"
-                />
-              </label>
-              <label className="field">
-                <span>结束日期（可选）</span>
-                <DateInput
-                  value={`${invBatchQuery.to ?? ""}`}
-                  onChange={(e) => setInvBatchQuery((s) => ({ ...s, to: e.target.value }))}
-                  type="date"
-                  placeholder="YYYY-MM-DD"
-                />
-              </label>
-            </>
-          ) : null}
-        </div>
-
-        <AutoRefreshHint busy={invBatchBusy}>进入本页或调整筛选条件后将自动刷新结果。</AutoRefreshHint>
-
-        {invBatchError ? (
-          <div className="inline-error" role="alert">
-            {invBatchError}
-          </div>
-        ) : null}
-
-        <InvestmentReturnsPreview data={invBatchResult} />
-        {showRawJson ? (
-          <JsonResultCard
-            title="投资收益率对比 JSON"
-            data={invBatchResult}
-            emptyText="暂无结果。请先导入桌面数据库后再查询账户收益率对比。"
-          />
         ) : null}
       </section> : null}
 

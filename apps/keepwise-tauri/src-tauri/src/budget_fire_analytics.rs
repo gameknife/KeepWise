@@ -1,12 +1,15 @@
 use chrono::{Datelike, Local};
+use csv::ReaderBuilder;
 use rusqlite::{params, Connection};
 use serde::Deserialize;
 use serde_json::{json, Value};
+use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
 use tauri::AppHandle;
 use uuid::Uuid;
 
 use crate::ledger_db::resolve_ledger_db_path;
+use crate::rules_store::ensure_app_rules_dir_seeded;
 use crate::wealth_analytics::{wealth_overview_query_at_db_path, WealthOverviewQueryRequest};
 
 const DEFAULT_FIRE_WITHDRAWAL_RATE: f64 = 0.04;
@@ -76,6 +79,97 @@ fn cents_to_yuan_value(cents: i64) -> f64 {
 fn round_to(value: f64, digits: i32) -> f64 {
     let factor = 10_f64.powi(digits);
     (value * factor).round() / factor
+}
+
+fn normalize_merchant_key(raw: &str) -> String {
+    raw.trim().to_lowercase()
+}
+
+fn resolve_display_expense_category(
+    db_expense_category: &str,
+    merchant: &str,
+    merchant_category_overrides: Option<&HashMap<String, String>>,
+) -> String {
+    if let Some(overrides) = merchant_category_overrides {
+        let merchant_key = normalize_merchant_key(merchant);
+        if !merchant_key.is_empty() {
+            if let Some(mapped) = overrides.get(&merchant_key) {
+                let mapped_trimmed = mapped.trim();
+                if !mapped_trimmed.is_empty() {
+                    return mapped_trimmed.to_string();
+                }
+            }
+        }
+    }
+    if db_expense_category.trim().is_empty() {
+        "待分类".to_string()
+    } else {
+        db_expense_category.trim().to_string()
+    }
+}
+
+fn load_merchant_category_overrides(app: &AppHandle) -> Result<HashMap<String, String>, String> {
+    let rules_dir = ensure_app_rules_dir_seeded(app)?;
+    let merchant_map_path = rules_dir.join("merchant_map.csv");
+    if !merchant_map_path.exists() {
+        return Ok(HashMap::new());
+    }
+    let mut reader = ReaderBuilder::new()
+        .flexible(true)
+        .from_path(&merchant_map_path)
+        .map_err(|e| format!("读取商户映射规则失败: {e}"))?;
+    let mut rows = HashMap::<String, String>::new();
+    for rec in reader.records() {
+        let record = rec.map_err(|e| format!("解析商户映射规则失败: {e}"))?;
+        let merchant_normalized = record.get(0).unwrap_or_default().trim();
+        let expense_category = record.get(1).unwrap_or_default().trim();
+        if merchant_normalized.is_empty() || expense_category.is_empty() {
+            continue;
+        }
+        rows.insert(
+            normalize_merchant_key(merchant_normalized),
+            expense_category.to_string(),
+        );
+    }
+    Ok(rows)
+}
+
+fn collect_all_expense_categories(
+    conn: &Connection,
+    merchant_category_overrides: Option<&HashMap<String, String>>,
+) -> Result<Vec<String>, String> {
+    let mut category_set = BTreeSet::<String>::new();
+
+    let mut stmt = conn
+        .prepare(
+            r#"
+            SELECT DISTINCT TRIM(name) AS category_name
+            FROM categories
+            WHERE name IS NOT NULL AND TRIM(name) != ''
+            "#,
+        )
+        .map_err(|e| format!("查询分类候选失败: {e}"))?;
+    let rows = stmt
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(|e| format!("查询分类候选失败: {e}"))?;
+    for row in rows {
+        let category = row.map_err(|e| format!("读取分类候选失败: {e}"))?;
+        let category_trimmed = category.trim();
+        if !category_trimmed.is_empty() {
+            category_set.insert(category_trimmed.to_string());
+        }
+    }
+
+    if let Some(overrides) = merchant_category_overrides {
+        for mapped in overrides.values() {
+            let mapped_trimmed = mapped.trim();
+            if !mapped_trimmed.is_empty() {
+                category_set.insert(mapped_trimmed.to_string());
+            }
+        }
+    }
+
+    Ok(category_set.into_iter().collect())
 }
 
 fn parse_bool_param(raw: Option<&str>, default: bool) -> Result<bool, String> {
@@ -649,9 +743,18 @@ pub fn query_budget_monthly_review_at_db_path(
     }))
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn query_consumption_report_at_db_path(
     db_path: &Path,
     req: ConsumptionReportQueryRequest,
+) -> Result<Value, String> {
+    query_consumption_report_with_category_overrides_at_db_path(db_path, req, None)
+}
+
+fn query_consumption_report_with_category_overrides_at_db_path(
+    db_path: &Path,
+    req: ConsumptionReportQueryRequest,
+    merchant_category_overrides: Option<&HashMap<String, String>>,
 ) -> Result<Value, String> {
     let conn = Connection::open(db_path).map_err(|e| format!("打开数据库失败: {e}"))?;
 
@@ -883,13 +986,19 @@ pub fn query_consumption_report_at_db_path(
         };
         let confidence = round_to(confidence_opt.unwrap_or(0.0), 2);
 
+        let resolved_category = resolve_display_expense_category(
+            &expense_category,
+            &merchant,
+            merchant_category_overrides,
+        );
+
         all_consume_rows.push(json!({
             "id": id,
             "month": month_key,
             "date": date,
             "merchant": merchant,
             "description": description,
-            "category": if expense_category.is_empty() { "待分类" } else { expense_category.as_str() },
+            "category": resolved_category,
             "amount_cents_abs": amount_cents_abs,
             "amount": cents_to_yuan_value(amount_cents_abs),
             "needs_review": needs_review_i != 0,
@@ -1079,6 +1188,7 @@ pub fn query_consumption_report_at_db_path(
         .filter_map(|r| r.get("source_path").and_then(Value::as_str))
         .filter(|s| !s.trim().is_empty())
         .collect::<std::collections::HashSet<_>>();
+    let all_expense_categories = collect_all_expense_categories(&conn, merchant_category_overrides)?;
 
     let raw_total_cents = consumption_total_cents + excluded_total_cents;
     Ok(json!({
@@ -1100,6 +1210,7 @@ pub fn query_consumption_report_at_db_path(
         "raw_consumption_total_value": cents_to_yuan_value(raw_total_cents),
         "top_expense_categories": top_expense_categories,
         "categories": categories,
+        "all_expense_categories": all_expense_categories,
         "months": months,
         "merchants": merchants,
         "transactions": transactions,
@@ -1438,7 +1549,12 @@ pub fn query_consumption_report(
     req: ConsumptionReportQueryRequest,
 ) -> Result<Value, String> {
     let db_path = resolve_ledger_db_path(&app)?;
-    query_consumption_report_at_db_path(&db_path, req)
+    let merchant_category_overrides = load_merchant_category_overrides(&app)?;
+    query_consumption_report_with_category_overrides_at_db_path(
+        &db_path,
+        req,
+        Some(&merchant_category_overrides),
+    )
 }
 
 #[tauri::command]
@@ -1503,7 +1619,8 @@ mod tests {
 
             INSERT INTO categories(id, name, level) VALUES
               ('cat_living', '日常消费', 2),
-              ('cat_transport', '交通', 2);
+              ('cat_transport', '交通', 2),
+              ('cat_learning', '教育学习', 2);
 
             UPDATE monthly_budget_items SET monthly_amount_cents = 50000 WHERE id = 'budget_item_mortgage';
             UPDATE monthly_budget_items SET monthly_amount_cents = 30000 WHERE id = 'budget_item_living';
@@ -1717,6 +1834,69 @@ mod tests {
         assert_eq!(
             categories[0].get("amount").and_then(Value::as_f64),
             Some(300.0)
+        );
+        let all_expense_categories = consumption
+            .get("all_expense_categories")
+            .and_then(Value::as_array)
+            .expect("all_expense_categories array");
+        assert!(
+            all_expense_categories
+                .iter()
+                .any(|row| row.as_str() == Some("教育学习")),
+            "expected 教育学习 in all_expense_categories"
+        );
+
+        let _ = fs::remove_file(&db_path);
+    }
+
+    #[test]
+    fn consumption_report_applies_merchant_category_overrides() {
+        let db_path = create_temp_test_db();
+        apply_all_migrations_for_test(&db_path);
+        seed_budget_fire_fixture(&db_path);
+
+        let mut overrides = std::collections::HashMap::<String, String>::new();
+        overrides.insert("地铁".to_string(), "日常消费".to_string());
+        overrides.insert("不存在商户".to_string(), "全新分类".to_string());
+
+        let consumption = query_consumption_report_with_category_overrides_at_db_path(
+            &db_path,
+            ConsumptionReportQueryRequest::default(),
+            Some(&overrides),
+        )
+        .expect("query consumption report with overrides");
+
+        let categories = consumption
+            .get("categories")
+            .and_then(Value::as_array)
+            .expect("categories array");
+        let living = categories
+            .iter()
+            .find(|row| row.get("category").and_then(Value::as_str) == Some("日常消费"))
+            .expect("日常消费 category row");
+        assert_eq!(living.get("amount").and_then(Value::as_f64), Some(500.0));
+
+        let txs = consumption
+            .get("transactions")
+            .and_then(Value::as_array)
+            .expect("transactions array");
+        let metro_tx = txs
+            .iter()
+            .find(|row| row.get("merchant").and_then(Value::as_str) == Some("地铁"))
+            .expect("地铁 transaction");
+        assert_eq!(
+            metro_tx.get("category").and_then(Value::as_str),
+            Some("日常消费")
+        );
+        let all_expense_categories = consumption
+            .get("all_expense_categories")
+            .and_then(Value::as_array)
+            .expect("all_expense_categories array");
+        assert!(
+            all_expense_categories
+                .iter()
+                .any(|row| row.as_str() == Some("全新分类")),
+            "expected 全新分类 in all_expense_categories"
         );
 
         let _ = fs::remove_file(&db_path);

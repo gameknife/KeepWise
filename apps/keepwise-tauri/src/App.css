@@ -531,6 +531,18 @@ h3 {
   line-height: 1.35;
 }
 
+.quick-manual-inline-hint {
+  margin-top: 0;
+  color: rgba(243, 239, 229, 0.46);
+  font-size: 0.78rem;
+  line-height: 1.32;
+}
+
+.quick-manual-inline-hint-slot {
+  margin-top: 0.35rem;
+  min-height: 1.08rem;
+}
+
 .auto-refresh-hint {
   display: flex;
   align-items: center;
@@ -1177,6 +1189,17 @@ h3 {
 
 .return-analysis-focus-subtle code {
   font-size: 0.78rem;
+}
+
+.return-curve-switch {
+  margin-top: 0.8rem;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.return-curve-switch-field {
+  min-width: 210px;
+  max-width: 260px;
 }
 
 .wealth-sankey-panel {
@@ -2628,6 +2651,23 @@ h3 {
   font-size: 0.78rem;
   color: rgba(243, 239, 229, 0.55);
   white-space: nowrap;
+}
+
+.consumption-merchant-category-select {
+  min-width: 108px;
+  max-width: 164px;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: #efe8da;
+  padding: 0.22rem 1.5rem 0.22rem 0.45rem;
+  height: 30px;
+  font-size: 0.76rem;
+}
+
+.consumption-merchant-category-select:disabled {
+  opacity: 0.55;
+  cursor: wait;
 }
 
 /* ── Consumption: Transaction table ── */
