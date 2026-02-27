@@ -58,6 +58,11 @@ class RootErrorBoundary extends React.Component<React.PropsWithChildren, RootErr
   }
 }
 
+// Tag <html> with platform class for platform-specific CSS adjustments
+if (navigator.userAgent.includes("Linux")) {
+  document.documentElement.classList.add("platform-linux");
+}
+
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <RootErrorBoundary>
     <App />

@@ -7,8 +7,11 @@
   --kw-scroll-thumb: rgba(161, 226, 214, 0.22);
   --kw-scroll-thumb-hover: rgba(161, 226, 214, 0.36);
   font-family:
-    "Avenir Next", "SF Pro Display", "Segoe UI", "PingFang SC", "Hiragino Sans GB",
-    "Microsoft YaHei", sans-serif;
+    "Avenir Next", "SF Pro Display", "Segoe UI",
+    "Noto Sans CJK SC", "Noto Sans SC",
+    "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei",
+    system-ui, sans-serif;
   line-height: 1.45;
   font-weight: 400;
   color: #f3efe5;
@@ -2855,4 +2858,22 @@ h3 {
   .primary-btn {
     transition: none;
   }
+}
+
+/* Linux / WebKitGTK: CJK fonts (Noto Sans CJK) have taller metrics than
+   macOS/Windows UI fonts, causing text to overflow fixed-height select controls.
+   Also force custom appearance since WebKitGTK renders <select> with native
+   GTK theme (opaque grey) instead of respecting CSS background/border. */
+.platform-linux .field select {
+  appearance: none;
+  -webkit-appearance: none;
+  font-size: 0.8rem;
+  padding-top: 0.35rem;
+  padding-bottom: 0.35rem;
+  padding-right: 1.8rem;
+  line-height: 1.1;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' fill='none'%3E%3Cpath d='M1 1.5L6 6l5-4.5' stroke='rgba(243,239,229,0.55)' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.6rem center;
+  background-size: 12px 8px;
 }
