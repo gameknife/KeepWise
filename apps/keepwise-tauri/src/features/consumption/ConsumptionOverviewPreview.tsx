@@ -32,6 +32,7 @@ export function ConsumptionOverviewPreview({
   data,
   selectedYear,
   onYearChange,
+  flat = false,
   onExcludeTransaction,
   onMerchantCategoryChange,
   merchantCategoryUpdatingMerchant = "",
@@ -45,6 +46,7 @@ export function ConsumptionOverviewPreview({
   data: unknown;
   selectedYear: string;
   onYearChange: (year: string) => void;
+  flat?: boolean;
   onExcludeTransaction?: (id: string, action: "exclude" | "restore", reason: string) => Promise<void>;
   onMerchantCategoryChange?: (merchant: string, expenseCategory: string) => Promise<void>;
   merchantCategoryUpdatingMerchant?: string;
@@ -307,8 +309,8 @@ export function ConsumptionOverviewPreview({
   const monthCount = months.length || 1;
   const monthlyAvgCents = Math.round(filteredTotalCents / monthCount);
 
-  return (
-    <div className="subcard preview-card">
+  const content = (
+    <>
       {/* 年度 Tab */}
       {availableYears.length > 0 ? (
         <div className="consumption-year-tabs">
@@ -739,7 +741,8 @@ export function ConsumptionOverviewPreview({
         ) : null}
       </div>
 
-    </div>
+    </>
   );
-}
 
+  return flat ? content : <div className="subcard preview-card">{content}</div>;
+}

@@ -20,6 +20,7 @@ export function parseStoredAppSettings(raw: string | null): AppSettings {
     gainLossColorScheme: "cn_red_up_green_down",
     defaultPrivacyMaskOnLaunch: false,
     uiMotionEnabled: true,
+    fireWithdrawalRate: "0.03",
   };
   if (!raw) return fallback;
   try {
@@ -28,10 +29,15 @@ export function parseStoredAppSettings(raw: string | null): AppSettings {
       parsed.gainLossColorScheme === "intl_green_up_red_down" || parsed.gainLossColorScheme === "cn_red_up_green_down"
         ? parsed.gainLossColorScheme
         : fallback.gainLossColorScheme;
+    const fireWithdrawalRate =
+      parsed.fireWithdrawalRate === "0.03" || parsed.fireWithdrawalRate === "0.04" || parsed.fireWithdrawalRate === "0.05"
+        ? parsed.fireWithdrawalRate
+        : fallback.fireWithdrawalRate;
     return {
       gainLossColorScheme: scheme,
       defaultPrivacyMaskOnLaunch: parsed.defaultPrivacyMaskOnLaunch === true,
       uiMotionEnabled: parsed.uiMotionEnabled !== false,
+      fireWithdrawalRate,
     };
   } catch {
     return fallback;

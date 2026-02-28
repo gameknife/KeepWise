@@ -106,20 +106,29 @@ function WealthStackedTrendChart({
   }
   const ySpan = yMax - yMin || 1;
 
-  const baseMargin = { top: 14, right: 16, bottom: 42 };
+  const compactYAxisLabel = (valueCents: number) => {
+    const abs = Math.abs(valueCents);
+    if (abs < 1_000_000) return formatCentsShort(valueCents);
+    const wan = valueCents / 1_000_000;
+    const absWan = Math.abs(wan);
+    const digits = absWan >= 1000 ? 0 : absWan >= 100 ? 1 : 2;
+    return `${wan.toFixed(digits)}万`;
+  };
+
+  const baseMargin = { top: 14, right: 12, bottom: 42 };
   const yTickCount = 4;
   const innerH = height - baseMargin.top - baseMargin.bottom;
   const yTickMeta = Array.from({ length: yTickCount + 1 }, (_, i) => {
     const ratio = i / yTickCount;
     const value = yMax - ySpan * ratio;
-    return { ratio, value, label: formatCentsShort(value) };
+    return { ratio, value, label: compactYAxisLabel(value) };
   });
   const maxYLabelLen = Math.max(...yTickMeta.map((tick) => tick.label.length), 1);
   const margin = {
     top: baseMargin.top,
     right: baseMargin.right,
     bottom: baseMargin.bottom,
-    left: Math.min(152, Math.max(76, 20 + maxYLabelLen * 7)),
+    left: Math.min(108, Math.max(52, 16 + maxYLabelLen * 6)),
   };
   const innerW = Math.max(140, width - margin.left - margin.right);
   const stepX = enriched.length > 1 ? innerW / (enriched.length - 1) : 0;

@@ -38,7 +38,7 @@ export function ReturnAnalysisSection(props: any) {
   } = props;
   return (
     <>
-      {isTab("return-analysis") ? <section className="card panel">
+      {isTab("return-analysis") ? <section className="card panel panel-flat-content panel-return-analysis">
         <div
           className="query-form-grid"
           onKeyDown={makeEnterToQueryHandler(async () => {

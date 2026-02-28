@@ -364,10 +364,29 @@ export function LineAreaChart({
   const width = measuredWidth;
   const formattedValue = (value: number) =>
     valueFormatter ? valueFormatter(value) : value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  const effectiveHeight = (() => {
+    if (width > 560) return height;
+    // Narrow/mobile layouts: reduce chart height to keep trend aspect ratio
+    // closer to desktop after horizontal width is compressed.
+    const compact = Math.round(width * 0.5);
+    return Math.max(150, Math.min(height, compact));
+  })();
+  const compactYAxisLabel = (value: number) => {
+    const raw = formattedValue(value);
+    if (/%/.test(raw)) return raw;
+    const abs = Math.abs(value);
+    // Monetary series are passed in cents; when >= 1,000,000 cents (10,000 yuan),
+    // compact y-axis labels to "万" to save horizontal space for plotting area.
+    if (abs < 1_000_000) return raw;
+    const wan = value / 1_000_000;
+    const absWan = Math.abs(wan);
+    const digits = absWan >= 1000 ? 0 : absWan >= 100 ? 1 : 2;
+    return `${wan.toFixed(digits)}万`;
+  };
 
-  const baseMargin = { top: 14, right: 16, bottom: 42 };
+  const baseMargin = { top: 14, right: 12, bottom: 42 };
   const yTickCount = 4;
-  const innerH = height - baseMargin.top - baseMargin.bottom;
+  const innerH = effectiveHeight - baseMargin.top - baseMargin.bottom;
 
   const minRaw = Math.min(...clean.map((p) => p.value));
   const maxRaw = Math.max(...clean.map((p) => p.value));
@@ -397,7 +416,7 @@ export function LineAreaChart({
     return {
       ratio,
       value,
-      label: formattedValue(value),
+      label: compactYAxisLabel(value),
     };
   });
 
@@ -406,7 +425,7 @@ export function LineAreaChart({
     top: baseMargin.top,
     right: baseMargin.right,
     bottom: baseMargin.bottom,
-    left: Math.min(152, Math.max(76, 20 + maxYLabelLen * 7)),
+    left: Math.min(108, Math.max(52, 16 + maxYLabelLen * 6)),
   };
   const innerW = Math.max(120, width - margin.left - margin.right);
   const stepX = clean.length > 1 ? innerW / (clean.length - 1) : 0;
@@ -447,10 +466,10 @@ export function LineAreaChart({
   const activeY = hoverIndex != null && active ? toY(active.value) : null;
 
   return (
-    <div ref={wrapRef} className="line-area-chart-wrap" style={{ height: `${height}px` }}>
+    <div ref={wrapRef} className="line-area-chart-wrap" style={{ height: `${effectiveHeight}px` }}>
       <svg
         className="line-area-chart"
-        viewBox={`0 0 ${width} ${height}`}
+        viewBox={`0 0 ${width} ${effectiveHeight}`}
         onMouseLeave={() => setHoverIndex(null)}
         onMouseMove={(e) => {
           const rect = e.currentTarget.getBoundingClientRect();
@@ -495,7 +514,7 @@ export function LineAreaChart({
               y2={margin.top + innerH + 6}
               className="line-area-axis-tick"
             />
-            <text x={tick.x} y={height - 14} className="line-area-axis-label line-area-axis-label-x" textAnchor="middle">
+            <text x={tick.x} y={effectiveHeight - 14} className="line-area-axis-label line-area-axis-label-x" textAnchor="middle">
               {tick.label}
             </text>
           </g>
@@ -563,7 +582,7 @@ export function LineAreaChart({
           className="line-area-tooltip"
           style={{
             left: `${Math.max(7, Math.min(93, (activeX / width) * 100))}%`,
-            top: `${(activeY / height) * 100}%`,
+            top: `${(activeY / effectiveHeight) * 100}%`,
           }}
         >
           <div className="line-area-tooltip-title">{xLabelFormatter ? xLabelFormatter(active.label) : active.label}</div>
@@ -576,31 +595,10 @@ export function LineAreaChart({
   );
 }
 
-function InlineProgressSpinner({ active }: { active?: boolean }) {
-  const [visible, setVisible] = useState(false);
-
-  useEffect(() => {
-    if (!active) {
-      setVisible(false);
-      return;
-    }
-    const timer = window.setTimeout(() => {
-      setVisible(true);
-    }, 500);
-    return () => window.clearTimeout(timer);
-  }, [active]);
-
-  if (!active || !visible) return null;
-  return <span className="inline-progress-spinner" aria-hidden="true" />;
-}
-
 export function AutoRefreshHint({ busy, children }: AutoRefreshHintProps) {
-  return (
-    <p className="inline-hint auto-refresh-hint">
-      <span>{children}</span>
-      <InlineProgressSpinner active={busy} />
-    </p>
-  );
+  void busy;
+  void children;
+  return null;
 }
 
 export function nextSortState(

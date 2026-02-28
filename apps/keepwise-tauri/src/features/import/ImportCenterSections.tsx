@@ -190,15 +190,14 @@ export function ImportCenterSections(props: any) {
             className="primary-btn"
             onClick={() => void handleYzxyImport()}
             disabled={yzxyImportBusy || yzxyPreviewBusy || !yzxyFilePath.trim()}
-            title="导入到 Tauri app 本地账本；导入成功后会自动刷新投资相关查询与分析面板"
+            title="导入到 Tauri app 本地账本"
           >
             {yzxyImportBusy ? "导入中..." : "导入有知有行到桌面数据库"}
           </button>
         </div>
 
         <p className="inline-hint">
-          建议流程：先 `Preview` 确认映射与样例，再 `Import`。导入成功后会自动刷新 `Investments / Meta Accounts /
-          账户目录 / Analytics` 面板，便于立即验证结果。
+          建议流程：先 `Preview` 确认映射与样例，再 `Import`。
         </p>
 
         {yzxyPreviewError ? (
@@ -299,7 +298,7 @@ export function ImportCenterSections(props: any) {
             className="primary-btn"
             onClick={() => void handleCmbEmlImport()}
             disabled={emlImportBusy || emlPreviewBusy || !emlSourcePath.trim()}
-            title="导入到 desktop 本地库，导入成功后自动刷新 Transactions/Admin Health 等面板"
+            title="导入到 desktop 本地库"
           >
             {emlImportBusy ? "导入中..." : "导入招行 EML 到桌面数据库"}
           </button>
@@ -397,7 +396,7 @@ export function ImportCenterSections(props: any) {
             className="primary-btn"
             onClick={() => void handleCmbBankPdfImport()}
             disabled={cmbPdfImportBusy || cmbPdfPreviewBusy || !cmbPdfPath.trim()}
-            title="导入到 desktop 本地库，完成后自动刷新 Transactions/Health 面板"
+            title="导入到 desktop 本地库"
           >
             {cmbPdfImportBusy ? "导入中..." : "导入招行银行流水 PDF 到桌面数据库"}
           </button>

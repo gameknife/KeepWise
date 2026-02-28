@@ -140,11 +140,13 @@ export function BudgetItemsPreview({
 
 export function BudgetOverviewPreview({
   data,
+  flat = false,
   PreviewStat,
   formatCentsShort,
   signedMetricTone,
 }: {
   data: unknown;
+  flat?: boolean;
   PreviewStat: ComponentType<PreviewStatProps>;
   formatCentsShort: (cents?: number) => string;
   signedMetricTone: (value?: number) => "default" | "good" | "warn";
@@ -159,8 +161,8 @@ export function BudgetOverviewPreview({
   const usageRateText = readString(data, "metrics.usage_rate_pct_text") ?? "-";
   const elapsedMonths = readNumber(data, "analysis_scope.elapsed_months");
 
-  return (
-    <div className="subcard preview-card">
+  const content = (
+    <>
       <div className="preview-header">
         <h3>预算概览预览</h3>
         <div className="preview-subtle">{year ?? "-"} 年 · as_of {asOf}</div>
@@ -173,12 +175,15 @@ export function BudgetOverviewPreview({
         <PreviewStat label="全年使用率" value={usageRateText} />
         <PreviewStat label="已过月数" value={elapsedMonths ?? "-"} />
       </div>
-    </div>
+    </>
   );
+
+  return flat ? <div className="preview-card">{content}</div> : <div className="subcard preview-card">{content}</div>;
 }
 
 export function BudgetMonthlyReviewPreview({
   data,
+  flat = false,
   PreviewStat,
   SortableHeaderButton,
   formatCentsShort,
@@ -186,6 +191,7 @@ export function BudgetMonthlyReviewPreview({
   compareSortValues,
 }: {
   data: unknown;
+  flat?: boolean;
   PreviewStat: ComponentType<PreviewStatProps>;
   SortableHeaderButton: ComponentType<SortableHeaderButtonProps>;
   formatCentsShort: (cents?: number) => string;
@@ -214,8 +220,8 @@ export function BudgetMonthlyReviewPreview({
     setSortDir(next.dir);
   };
 
-  return (
-    <div className="subcard preview-card">
+  const content = (
+    <>
       <div className="preview-header">
         <h3>预算月度复盘预览</h3>
         <div className="preview-subtle">{year ?? "-"} 年 12 个月</div>
@@ -267,23 +273,26 @@ export function BudgetMonthlyReviewPreview({
           </table>
         </div>
       ) : null}
-    </div>
+    </>
   );
+
+  return flat ? <div className="preview-card">{content}</div> : <div className="subcard preview-card">{content}</div>;
 }
 
 export function FireProgressPreview({
   data,
+  flat = false,
   PreviewStat,
   formatCentsShort,
   signedMetricTone,
 }: {
   data: unknown;
+  flat?: boolean;
   PreviewStat: ComponentType<PreviewStatProps>;
   formatCentsShort: (cents?: number) => string;
   signedMetricTone: (value?: number) => "default" | "good" | "warn";
 }) {
   if (!isRecord(data)) return null;
-  const rateText = readString(data, "withdrawal_rate_pct_text") ?? "-";
   const asOfDate = readString(data, "as_of_date") ?? readString(data, "wealth_snapshot.as_of_date") ?? "-";
   const annualBudget = readNumber(data, "budget.annual_total_cents");
   const investableTotal = readNumber(data, "investable_assets.total_cents");
@@ -307,11 +316,11 @@ export function FireProgressPreview({
           : "warn"
       : "default";
 
-  return (
-    <div className="subcard preview-card">
+  const content = (
+    <>
       <div className="preview-header">
         <h3>FIRE 进度预览</h3>
-        <div className="preview-subtle">按最新资产快照计算 · {asOfDate !== "-" ? <>快照日期 <code>{asOfDate}</code> · </> : null}提取率 {rateText}</div>
+        <div className="preview-subtle">按最新资产快照计算{asOfDate !== "-" ? <> · 快照日期 <code>{asOfDate}</code></> : null}</div>
       </div>
       <div className="fire-progress-stat-layout">
         <div className={`preview-stat fire-progress-focus tone-${freedomToneClass}`}>
@@ -328,6 +337,8 @@ export function FireProgressPreview({
           <PreviewStat label="目标差额(元)" value={formatCentsShort(goalGap)} tone={signedMetricTone(goalGap)} />
         </div>
       </div>
-    </div>
+    </>
   );
+
+  return flat ? content : <div className="subcard preview-card">{content}</div>;
 }

@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useState } from "react";
+import { startTransition, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import "react-datepicker/dist/react-datepicker.css";
 import "../App.css";
@@ -444,9 +444,6 @@ function App() {
   const [fireProgressBusy, setFireProgressBusy] = useState(false);
   const [fireProgressError, setFireProgressError] = useState("");
   const [fireProgressResult, setFireProgressResult] = useState<FireProgressPayload | null>(null);
-  const [fireProgressQuery, setFireProgressQuery] = useState<FireProgressQueryRequest>({
-    withdrawal_rate: "0.03",
-  });
   const [salaryIncomeBusy, setSalaryIncomeBusy] = useState(false);
   const [salaryIncomeError, setSalaryIncomeError] = useState("");
   const [salaryIncomeResult, setSalaryIncomeResult] = useState<SalaryIncomeOverviewPayload | null>(null);
@@ -1938,6 +1935,9 @@ function App() {
   const isMobileMode = isForcedMobilePreview || isNativeMobileUA;
   const [activeTab, setActiveTab] = useState<ProductTabKey>("wealth-overview");
   const [mobileView, setMobileView] = useState<MobileView>("home");
+  const mobileSceneViewRef = useRef<MobileView>("home");
+  const [mobileSceneDirection, setMobileSceneDirection] = useState<"from-left" | "from-right">("from-right");
+  const [mobileSceneSeq, setMobileSceneSeq] = useState(0);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [appSettings, setAppSettings] = useState<AppSettings>(() => {
     if (typeof window === "undefined") {
@@ -1945,10 +1945,14 @@ function App() {
         gainLossColorScheme: "cn_red_up_green_down",
         defaultPrivacyMaskOnLaunch: false,
         uiMotionEnabled: true,
+        fireWithdrawalRate: "0.03",
       };
     }
     return parseStoredAppSettings(window.localStorage.getItem(APP_SETTINGS_STORAGE_KEY));
   });
+  const fireProgressQuery: FireProgressQueryRequest = {
+    withdrawal_rate: appSettings.fireWithdrawalRate,
+  };
   const [amountPrivacyMasked, setAmountPrivacyMasked] = useState(() => appSettings.defaultPrivacyMaskOnLaunch);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [developerMode, setDeveloperMode] = useState(false);
@@ -1982,7 +1986,22 @@ function App() {
     setMobileView("home");
   }, [isMobileMode]);
 
+  useLayoutEffect(() => {
+    if (!isMobileMode) {
+      mobileSceneViewRef.current = "home";
+      return;
+    }
+    const prevView = mobileSceneViewRef.current;
+    if (prevView === mobileView) return;
+    setMobileSceneDirection(mobileView === "home" ? "from-left" : "from-right");
+    setMobileSceneSeq((v) => v + 1);
+    mobileSceneViewRef.current = mobileView;
+  }, [isMobileMode, mobileView]);
+
   const visibleTabs = getVisibleTabsForMode(PRODUCT_TABS, isMobileMode);
+  const mobileSceneAnimClass = mobileSceneSeq > 0
+    ? (mobileSceneDirection === "from-left" ? "mobile-scene-enter-from-left" : "mobile-scene-enter-from-right")
+    : "";
 
   useEffect(() => {
     if (visibleTabs.some((tab) => tab.key === activeTab)) return;
@@ -2366,19 +2385,24 @@ function App() {
         ) : null}
 
         {isMobileMode && mobileView === "home" ? (
-          <MobileHomeGrid
-            tabs={visibleTabs}
-            activeTab={activeTab}
-            onOpenManualEntry={openQuickManualInvestmentModal}
-            onSelectTab={(tabKey: ProductTabKey) => {
-              setActiveTab(tabKey);
-              setMobileView(tabKey);
-            }}
-            quickMetricsByTab={mobileQuickMetricsByTab}
-          />
+          <div key={`mobile-home-scene-${mobileSceneSeq}`} className={`mobile-scene ${mobileSceneAnimClass}`}>
+            <MobileHomeGrid
+              tabs={visibleTabs}
+              activeTab={activeTab}
+              onOpenManualEntry={openQuickManualInvestmentModal}
+              onSelectTab={(tabKey: ProductTabKey) => {
+                setActiveTab(tabKey);
+                setMobileView(tabKey);
+              }}
+              quickMetricsByTab={mobileQuickMetricsByTab}
+            />
+          </div>
         ) : null}
 
-        {!isMobileMode || mobileView !== "home" ? <div className={`workspace-content ${isMobileMode ? "mobile-page-body" : ""}`}>
+        {!isMobileMode || mobileView !== "home" ? <div
+          key={isMobileMode ? `mobile-page-scene-${mobileSceneSeq}` : "desktop-page-scene"}
+          className={`workspace-content ${isMobileMode ? `mobile-page-body mobile-scene ${mobileSceneAnimClass}` : ""}`}
+        >
           <WorkspaceContentPanels
             activeTabMeta={activeTabMeta}
             isAdminTab={isAdminTab}
@@ -2415,9 +2439,6 @@ function App() {
             queryWorkbenchModules={queryWorkbenchModules}
             queryWorkbenchFlow={queryWorkbenchFlow}
             makeEnterToQueryHandler={makeEnterToQueryHandler}
-            handleFireProgressQuery={handleFireProgressQuery}
-            fireProgressQuery={fireProgressQuery}
-            setFireProgressQuery={setFireProgressQuery}
             fireProgressBusy={fireProgressBusy}
             fireProgressError={fireProgressError}
             FireProgressPreview={FireProgressPreview}
