@@ -294,6 +294,13 @@ h3 {
   max-height: min(86vh, 820px);
 }
 
+/* iOS/WKWebView avoids auto-zoom on form focus when input font-size >= 16px. */
+.mobile-shell .field input,
+.mobile-shell .field select,
+.mobile-shell .field .kw-date-picker-input {
+  font-size: 16px;
+}
+
 .kw-modal-head {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

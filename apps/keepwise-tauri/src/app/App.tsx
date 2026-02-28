@@ -1333,6 +1333,10 @@ function App() {
 
   function closeQuickManualInvestmentModal() {
     if (quickManualInvBusy) return;
+    if (typeof document !== "undefined") {
+      const activeEl = document.activeElement;
+      if (activeEl instanceof HTMLElement) activeEl.blur();
+    }
     setQuickManualInvOpen(false);
     setQuickManualInvError("");
     setQuickManualInvAccountAssetsError("");
@@ -1398,6 +1402,10 @@ function App() {
       void handleWealthCurveQuery();
       void handleFireProgressQuery();
       void handleRefreshManualEntryTabMonthCount();
+      if (typeof document !== "undefined") {
+        const activeEl = document.activeElement;
+        if (activeEl instanceof HTMLElement) activeEl.blur();
+      }
       setQuickManualInvOpen(false);
     } catch (err) {
       setQuickManualInvError(toErrorMessage(err));

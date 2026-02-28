@@ -204,6 +204,10 @@ export function WorkspaceContentPanels(props: any) {
 
           {isTab("budget-fire") ? (
             <section className="card panel panel-flat-content panel-fire-progress">
+              <div className="panel-header">
+                <h2>FIRE 进度</h2>
+                <p>基于当前预算与可投资产，展示财务自由目标进度与覆盖能力。</p>
+              </div>
               <AutoRefreshHint busy={fireProgressBusy}>进入本 TAB 或在设置中调整 FIRE 提取率后将自动刷新结果。</AutoRefreshHint>
               {fireProgressError ? <div className="inline-error" role="alert">{fireProgressError}</div> : null}
               <FireProgressPreview

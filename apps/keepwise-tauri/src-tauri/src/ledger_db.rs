@@ -6,6 +6,7 @@ use tauri::{AppHandle, Manager};
 
 const DEFAULT_LEDGER_DB_RELATIVE_PATH: &str = "ledger/keepwise.db";
 const DEFAULT_REPO_RUNTIME_DB_RELATIVE_PATH: &str = "data/work/processed/ledger/keepwise.db";
+const EMBEDDED_DEMO_DB_BYTES: &[u8] = include_bytes!("../assets/demo.db");
 const ADMIN_RESET_CONFIRM_PHRASE: &str = "RESET KEEPWISE";
 const TRANSACTION_IMPORT_SOURCE_TYPES: &[&str] = &["cmb_eml", "cmb_bank_pdf"];
 const ADMIN_TRANSACTION_RESET_SCOPES: &[&str] = &[
@@ -149,7 +150,36 @@ pub(crate) fn resolve_ledger_db_path(app: &AppHandle) -> Result<PathBuf, String>
         .path()
         .app_local_data_dir()
         .map_err(|e| format!("无法解析 app_local_data_dir: {e}"))?;
-    Ok(base.join(DEFAULT_LEDGER_DB_RELATIVE_PATH))
+    let db_path = base.join(DEFAULT_LEDGER_DB_RELATIVE_PATH);
+    bootstrap_demo_db_if_missing(&db_path)?;
+    Ok(db_path)
+}
+
+fn bootstrap_demo_db_if_missing(db_path: &Path) -> Result<(), String> {
+    if db_path.exists() {
+        return Ok(());
+    }
+    if EMBEDDED_DEMO_DB_BYTES.is_empty() {
+        return Err("内置 demo.db 为空，无法初始化演示库".to_string());
+    }
+    if let Some(parent) = db_path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("创建 ledger 目录失败: {e}"))?;
+    }
+
+    let tmp_path = db_path.with_extension("db.bootstrap.tmp");
+    std::fs::write(&tmp_path, EMBEDDED_DEMO_DB_BYTES)
+        .map_err(|e| format!("写入内置演示数据库失败: {e}"))?;
+    match std::fs::rename(&tmp_path, db_path) {
+        Ok(_) => {}
+        Err(e) => {
+            let _ = std::fs::remove_file(&tmp_path);
+            if !db_path.exists() {
+                return Err(format!("落地演示数据库失败: {e}"));
+            }
+        }
+    }
+    apply_embedded_migrations(db_path)?;
+    Ok(())
 }
 
 fn resolve_repo_runtime_db_path() -> PathBuf {
