@@ -3,7 +3,7 @@
   "app": {
     "windows": [
       {
-        "title": "appskeepwise-tauri",
+        "title": "KeepWise",
         "width": 440,
         "height": 956,
         "minWidth": 440,

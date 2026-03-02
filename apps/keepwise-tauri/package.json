@@ -18,6 +18,10 @@
     "tauri:build:mac": "tauri build --bundles app,dmg",
     "tauri:ios:init": "tauri ios init",
     "tauri:ios:dev": "tauri ios dev",
+    "tauri:android:init": "tauri android init",
+    "tauri:android:dev": "tauri android dev",
+    "tauri:android:run": "tauri android run",
+    "tauri:android:build:internal": "tauri android build --target aarch64 --apk --aab",
     "db:demo:build": "python3 scripts/make_demo_db.py --force",
     "desktop:release:check": "bash scripts/validate_tauri_desktop_release_check.sh",
     "desktop:release:prepare": "bash scripts/prepare_keepwise_desktop_release.sh"

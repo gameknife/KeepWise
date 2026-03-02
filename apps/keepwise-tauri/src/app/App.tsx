@@ -1944,6 +1944,7 @@ function App() {
   const [activeTab, setActiveTab] = useState<ProductTabKey>("wealth-overview");
   const [mobileView, setMobileView] = useState<MobileView>("home");
   const mobileSceneViewRef = useRef<MobileView>("home");
+  const mobileBackTrapArmedRef = useRef(false);
   const [mobileSceneDirection, setMobileSceneDirection] = useState<"from-left" | "from-right">("from-right");
   const [mobileSceneSeq, setMobileSceneSeq] = useState(0);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -1993,6 +1994,67 @@ function App() {
     if (!isMobileMode) return;
     setMobileView("home");
   }, [isMobileMode]);
+
+  function handleMobileBackNavigation() {
+    if (quickManualInvOpen) {
+      if (!quickManualInvBusy) closeQuickManualInvestmentModal();
+      return true;
+    }
+    if (invEditModalOpen) {
+      if (!updateInvBusy) closeInvestmentEditModal();
+      return true;
+    }
+    if (settingsOpen) {
+      setSettingsOpen(false);
+      return true;
+    }
+    if (mobileView !== "home") {
+      setMobileView("home");
+      return true;
+    }
+    return false;
+  }
+
+  // 统一接管移动端系统返回（含 Android 边缘返回手势）：先关模态，再从子页回首页。
+  useEffect(() => {
+    if (!isMobileMode || typeof window === "undefined") {
+      mobileBackTrapArmedRef.current = false;
+      return;
+    }
+    if (!mobileBackTrapArmedRef.current) {
+      try {
+        window.history.pushState({ keepwise_mobile_back_trap: true }, "");
+        mobileBackTrapArmedRef.current = true;
+      } catch {
+        // Ignore history API failures.
+      }
+    }
+    const onPopState = () => {
+      const handled = handleMobileBackNavigation();
+      if (handled) {
+        try {
+          window.history.pushState({ keepwise_mobile_back_trap: true }, "");
+          mobileBackTrapArmedRef.current = true;
+        } catch {
+          // Ignore history API failures.
+        }
+      } else {
+        mobileBackTrapArmedRef.current = false;
+      }
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => {
+      window.removeEventListener("popstate", onPopState);
+    };
+  }, [
+    isMobileMode,
+    mobileView,
+    quickManualInvOpen,
+    quickManualInvBusy,
+    invEditModalOpen,
+    updateInvBusy,
+    settingsOpen,
+  ]);
 
   useLayoutEffect(() => {
     if (!isMobileMode) {

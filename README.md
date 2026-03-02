@@ -5,6 +5,7 @@ KeepWise 已进入 **Tauri Desktop（React + Rust）产品化阶段**。当前�
 ## 当前状态（简版）
 
 - `desktop` 主链路：可用（Tauri + Rust + SQLite）
+- `android` 内部构建链路：可用（Tauri Android arm64 APK/AAB）
 - 核心分析（4 个接口）：Rust 已迁移，差分通过（`25/25 case + 2/2 cross-check`）
 - 导入链路：Rust 已支持
   - 有知有行 `CSV/XLSX`
@@ -46,6 +47,17 @@ npm run test:rust:regression
 npm run test:diff:core
 ```
 
+## Android（内部测试包）
+
+```bash
+cd /Users/gameknife/github/BeyondYZYX/apps/keepwise-tauri
+npm run tauri:android:init
+npm run tauri:android:dev
+npm run tauri:android:build:internal
+```
+
+前置要求：JDK 17、Android SDK/NDK、`adb`、Rust target `aarch64-linux-android`。
+
 ## 文档入口（精简）
 
 - 迁移总览：`/Users/gameknife/github/BeyondYZYX/docs/engineering/TAURI_STACK_MIGRATION_MASTER_PLAN.md`
@@ -58,4 +70,5 @@ npm run test:diff:core
 - 桌面端 UI 最后收口（文案、交互、信息层级）
 - 更大范围自动化回归覆盖（导入/预算/FIRE/收入/消费）
 - 正式发布签名与公证（macOS），以及 Windows/Linux 打包流程收口
-- 移动端（Android/iOS）后续阶段再推进
+- Android 正式上架链路（签名、商店元数据、发布节奏）
+- iOS/Android 更广设备矩阵与兼容性回归

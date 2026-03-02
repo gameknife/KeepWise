@@ -58,8 +58,15 @@ class RootErrorBoundary extends React.Component<React.PropsWithChildren, RootErr
   }
 }
 
-// Tag <html> with platform class for platform-specific CSS adjustments
-if (navigator.userAgent.includes("Linux")) {
+// Tag <html> with platform class for platform-specific CSS adjustments.
+const userAgent = navigator.userAgent;
+if (/Android/i.test(userAgent)) {
+  document.documentElement.classList.add("platform-android");
+}
+if (/iPhone|iPad|iPod/i.test(userAgent)) {
+  document.documentElement.classList.add("platform-ios");
+}
+if (userAgent.includes("Linux")) {
   document.documentElement.classList.add("platform-linux");
 }
 

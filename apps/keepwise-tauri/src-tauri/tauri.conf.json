@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "appskeepwise-tauri",
+  "productName": "KeepWise",
   "version": "0.1.0",
   "identifier": "com.gameknife.keepwise",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "appskeepwise-tauri",
+        "title": "KeepWise",
         "width": 1360,
         "height": 900,
         "minWidth": 1100,

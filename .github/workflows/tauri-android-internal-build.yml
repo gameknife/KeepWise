@@ -1,0 +1,143 @@
+name: tauri-android-internal-build
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_prechecks:
+        description: "Run frontend build and cargo check before Android build"
+        required: true
+        type: boolean
+        default: true
+
+jobs:
+  android-internal-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+
+    defaults:
+      run:
+        shell: bash
+
+    env:
+      KEEPWISE_ANDROID_ARTIFACT_DIR: ${{ github.workspace }}/.artifacts/android-internal-build
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: "apps/keepwise-tauri/package-lock.json"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Java (JDK 17)
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: |
+          yes | sdkmanager --licenses >/dev/null
+          sdkmanager \
+            "platform-tools" \
+            "platforms;android-36" \
+            "build-tools;35.0.0" \
+            "ndk;27.0.12077973"
+
+      - name: Install Rust Android target (arm64)
+        run: rustup target add aarch64-linux-android
+
+      - name: Install frontend deps
+        working-directory: apps/keepwise-tauri
+        run: npm ci
+
+      - name: Frontend build precheck
+        if: ${{ inputs.run_prechecks }}
+        working-directory: apps/keepwise-tauri
+        run: npm run build
+
+      - name: Rust check precheck
+        if: ${{ inputs.run_prechecks }}
+        working-directory: apps/keepwise-tauri
+        run: cargo check --manifest-path src-tauri/Cargo.toml
+
+      - name: Build Android internal package (arm64 APK/AAB)
+        working-directory: apps/keepwise-tauri
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_SDK_ROOT }}
+          ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
+        run: npm run tauri:android:build:internal
+
+      - name: Collect Android artifacts
+        run: |
+          mkdir -p "$KEEPWISE_ANDROID_ARTIFACT_DIR/files"
+
+          mapfile -t built_files < <(find apps/keepwise-tauri/src-tauri/gen/android/app/build/outputs \
+            -type f \( -name "*.apk" -o -name "*.aab" \) | sort)
+
+          if [[ "${#built_files[@]}" -eq 0 ]]; then
+            echo "No APK/AAB found under app/build/outputs"
+            exit 1
+          fi
+
+          : > "$KEEPWISE_ANDROID_ARTIFACT_DIR/artifact_inventory.txt"
+          for file in "${built_files[@]}"; do
+            rel="${file#apps/keepwise-tauri/src-tauri/gen/android/app/build/outputs/}"
+            dest_dir="$KEEPWISE_ANDROID_ARTIFACT_DIR/files/$(dirname "$rel")"
+            mkdir -p "$dest_dir"
+            cp "$file" "$dest_dir/"
+            size="$(wc -c < "$file" | tr -d ' ')"
+            echo "${rel}|${size}" >> "$KEEPWISE_ANDROID_ARTIFACT_DIR/artifact_inventory.txt"
+          done
+
+      - name: Write Android build manifest
+        run: |
+          mkdir -p "$KEEPWISE_ANDROID_ARTIFACT_DIR"
+          app_version="$(node -p "require('./apps/keepwise-tauri/package.json').version")"
+          {
+            echo "workflow=tauri-android-internal-build"
+            echo "app_version=${app_version}"
+            echo "run_prechecks=${{ inputs.run_prechecks }}"
+            echo "sha=${GITHUB_SHA}"
+            echo "ref=${GITHUB_REF}"
+            echo "run_id=${GITHUB_RUN_ID}"
+            echo "run_attempt=${GITHUB_RUN_ATTEMPT}"
+            echo "created_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > "$KEEPWISE_ANDROID_ARTIFACT_DIR/manifest.txt"
+
+      - name: Summarize Android build output
+        if: always()
+        run: |
+          {
+            echo "## KeepWise Android Internal Build"
+            echo
+            echo "- version: \`$(node -p "require('./apps/keepwise-tauri/package.json').version")\`"
+            echo "- run_prechecks: \`${{ inputs.run_prechecks }}\`"
+            echo
+            echo "### Artifact Inventory"
+            echo
+            echo '```'
+            if [[ -f "$KEEPWISE_ANDROID_ARTIFACT_DIR/artifact_inventory.txt" ]]; then
+              cat "$KEEPWISE_ANDROID_ARTIFACT_DIR/artifact_inventory.txt"
+            else
+              echo "artifact_inventory_missing=1"
+            fi
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Android internal artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: keepwise-android-internal-build
+          path: .artifacts/android-internal-build
+          if-no-files-found: error

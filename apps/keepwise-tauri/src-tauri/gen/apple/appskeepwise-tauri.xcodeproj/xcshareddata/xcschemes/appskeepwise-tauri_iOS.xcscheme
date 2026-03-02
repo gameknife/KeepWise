@@ -15,7 +15,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "4316F9F33425B71A8D25D807"
-               BuildableName = "appskeepwise-tauri.app"
+               BuildableName = "KeepWise.app"
                BlueprintName = "appskeepwise-tauri_iOS"
                ReferencedContainer = "container:appskeepwise-tauri.xcodeproj">
             </BuildableReference>
@@ -31,7 +31,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "4316F9F33425B71A8D25D807"
-            BuildableName = "appskeepwise-tauri.app"
+            BuildableName = "KeepWise.app"
             BlueprintName = "appskeepwise-tauri_iOS"
             ReferencedContainer = "container:appskeepwise-tauri.xcodeproj">
          </BuildableReference>
@@ -66,7 +66,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "4316F9F33425B71A8D25D807"
-            BuildableName = "appskeepwise-tauri.app"
+            BuildableName = "KeepWise.app"
             BlueprintName = "appskeepwise-tauri_iOS"
             ReferencedContainer = "container:appskeepwise-tauri.xcodeproj">
          </BuildableReference>
@@ -95,7 +95,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "4316F9F33425B71A8D25D807"
-            BuildableName = "appskeepwise-tauri.app"
+            BuildableName = "KeepWise.app"
             BlueprintName = "appskeepwise-tauri_iOS"
             ReferencedContainer = "container:appskeepwise-tauri.xcodeproj">
          </BuildableReference>
