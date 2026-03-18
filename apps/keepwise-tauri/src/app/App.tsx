@@ -93,6 +93,7 @@ import {
   syncSetupLink,
   syncShareCodeGenerate,
   syncStatus,
+  confirmTransactionReview,
   updateTransactionAnalysisExclusion,
   updateInvestmentRecord,
   upsertAccountCatalogEntry,
@@ -2301,6 +2302,7 @@ function App() {
         defaultPrivacyMaskOnLaunch: false,
         uiMotionEnabled: true,
         fireWithdrawalRate: "0.03",
+        consumptionExcludeNeedsReviewByDefault: true,
       };
     }
     return parseStoredAppSettings(window.localStorage.getItem(APP_SETTINGS_STORAGE_KEY));
@@ -3005,6 +3007,9 @@ function App() {
             consumptionOverviewError={consumptionOverviewError}
             ConsumptionOverviewPreview={ConsumptionOverviewPreview}
             consumptionOverviewResult={consumptionOverviewResult}
+            appSettings={appSettings}
+            isMobileMode={isMobileMode}
+            confirmTransactionReview={confirmTransactionReview}
             consumptionYear={consumptionYear}
             setConsumptionYear={setConsumptionYear}
             formatCentsShort={formatCentsShort}

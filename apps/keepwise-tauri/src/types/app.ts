@@ -8,6 +8,7 @@ export type AppSettings = {
   defaultPrivacyMaskOnLaunch: boolean;
   uiMotionEnabled: boolean;
   fireWithdrawalRate: FireWithdrawalRate;
+  consumptionExcludeNeedsReviewByDefault: boolean;
 };
 
 export type SmokeStatus = "idle" | "pass" | "fail";

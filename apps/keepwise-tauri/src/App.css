@@ -1022,10 +1022,13 @@ h3 {
 }
 
 .consumption-chip {
+  --consumption-chip-rgb: var(--kw-accent-rgb);
+  --consumption-chip-text: #ece6d8;
+  --consumption-chip-active-text: #eafffb;
   appearance: none;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(255, 255, 255, 0.03);
-  color: #ece6d8;
+  color: var(--consumption-chip-text);
   border-radius: 999px;
   padding: 0.28rem 0.62rem;
   font-size: 0.78rem;
@@ -1037,14 +1040,23 @@ h3 {
 }
 
 .consumption-chip:hover {
-  border-color: rgba(var(--kw-accent-rgb), 0.32);
-  background: rgba(var(--kw-accent-rgb), 0.08);
+  border-color: rgba(var(--consumption-chip-rgb), 0.32);
+  background: rgba(var(--consumption-chip-rgb), 0.08);
 }
 
 .consumption-chip.active {
-  border-color: rgba(var(--kw-accent-rgb), 0.42);
-  background: rgba(var(--kw-accent-rgb), 0.16);
-  color: #eafffb;
+  border-color: rgba(var(--consumption-chip-rgb), 0.42);
+  background: rgba(var(--consumption-chip-rgb), 0.16);
+  color: var(--consumption-chip-active-text);
+}
+
+.consumption-category-chip {
+  border-color: rgba(var(--consumption-chip-rgb), 0.08);
+  background: rgba(var(--consumption-chip-rgb), 0.03);
+}
+
+.consumption-category-chip.active {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
 }
 
 .consumption-pill-bar {
@@ -1820,6 +1832,16 @@ h3 {
 
   .settings-nav {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .consumption-chart-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .wealth-trend-chart-block {
+    padding-top: 0.7rem;
   }
 }
 
@@ -3273,6 +3295,12 @@ h3 {
   gap: 0.3rem;
   font-size: 0.78rem;
   color: rgba(243, 239, 229, 0.72);
+}
+
+.consumption-tx-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
 }
 
 .consumption-tx-action-btn {

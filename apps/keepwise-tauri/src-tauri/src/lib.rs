@@ -70,6 +70,7 @@ pub fn run() {
             record_mutations::update_asset_valuation,
             record_mutations::delete_asset_valuation,
             transaction_mutations::update_transaction_analysis_exclusion,
+            transaction_mutations::confirm_transaction_review,
             ledger_db::ledger_db_admin_reset_all,
             ledger_db::ledger_db_admin_reset_transactions,
             yzxy_import::yzxy_preview_file,

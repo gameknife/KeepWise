@@ -21,6 +21,7 @@ export function parseStoredAppSettings(raw: string | null): AppSettings {
     defaultPrivacyMaskOnLaunch: false,
     uiMotionEnabled: true,
     fireWithdrawalRate: "0.03",
+    consumptionExcludeNeedsReviewByDefault: true,
   };
   if (!raw) return fallback;
   try {
@@ -38,6 +39,7 @@ export function parseStoredAppSettings(raw: string | null): AppSettings {
       defaultPrivacyMaskOnLaunch: parsed.defaultPrivacyMaskOnLaunch === true,
       uiMotionEnabled: parsed.uiMotionEnabled !== false,
       fireWithdrawalRate,
+      consumptionExcludeNeedsReviewByDefault: parsed.consumptionExcludeNeedsReviewByDefault !== false,
     };
   } catch {
     return fallback;

@@ -1,5 +1,5 @@
-import { useState, type ComponentType } from "react";
-import { isRecord, readArray, readNumber, readString } from "../../utils/value";
+import { useState, type CSSProperties, type ComponentType } from "react";
+import { isRecord, readArray, readNumber } from "../../utils/value";
 
 type TableSortDirection = "asc" | "desc";
 
@@ -30,10 +30,13 @@ type SortableHeaderButtonProps = {
 
 export function ConsumptionOverviewPreview({
   data,
+  appSettings,
+  isMobileMode = false,
   selectedYear,
   onYearChange,
   flat = false,
   onExcludeTransaction,
+  onConfirmTransactionReview,
   onMerchantCategoryChange,
   merchantCategoryUpdatingMerchant = "",
   formatCentsShort,
@@ -44,10 +47,13 @@ export function ConsumptionOverviewPreview({
   compareSortValues,
 }: {
   data: unknown;
+  appSettings?: { consumptionExcludeNeedsReviewByDefault?: boolean };
+  isMobileMode?: boolean;
   selectedYear: string;
   onYearChange: (year: string) => void;
   flat?: boolean;
   onExcludeTransaction?: (id: string, action: "exclude" | "restore", reason: string) => Promise<void>;
+  onConfirmTransactionReview?: (id: string) => Promise<void>;
   onMerchantCategoryChange?: (merchant: string, expenseCategory: string) => Promise<void>;
   merchantCategoryUpdatingMerchant?: string;
   formatCentsShort: (cents?: number) => string;
@@ -70,13 +76,16 @@ export function ConsumptionOverviewPreview({
   const [selectedMonth, setSelectedMonth] = useState<string>("");
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [selectedMerchants, setSelectedMerchants] = useState<string[]>([]);
-  const [excludeNeedsReview, setExcludeNeedsReview] = useState(true);
+  const [needsReviewOnly, setNeedsReviewOnly] = useState(false);
   const [txSearchKeyword, setTxSearchKeyword] = useState<string>("");
   const [txPage, setTxPage] = useState<number>(0);
+  const [pendingConfirmId, setPendingConfirmId] = useState<string>("");
+  const [confirmBusy, setConfirmBusy] = useState(false);
   const [pendingExcludeId, setPendingExcludeId] = useState<string>("");
   const [excludeBusy, setExcludeBusy] = useState(false);
   const TX_PAGE_SIZE = 50;
   if (!isRecord(data)) return null;
+  const excludeNeedsReviewByDefault = appSettings?.consumptionExcludeNeedsReviewByDefault !== false;
 
   type TxRow = {
     id: string;
@@ -109,12 +118,7 @@ export function ConsumptionOverviewPreview({
     .map((v) => (typeof v === "string" ? v : ""))
     .filter((v) => v.length === 4);
 
-  const total = readNumber(data, "consumption_total_value");
-  const totalText = readString(data, "consumption_total") ?? "-";
-  const count = readNumber(data, "consumption_count");
   const reviewCount = readNumber(data, "needs_review_count");
-  const excludedCount = readNumber(data, "excluded_consumption_count");
-  const excludedTotalText = readString(data, "excluded_consumption_total") ?? "-";
   const allExpenseCategoryOptions = readArray(data, "all_expense_categories")
     .map((v) => (typeof v === "string" ? v.trim() : ""))
     .filter((v) => v && v !== "待分类");
@@ -122,8 +126,21 @@ export function ConsumptionOverviewPreview({
   const monthOptions = Array.from(new Set(txRows.map((r) => r.month).filter((m) => m)))
     .sort((a, b) => a.localeCompare(b, "zh-Hans-CN", { numeric: true, sensitivity: "base" }));
 
+  const formatMerchantDisplayName = (merchant: string): string => {
+    const normalized = merchant.trim();
+    if (!normalized) return normalized;
+    return normalized
+      .replace(/\s*[（(]\d{4,}[）)]\s*$/, "")
+      .replace(/\s*(?:账号|卡号|尾号)?[:：]?\s+\d{4,}\s*$/, "")
+      .trim();
+  };
+
   const monthScopedTx = txRows.filter((r) => {
-    if (excludeNeedsReview && r.needsReview) return false;
+    if (needsReviewOnly) {
+      if (!r.needsReview) return false;
+    } else if (excludeNeedsReviewByDefault && r.needsReview) {
+      return false;
+    }
     if (selectedMonth && r.month !== selectedMonth) return false;
     return true;
   });
@@ -248,22 +265,31 @@ export function ConsumptionOverviewPreview({
     })
     .filter((v): v is { label: string; value: number } => v !== null);
 
+  const palette = ["#7cc3ff", "#88d8aa", "#ffd27d", "#ff9f8a", "#a8a4ff", "#59d2c9", "#f3a6ff", "#9ad36a"];
+  const categoryColorMap = new Map(
+    Array.from(
+      new Set([
+        ...categories.map((row) => row.category),
+        ...categoryOptionsAgg.map((row) => row.category),
+      ]),
+    ).map((category, idx) => [category, palette[idx % palette.length]]),
+  );
   const donutRows = categories
     .slice(0, 8)
     .map((row) => ({
       category: row.category,
       amount: row.amount,
       count: row.count,
+      color: categoryColorMap.get(row.category) ?? palette[0],
     }))
     .filter((r) => r.amount > 0);
   const donutTotal = donutRows.reduce((sum, r) => sum + r.amount, 0);
-  const palette = ["#7cc3ff", "#88d8aa", "#ffd27d", "#ff9f8a", "#a8a4ff", "#59d2c9", "#f3a6ff", "#9ad36a"];
   let acc = 0;
   const donutStops = donutRows.map((row, idx) => {
     const start = donutTotal > 0 ? (acc / donutTotal) * 100 : 0;
     acc += row.amount;
     const end = donutTotal > 0 ? (acc / donutTotal) * 100 : 0;
-    return { ...row, color: palette[idx % palette.length], start, end };
+    return { ...row, color: row.color ?? palette[idx % palette.length], start, end };
   });
   const donutStyle =
     donutStops.length > 0
@@ -273,6 +299,22 @@ export function ConsumptionOverviewPreview({
             .join(", ")})`,
         }
       : undefined;
+
+  const hexToRgb = (hex: string): string => {
+    const normalized = hex.trim().replace("#", "");
+    if (!/^[0-9a-fA-F]{6}$/.test(normalized)) return "124, 195, 255";
+    const r = Number.parseInt(normalized.slice(0, 2), 16);
+    const g = Number.parseInt(normalized.slice(2, 4), 16);
+    const b = Number.parseInt(normalized.slice(4, 6), 16);
+    return `${r}, ${g}, ${b}`;
+  };
+
+  const categoryChipStyle = (category: string): CSSProperties => {
+    const color = categoryColorMap.get(category) ?? palette[0];
+    return {
+      "--consumption-chip-rgb": hexToRgb(color),
+    } as CSSProperties;
+  };
 
   const toggleMulti = (values: string[], value: string, setter: (next: string[]) => void) => {
     if (!value) return;
@@ -285,9 +327,13 @@ export function ConsumptionOverviewPreview({
 
   const filterPills = [
     ...(selectedMonth ? [{ kind: "month" as const, label: `月份: ${selectedMonth}` }] : []),
-    ...(excludeNeedsReview ? [{ kind: "hide_review" as const, label: "已排除待确认" }] : []),
+    ...(needsReviewOnly ? [{ kind: "needs_review" as const, label: "待确认" }] : []),
     ...selectedCategories.map((v) => ({ kind: "category" as const, value: v, label: `分类: ${v}` })),
-    ...selectedMerchants.map((v) => ({ kind: "merchant" as const, value: v, label: `商户: ${v}` })),
+    ...selectedMerchants.map((v) => ({
+      kind: "merchant" as const,
+      value: v,
+      label: `商户: ${formatMerchantDisplayName(v) || v}`,
+    })),
   ];
 
   // 交易明细：基于筛选后数据 + 搜索
@@ -311,51 +357,51 @@ export function ConsumptionOverviewPreview({
 
   const content = (
     <>
-      {/* 年度 Tab */}
       {availableYears.length > 0 ? (
-        <div className="consumption-year-tabs">
-          {availableYears.map((year) => (
-            <button
-              key={year}
-              type="button"
-              className={`consumption-year-tab ${selectedYear === year ? "active" : ""}`}
-              onClick={() => {
-                onYearChange(year);
+        <div className="query-form-grid query-form-grid-compact">
+          <label className="field">
+            <span>年份</span>
+            <select
+              value={selectedYear}
+              onChange={(e) => {
+                onYearChange(e.target.value);
                 setSelectedMonth("");
                 setSelectedCategories([]);
                 setSelectedMerchants([]);
+                setNeedsReviewOnly(false);
                 setTxPage(0);
               }}
             >
-              {year}年
-            </button>
-          ))}
-          <button
-            type="button"
-            className={`consumption-year-tab ${selectedYear === "" ? "active" : ""}`}
-            onClick={() => {
-              onYearChange("");
-              setSelectedMonth("");
-              setSelectedCategories([]);
-              setSelectedMerchants([]);
-              setTxPage(0);
-            }}
-          >
-            全部
-          </button>
+              <option value="">全部年份</option>
+              {availableYears.map((year) => (
+                <option key={year} value={year}>
+                  {year}年
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
       ) : null}
 
       <div className="consumption-filter-bar">
         <div className="consumption-filter-row">
-          <label className="field checkbox-field">
-            <span>排除待确认（默认）</span>
-            <input
-              type="checkbox"
-              checked={excludeNeedsReview}
-              onChange={(e) => setExcludeNeedsReview(e.target.checked)}
-            />
-          </label>
+          <div className="consumption-filter-inline">
+            <span className="consumption-filter-label">快捷筛选</span>
+            <div className="consumption-chip-group">
+              <button
+                type="button"
+                className={`consumption-chip ${needsReviewOnly ? "active" : ""}`}
+                onClick={() => {
+                  setNeedsReviewOnly((prev) => !prev);
+                  setSelectedMerchants([]);
+                  setTxPage(0);
+                }}
+                title="只查看待确认交易，便于在高频商户中逐个分配分类"
+              >
+                待确认
+              </button>
+            </div>
+          </div>
           <div className="consumption-filter-inline">
             <span className="consumption-filter-label">月份</span>
             <div className="consumption-chip-group">
@@ -394,8 +440,9 @@ export function ConsumptionOverviewPreview({
               <button
                 key={row.category}
                 type="button"
-                className={`consumption-chip ${selectedCategories.includes(row.category) ? "active" : ""}`}
+                className={`consumption-chip consumption-category-chip ${selectedCategories.includes(row.category) ? "active" : ""}`}
                 onClick={() => toggleMulti(selectedCategories, row.category, setSelectedCategories)}
+                style={categoryChipStyle(row.category)}
                 title={`${row.category} | ${row.amount.toFixed(2)} 元 | ${row.count} 笔`}
               >
                 {row.category}
@@ -422,7 +469,7 @@ export function ConsumptionOverviewPreview({
                 onClick={() => toggleMulti(selectedMerchants, row.merchant, setSelectedMerchants)}
                 title={`${row.merchant} | ${row.amount.toFixed(2)} 元 | ${row.count} 笔`}
               >
-                {row.merchant}
+                {formatMerchantDisplayName(row.merchant) || row.merchant}
               </button>
             ))}
           </div>
@@ -438,7 +485,7 @@ export function ConsumptionOverviewPreview({
                   aria-label={`移除筛选：${pill.label}`}
                   onClick={() => {
                     if (pill.kind === "month") setSelectedMonth("");
-                    if (pill.kind === "hide_review") setExcludeNeedsReview(false);
+                    if (pill.kind === "needs_review") setNeedsReviewOnly(false);
                     if (pill.kind === "category" && "value" in pill) {
                       setSelectedCategories((prev) => prev.filter((v) => v !== pill.value));
                     }
@@ -456,9 +503,9 @@ export function ConsumptionOverviewPreview({
               className="secondary-btn table-inline-btn"
               onClick={() => {
                 setSelectedMonth("");
+                setNeedsReviewOnly(false);
                 setSelectedCategories([]);
                 setSelectedMerchants([]);
-                setExcludeNeedsReview(true);
               }}
             >
               清空筛选
@@ -472,26 +519,24 @@ export function ConsumptionOverviewPreview({
         <PreviewStat label="消费笔数" value={filteredTx.length} />
         <PreviewStat label="月均消费(元)" value={formatCentsShort(monthlyAvgCents)} />
         <PreviewStat label="待确认笔数" value={(reviewCount ?? 0)} tone={(reviewCount ?? 0) > 0 ? "warn" : "good"} />
-        <PreviewStat label="已剔除笔数" value={excludedCount ?? 0} />
-        <PreviewStat label="已剔除金额(元)" value={excludedTotalText} />
-        <PreviewStat label="全量消费总额(元)" value={totalText} tone={(total ?? 0) > 0 ? "default" : "warn"} />
-        <PreviewStat label="全量笔数" value={count ?? 0} />
       </div>
 
-      <div className="preview-chart-grid">
-        <div className="sparkline-card">
-          <div className="sparkline-title">月度消费趋势</div>
-          <LineAreaChart
-            points={monthChartPoints}
-            color="#7cc3ff"
-            height={230}
-            preferZeroBaseline
-            maxXTicks={12}
-            xLabelFormatter={(label) => (label.length >= 7 ? label.slice(5) : label)}
-            valueFormatter={(v) => formatCentsShort(v)}
-            tooltipFormatter={(p) => `${p.label} · ${formatCentsShort(p.value)} 元`}
-          />
-        </div>
+      <div className="preview-chart-grid consumption-chart-grid">
+        {selectedMonth === "" ? (
+          <div className="sparkline-card">
+            <div className="sparkline-title">月度消费趋势</div>
+            <LineAreaChart
+              points={monthChartPoints}
+              color="#7cc3ff"
+              height={230}
+              preferZeroBaseline
+              maxXTicks={12}
+              xLabelFormatter={(label) => (label.length >= 7 ? label.slice(5) : label)}
+              valueFormatter={(v) => formatCentsShort(v)}
+              tooltipFormatter={(p) => `${p.label} · ${formatCentsShort(p.value)} 元`}
+            />
+          </div>
+        ) : null}
         <div className="sparkline-card">
           <div className="sparkline-title">分类分布（Top 8）</div>
           <div className="consumption-donut-wrap">
@@ -559,9 +604,9 @@ export function ConsumptionOverviewPreview({
         </div>
       ) : null}
 
-      <div className="preview-chart-grid">
-        {monthSorted.length > 0 ? (
-          <div className="sparkline-card">
+      <div className="preview-chart-stack">
+        {selectedMonth === "" && monthSorted.length > 0 ? (
+          <div className="sparkline-card full-width-chart-panel">
             <div className="sparkline-title">月度分布</div>
             <div className="preview-table-wrap">
               <table className="preview-table compact">
@@ -592,8 +637,8 @@ export function ConsumptionOverviewPreview({
           </div>
         ) : null}
 
-        {merchantSorted.length > 0 ? (
-          <div className="sparkline-card">
+        {!isMobileMode && merchantSorted.length > 0 ? (
+          <div className="sparkline-card full-width-chart-panel">
             <div className="sparkline-title">高频商户（Top 20）</div>
             <div className="preview-table-wrap">
               <table className="preview-table compact">
@@ -613,12 +658,13 @@ export function ConsumptionOverviewPreview({
                 <tbody>
                   {merchantSorted.slice(0, 20).map((row, idx) => {
                     const merchant = typeof row.merchant === "string" ? row.merchant : "";
+                    const merchantDisplay = formatMerchantDisplayName(merchant) || merchant;
                     const rowCategory = typeof row.category === "string" && row.category ? row.category : "待分类";
                     const isCategoryUpdating = merchantCategoryUpdatingMerchant === merchant;
                     return (
                       <tr key={`${String(row.merchant)}-${idx}`}>
                         <td className="truncate-cell" title={merchant || undefined}>
-                          {merchant || "-"}
+                          {merchantDisplay || "-"}
                         </td>
                         <td>
                           {merchant && onMerchantCategoryChange ? (
@@ -652,6 +698,7 @@ export function ConsumptionOverviewPreview({
       </div>
 
       {/* 交易明细表格（内联） */}
+      {!isMobileMode ? (
       <div className="consumption-tx-section">
         <div className="consumption-tx-header">
           <h4>交易明细</h4>
@@ -685,7 +732,7 @@ export function ConsumptionOverviewPreview({
                 {pagedTx.map((row) => (
                   <tr key={row.id || `${row.date}-${row.merchant}-${row.amount}`} className={row.needsReview ? "row-needs-review" : ""}>
                     <td>{row.date}</td>
-                    <td className="truncate-cell" title={row.merchant}>{row.merchant}</td>
+                    <td className="truncate-cell" title={row.merchant}>{formatMerchantDisplayName(row.merchant) || row.merchant}</td>
                     <td>{row.category}</td>
                     <td className="num">{row.amount.toFixed(2)}</td>
                     <td className="truncate-cell" title={row.description}>{row.description}</td>
@@ -713,15 +760,38 @@ export function ConsumptionOverviewPreview({
                           <button type="button" className="consumption-tx-action-btn" onClick={() => setPendingExcludeId("")}>取消</button>
                         </span>
                       ) : (
-                        <button
-                          type="button"
-                          className="consumption-tx-action-btn danger"
-                          title="从分析统计中剔除此交易"
-                          disabled={!row.id || !onExcludeTransaction}
-                          onClick={() => setPendingExcludeId(row.id)}
-                        >
-                          剔除
-                        </button>
+                        <span className="consumption-tx-actions">
+                          {row.needsReview ? (
+                            <button
+                              type="button"
+                              className="consumption-tx-action-btn"
+                              title="将这笔交易标记为已确认"
+                              disabled={!row.id || !onConfirmTransactionReview || confirmBusy}
+                              onClick={async () => {
+                                if (!onConfirmTransactionReview || !row.id) return;
+                                setPendingConfirmId(row.id);
+                                setConfirmBusy(true);
+                                try {
+                                  await onConfirmTransactionReview(row.id);
+                                } finally {
+                                  setConfirmBusy(false);
+                                  setPendingConfirmId("");
+                                }
+                              }}
+                            >
+                              {confirmBusy && pendingConfirmId === row.id ? "确认中..." : "确认"}
+                            </button>
+                          ) : null}
+                          <button
+                            type="button"
+                            className="consumption-tx-action-btn danger"
+                            title="从分析统计中剔除此交易"
+                            disabled={!row.id || !onExcludeTransaction || excludeBusy}
+                            onClick={() => setPendingExcludeId(row.id)}
+                          >
+                            剔除
+                          </button>
+                        </span>
                       )}
                     </td>
                   </tr>
@@ -740,6 +810,7 @@ export function ConsumptionOverviewPreview({
           </div>
         ) : null}
       </div>
+      ) : null}
 
     </>
   );

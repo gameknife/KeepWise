@@ -14,6 +14,9 @@ export function WorkspaceContentPanels(props: any) {
     consumptionOverviewError,
     ConsumptionOverviewPreview,
     consumptionOverviewResult,
+    appSettings,
+    isMobileMode,
+    confirmTransactionReview,
     consumptionYear,
     setConsumptionYear,
     formatCentsShort,
@@ -138,6 +141,8 @@ export function WorkspaceContentPanels(props: any) {
 
               <ConsumptionOverviewPreview
                 data={consumptionOverviewResult}
+                appSettings={appSettings}
+                isMobileMode={isMobileMode}
                 selectedYear={consumptionYear}
                 onYearChange={setConsumptionYear}
                 flat
@@ -150,6 +155,14 @@ export function WorkspaceContentPanels(props: any) {
                 onExcludeTransaction={async (id, action, reason) => {
                   try {
                     await updateTransactionAnalysisExclusion({ id, action, reason });
+                    void handleConsumptionOverviewQuery();
+                  } catch (err) {
+                    consumptionOverview.setError(toErrorMessage(err));
+                  }
+                }}
+                onConfirmTransactionReview={async (id) => {
+                  try {
+                    await confirmTransactionReview({ id });
                     void handleConsumptionOverviewQuery();
                   } catch (err) {
                     consumptionOverview.setError(toErrorMessage(err));

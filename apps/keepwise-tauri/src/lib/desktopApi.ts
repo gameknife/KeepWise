@@ -205,6 +205,7 @@ export type InvestmentRecordMutationPayload = unknown;
 export type ManualAssetValuationMutationPayload = unknown;
 export type AssetValuationMutationPayload = unknown;
 export type TransactionAnalysisExclusionMutationPayload = unknown;
+export type TransactionReviewConfirmationPayload = unknown;
 export type YzxyPreviewPayload = unknown;
 export type YzxyImportPayload = unknown;
 export type CmbEmlPreviewPayload = unknown;
@@ -361,6 +362,10 @@ export type UpdateTransactionAnalysisExclusionRequest = {
   action?: "exclude" | "restore";
   excluded_in_analysis?: boolean;
   reason?: string;
+};
+
+export type ConfirmTransactionReviewRequest = {
+  id?: string;
 };
 
 export type UpsertManualAssetValuationRequest = {
@@ -744,6 +749,12 @@ export async function updateTransactionAnalysisExclusion(
   req: UpdateTransactionAnalysisExclusionRequest,
 ): Promise<TransactionAnalysisExclusionMutationPayload> {
   return invoke<TransactionAnalysisExclusionMutationPayload>("update_transaction_analysis_exclusion", { req });
+}
+
+export async function confirmTransactionReview(
+  req: ConfirmTransactionReviewRequest,
+): Promise<TransactionReviewConfirmationPayload> {
+  return invoke<TransactionReviewConfirmationPayload>("confirm_transaction_review", { req });
 }
 
 export async function queryMerchantMapRules(req: RulesListQueryRequest): Promise<RulesQueryPayload> {

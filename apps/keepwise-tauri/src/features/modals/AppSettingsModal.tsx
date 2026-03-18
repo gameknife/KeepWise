@@ -195,6 +195,35 @@ export function AppSettingsModal(props: any) {
                           </div>
                         </div>
                       </div>
+
+                      <div className="settings-item-card">
+                        <div className="settings-item-card-head">
+                          <h5>消费分析待确认过滤</h5>
+                          <p>控制消费分析页是否默认排除“待确认”交易。默认排除，减少统计噪音。</p>
+                        </div>
+                        <div className="settings-item-grid">
+                          <div className="settings-segmented" role="group" aria-label="消费分析待确认过滤">
+                            <button
+                              type="button"
+                              className={`settings-segmented-btn ${appSettings.consumptionExcludeNeedsReviewByDefault ? "active" : ""}`}
+                              onClick={() =>
+                                setAppSettings((prev) => ({ ...prev, consumptionExcludeNeedsReviewByDefault: true }))
+                              }
+                            >
+                              默认排除
+                            </button>
+                            <button
+                              type="button"
+                              className={`settings-segmented-btn ${!appSettings.consumptionExcludeNeedsReviewByDefault ? "active" : ""}`}
+                              onClick={() =>
+                                setAppSettings((prev) => ({ ...prev, consumptionExcludeNeedsReviewByDefault: false }))
+                              }
+                            >
+                              默认显示
+                            </button>
+                          </div>
+                        </div>
+                      </div>
                     </>
                   ) : activeCategory === "fire" ? (
                     <>
