@@ -1,41 +1,169 @@
 // @ts-nocheck
+import {
+  summarizeCmbBankPdfImportPayload,
+  summarizeCmbBankPdfPreviewPayload,
+  summarizeCmbEmlImportPayload,
+  summarizeCmbEmlPreviewPayload,
+  summarizeYzxyImportPayload,
+  summarizeYzxyPreviewPayload,
+} from "../../app/summaries";
+
+function formatImportJobRange(row) {
+  const from = typeof row?.data_date_from === "string" ? row.data_date_from : "";
+  const to = typeof row?.data_date_to === "string" ? row.data_date_to : "";
+  if (!from && !to) return "-";
+  if (from && to) return from === to ? from : `${from} ~ ${to}`;
+  return from || to;
+}
+
+function mapImportJobStatusTone(status) {
+  if (status === "success") return "ready";
+  if (status === "failed") return "error";
+  if (status === "running") return "loading";
+  return "idle";
+}
+
+function resolveImportFlowState(args) {
+  const {
+    path,
+    previewBusy,
+    importBusy,
+    previewError,
+    importError,
+    previewResult,
+    importResult,
+    summarizePreview,
+    summarizeImport,
+    emptyHint,
+  } = args;
+
+  if (!path.trim()) {
+    return {
+      tone: "idle",
+      label: "待选择文件",
+      detail: emptyHint,
+    };
+  }
+  if (previewBusy) {
+    return {
+      tone: "loading",
+      label: "正在预检",
+      detail: "正在解析文件并检查可导入内容。",
+    };
+  }
+  if (importBusy) {
+    return {
+      tone: "loading",
+      label: "正在导入",
+      detail: "预检已完成，正在写入账本。",
+    };
+  }
+  if (previewError) {
+    return {
+      tone: "error",
+      label: "预检失败",
+      detail: previewError,
+    };
+  }
+  if (importError) {
+    return {
+      tone: "error",
+      label: "导入失败",
+      detail: importError,
+    };
+  }
+  if (importResult) {
+    return {
+      tone: "ready",
+      label: "导入完成",
+      detail: summarizeImport(importResult) || "已完成导入，可到导入记录确认结果。",
+    };
+  }
+  if (previewResult) {
+    return {
+      tone: "ready",
+      label: "预检完成",
+      detail: summarizePreview(previewResult) || "预检通过，准备继续导入。",
+    };
+  }
+  return {
+    tone: "idle",
+    label: "等待开始",
+    detail: "点击按钮后会自动先预检，再继续导入。",
+  };
+}
+
+function ImportFlowCard(props) {
+  const {
+    title,
+    description,
+    pathLabel,
+    pathValue,
+    onPathChange,
+    browseButtons,
+    actionLabel,
+    onRun,
+    disabled,
+    status,
+  } = props;
+
+  return (
+    <section className="card panel">
+      <div className="panel-header">
+        <h2>{title}</h2>
+        <p>{description}</p>
+      </div>
+
+      <div className="db-import-path-row">
+        <label className="field db-import-path-field">
+          <span>{pathLabel}</span>
+          <input value={pathValue} onChange={(e) => onPathChange(e.target.value)} />
+        </label>
+        {browseButtons}
+      </div>
+
+      <div className="db-actions">
+        <button type="button" className="primary-btn" onClick={() => void onRun()} disabled={disabled}>
+          {actionLabel}
+        </button>
+      </div>
+
+      <div className="subcard import-flow-status">
+        <div className="smoke-row-head import-flow-status-head">
+          <h3>当前状态</h3>
+          <span className={`status-pill status-${status.tone}`}>{status.label}</span>
+        </div>
+        <p className="pipeline-message">{status.detail}</p>
+      </div>
+    </section>
+  );
+}
+
 export function ImportCenterSections(props: any) {
   const {
     isTab,
-    importCenterLastRunAt,
-    importCenterStatus,
-    importCenterMessage,
-    importCenterRows,
+    handleImportJobsQuery,
+    importJobsBusy,
+    importJobsError,
+    importJobsResult,
+    importJobsLastRunAt,
     yzxyFilePath,
     setYzxyFilePath,
     handlePickYzxyFilePath,
+    handleYzxyRunImportFlow,
     yzxyPreviewBusy,
     yzxyImportBusy,
-    yzxySourceType,
-    setYzxySourceType,
-    handleYzxyPreview,
-    handleYzxyImport,
     yzxyPreviewError,
     yzxyImportError,
     yzxyPreviewResult,
     yzxyImportResult,
-    PreviewStat,
-    showRawJson,
-    JsonResultCard,
     emlSourcePath,
     setEmlSourcePath,
     handlePickEmlFile,
     handlePickEmlFolder,
+    handleCmbEmlRunImportFlow,
     emlPreviewBusy,
     emlImportBusy,
-    safeNumericInputValue,
-    emlReviewThreshold,
-    setEmlReviewThreshold,
-    parseNumericInputWithFallback,
-    emlSourceType,
-    setEmlSourceType,
-    handleCmbEmlPreview,
-    handleCmbEmlImport,
     emlPreviewError,
     emlImportError,
     emlPreviewResult,
@@ -43,408 +171,218 @@ export function ImportCenterSections(props: any) {
     cmbPdfPath,
     setCmbPdfPath,
     handlePickCmbPdfFile,
+    handleCmbBankPdfRunImportFlow,
     cmbPdfPreviewBusy,
     cmbPdfImportBusy,
-    cmbPdfReviewThreshold,
-    setCmbPdfReviewThreshold,
-    cmbPdfSourceType,
-    setCmbPdfSourceType,
-    handleCmbBankPdfPreview,
-    handleCmbBankPdfImport,
     cmbPdfPreviewError,
     cmbPdfImportError,
     cmbPdfPreviewResult,
     cmbPdfImportResult,
-    formatCentsShort,
-    YzxyPreviewSummaryReport,
-    YzxyImportSummaryReport,
-    CmbEmlPreviewSummaryReport,
-    CmbEmlImportSummaryReport,
-    CmbBankPdfPreviewSummaryReport,
-    CmbBankPdfImportSummaryReport,
-    RulesAdminPanel,
-    BoolField,
-    DateInput,
-    AutoRefreshHint,
-    maskAmountDisplayText,
+    PreviewStat,
   } = props;
+
+  const importJobRows = Array.isArray(importJobsResult?.rows) ? importJobsResult.rows : [];
+  const importJobsSummary = importJobsResult?.summary ?? {};
+  const yzxyStatus = resolveImportFlowState({
+    path: yzxyFilePath,
+    previewBusy: yzxyPreviewBusy,
+    importBusy: yzxyImportBusy,
+    previewError: yzxyPreviewError,
+    importError: yzxyImportError,
+    previewResult: yzxyPreviewResult,
+    importResult: yzxyImportResult,
+    summarizePreview: summarizeYzxyPreviewPayload,
+    summarizeImport: summarizeYzxyImportPayload,
+    emptyHint: "请选择有知有行导出文件。",
+  });
+  const emlStatus = resolveImportFlowState({
+    path: emlSourcePath,
+    previewBusy: emlPreviewBusy,
+    importBusy: emlImportBusy,
+    previewError: emlPreviewError,
+    importError: emlImportError,
+    previewResult: emlPreviewResult,
+    importResult: emlImportResult,
+    summarizePreview: summarizeCmbEmlPreviewPayload,
+    summarizeImport: summarizeCmbEmlImportPayload,
+    emptyHint: "请选择招行 EML 文件，或选择包含账单的目录。",
+  });
+  const cmbPdfStatus = resolveImportFlowState({
+    path: cmbPdfPath,
+    previewBusy: cmbPdfPreviewBusy,
+    importBusy: cmbPdfImportBusy,
+    previewError: cmbPdfPreviewError,
+    importError: cmbPdfImportError,
+    previewResult: cmbPdfPreviewResult,
+    importResult: cmbPdfImportResult,
+    summarizePreview: summarizeCmbBankPdfPreviewPayload,
+    summarizeImport: summarizeCmbBankPdfImportPayload,
+    emptyHint: "请选择招行银行流水 PDF 文件。",
+  });
+
   return (
     <>
-      {isTab("import-center") ? <section className="card panel">
-        <div className="panel-header">
-          <h2>导入中心（桌面）</h2>
-          <p>统一展示三条 Rust 导入链路的手动导入准备状态、Preview 摘要与最近 Import 结果（不在此处批量执行）。</p>
-        </div>
-
-        <div className="db-actions">
-          <div className="smoke-last-run">
-            状态更新时间：{importCenterLastRunAt ? new Date(importCenterLastRunAt).toLocaleTimeString() : "-"}
-          </div>
-        </div>
-
-        <div className="pipeline-status-row">
-          <span
-            className={`status-pill status-${
-              importCenterStatus === "idle"
-                ? "idle"
-                : importCenterStatus === "running"
-                  ? "loading"
-                  : importCenterStatus === "pass"
-                    ? "ready"
-                    : "error"
-            }`}
-          >
-            导入中心 {importCenterStatus.toUpperCase()}
-          </span>
-          <span className="pipeline-last-run">
-            手动流程：先 Preview 确认，再 Import（每条导入链路独立执行）
-          </span>
-        </div>
-        {importCenterMessage ? <p className="pipeline-message">{importCenterMessage}</p> : null}
-
-        <div className="smoke-grid">
-          {importCenterRows.map((row) => {
-            const rowTone =
-              row.status === "pass"
-                ? "smoke-pass"
-                : row.status === "fail"
-                  ? "smoke-fail"
-                  : "";
-            const pillTone =
-              row.status === "pass"
-                ? "ready"
-                : row.status === "fail"
-                  ? "error"
-                  : row.status === "running"
-                    ? "loading"
-                    : "idle";
-            return (
-              <div key={row.key} className={`smoke-row ${rowTone}`.trim()}>
-                <div className="smoke-row-head">
-                  <code>{row.label}</code>
-                  <span className={`status-pill status-${pillTone}`}>{row.status.toUpperCase()}</span>
-                </div>
-                <div className="smoke-row-meta">
-                  <span>{typeof row.durationMs === "number" ? `${row.durationMs} ms` : "-"}</span>
-                </div>
-                <div className="smoke-row-detail" title={row.detail}>
-                  {row.detail ?? "尚未执行"}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        <p className="inline-hint">
-          此处仅展示三种导入方式的“路径是否已选择 / Preview 是否完成 / Import 最近结果”。实际操作请在下方各面板逐项手动执行。
-        </p>
-      </section> : null}
-
-      {isTab("import-center") ? <section className="card panel">
-        <div className="panel-header">
-          <h2>有知有行导入</h2>
-          <p>Rust 原生解析并导入有知有行导出文件（`.csv` / `.xlsx`），用于构建 desktop 端完整导入验证闭环。</p>
-        </div>
-
-        <div className="db-import-path-row">
-          <label className="field db-import-path-field">
-            <span>有知有行导出文件</span>
-            <input
-              value={yzxyFilePath}
-              onChange={(e) => setYzxyFilePath(e.target.value)}
-              placeholder="/absolute/path/to/youzhiyouxing.xlsx"
-            />
-          </label>
-          <button
-            type="button"
-            className="secondary-btn"
-            onClick={() => void handlePickYzxyFilePath()}
-            disabled={yzxyPreviewBusy || yzxyImportBusy}
-          >
-            浏览...
-          </button>
-        </div>
-
-        <div className="query-form-grid query-form-grid-compact">
-          <label className="field">
-            <span>来源类型</span>
-            <input
-              value={yzxySourceType}
-              onChange={(e) => setYzxySourceType(e.target.value)}
-              placeholder="yzxy_xlsx"
-            />
-          </label>
-        </div>
-
-        <div className="db-actions">
-          <button
-            type="button"
-            className="secondary-btn"
-            onClick={() => void handleYzxyPreview()}
-            disabled={yzxyPreviewBusy || yzxyImportBusy || !yzxyFilePath.trim()}
-          >
-            {yzxyPreviewBusy ? "预览中..." : "预览有知有行文件"}
-          </button>
-          <button
-            type="button"
-            className="primary-btn"
-            onClick={() => void handleYzxyImport()}
-            disabled={yzxyImportBusy || yzxyPreviewBusy || !yzxyFilePath.trim()}
-            title="导入到 Tauri app 本地账本"
-          >
-            {yzxyImportBusy ? "导入中..." : "导入有知有行到桌面数据库"}
-          </button>
-        </div>
-
-        <p className="inline-hint">
-          建议流程：先 `Preview` 确认映射与样例，再 `Import`。
-        </p>
-
-        {yzxyPreviewError ? (
-          <div className="inline-error" role="alert">
-            {yzxyPreviewError}
-          </div>
-        ) : null}
-        {yzxyImportError ? (
-          <div className="inline-error" role="alert">
-            {yzxyImportError}
-          </div>
-        ) : null}
-
-        <div className="db-grid">
-          <div className="subcard">
-            <h3>预览结果</h3>
-            <YzxyPreviewSummaryReport data={yzxyPreviewResult} PreviewStat={PreviewStat} />
-            {showRawJson ? (
-              <JsonResultCard title="有知有行预览 JSON" data={yzxyPreviewResult} emptyText="尚未预览。请选择有知有行文件后执行预览。" />
-            ) : null}
-          </div>
-          <div className="subcard">
-            <h3>导入结果</h3>
-            <YzxyImportSummaryReport data={yzxyImportResult} PreviewStat={PreviewStat} />
-            {showRawJson ? (
-              <JsonResultCard title="有知有行导入 JSON" data={yzxyImportResult} emptyText="尚未导入。请在预览确认后执行导入。" />
-            ) : null}
-          </div>
-        </div>
-      </section> : null}
-
-      {isTab("import-center") ? <section className="card panel">
-        <div className="panel-header">
-          <h2>招行信用卡 EML 导入</h2>
-          <p>Rust 原生解析招行信用卡 EML（支持单文件或目录递归扫描），完成 preview + import 并写入 `transactions`。</p>
-        </div>
-
-        <div className="db-import-path-row">
-          <label className="field db-import-path-field">
-            <span>EML 文件 / 目录</span>
-            <input
-              value={emlSourcePath}
-              onChange={(e) => setEmlSourcePath(e.target.value)}
-              placeholder="/absolute/path/to/file.eml or /dir/of/eml/"
-            />
-          </label>
-          <button
-            type="button"
-            className="secondary-btn"
-            onClick={() => void handlePickEmlFile()}
-            disabled={emlPreviewBusy || emlImportBusy}
-          >
-            选择文件...
-          </button>
-          <button
-            type="button"
-            className="secondary-btn"
-            onClick={() => void handlePickEmlFolder()}
-            disabled={emlPreviewBusy || emlImportBusy}
-          >
-            选择目录...
-          </button>
-        </div>
-
-        <div className="query-form-grid query-form-grid-compact">
-          <label className="field">
-            <span>复核阈值</span>
-            <input
-              type="number"
-              min={0}
-              max={1}
-              step="0.01"
-              value={safeNumericInputValue(emlReviewThreshold, 0.7)}
-              onChange={(e) => setEmlReviewThreshold(parseNumericInputWithFallback(e.target.value || "0.7", 0.7))}
-            />
-          </label>
-          <label className="field">
-            <span>来源类型</span>
-            <input
-              value={emlSourceType}
-              onChange={(e) => setEmlSourceType(e.target.value)}
-              placeholder="cmb_eml"
-            />
-          </label>
-        </div>
-
-        <div className="db-actions">
-          <button
-            type="button"
-            className="secondary-btn"
-            onClick={() => void handleCmbEmlPreview()}
-            disabled={emlPreviewBusy || emlImportBusy || !emlSourcePath.trim()}
-          >
-            {emlPreviewBusy ? "预览中..." : "预览招行 EML"}
-          </button>
-          <button
-            type="button"
-            className="primary-btn"
-            onClick={() => void handleCmbEmlImport()}
-            disabled={emlImportBusy || emlPreviewBusy || !emlSourcePath.trim()}
-            title="导入到 desktop 本地库"
-          >
-            {emlImportBusy ? "导入中..." : "导入招行 EML 到桌面数据库"}
-          </button>
-        </div>
-
-        <p className="inline-hint">
-          支持直接选择单个 `.eml` 或选择目录进行递归扫描。建议先 `Preview` 查看解析/分类结果摘要，再执行 `Import`。
-        </p>
-
-        {emlPreviewError ? (
-          <div className="inline-error" role="alert">
-            {emlPreviewError}
-          </div>
-        ) : null}
-        {emlImportError ? (
-          <div className="inline-error" role="alert">
-            {emlImportError}
-          </div>
-        ) : null}
-
-        <div className="db-grid">
-          <div className="subcard">
-            <h3>EML 预览结果</h3>
-            <CmbEmlPreviewSummaryReport data={emlPreviewResult} PreviewStat={PreviewStat} />
-            {showRawJson ? <JsonResultCard title="招行 EML 预览 JSON" data={emlPreviewResult} emptyText="尚未预览。" /> : null}
-          </div>
-          <div className="subcard">
-            <h3>EML 导入结果</h3>
-            <CmbEmlImportSummaryReport data={emlImportResult} PreviewStat={PreviewStat} />
-            {showRawJson ? <JsonResultCard title="招行 EML 导入 JSON" data={emlImportResult} emptyText="尚未导入。" /> : null}
-          </div>
-        </div>
-      </section> : null}
-
-      {isTab("import-center") ? <section className="card panel">
-        <div className="panel-header">
-          <h2>招行银行流水 PDF 导入</h2>
-          <p>Rust 原生解析招商银行流水 PDF，执行规则分类并导入 `transactions`（desktop-only 验证链路）。</p>
-        </div>
-
-        <div className="db-import-path-row">
-          <label className="field db-import-path-field">
-            <span>银行流水 PDF</span>
-            <input
-              value={cmbPdfPath}
-              onChange={(e) => setCmbPdfPath(e.target.value)}
-              placeholder="/absolute/path/to/cmb_bank_statement.pdf"
-            />
-          </label>
-          <button
-            type="button"
-            className="secondary-btn"
-            onClick={() => void handlePickCmbPdfFile()}
-            disabled={cmbPdfPreviewBusy || cmbPdfImportBusy}
-          >
-            选择 PDF...
-          </button>
-        </div>
-
-        <div className="query-form-grid query-form-grid-compact">
-          <label className="field">
-            <span>复核阈值</span>
-            <input
-              type="number"
-              min={0}
-              max={1}
-              step="0.01"
-              value={safeNumericInputValue(cmbPdfReviewThreshold, 0.7)}
-              onChange={(e) =>
-                setCmbPdfReviewThreshold(parseNumericInputWithFallback(e.target.value || "0.7", 0.7))
-              }
-            />
-          </label>
-          <label className="field">
-            <span>来源类型</span>
-            <input
-              value={cmbPdfSourceType}
-              onChange={(e) => setCmbPdfSourceType(e.target.value)}
-              placeholder="cmb_bank_pdf"
-            />
-          </label>
-        </div>
-
-        <div className="db-actions">
-          <button
-            type="button"
-            className="secondary-btn"
-            onClick={() => void handleCmbBankPdfPreview()}
-            disabled={cmbPdfPreviewBusy || cmbPdfImportBusy || !cmbPdfPath.trim()}
-          >
-            {cmbPdfPreviewBusy ? "预览中..." : "预览招行银行流水 PDF"}
-          </button>
-          <button
-            type="button"
-            className="primary-btn"
-            onClick={() => void handleCmbBankPdfImport()}
-            disabled={cmbPdfImportBusy || cmbPdfPreviewBusy || !cmbPdfPath.trim()}
-            title="导入到 desktop 本地库"
-          >
-            {cmbPdfImportBusy ? "导入中..." : "导入招行银行流水 PDF 到桌面数据库"}
-          </button>
-        </div>
-
-        <p className="inline-hint">
-          建议先 `Preview` 检查 `rule_counts / summary / samples`，确认工资、转账、借记卡消费识别逻辑正常后再导入。
-        </p>
-
-        {cmbPdfPreviewError ? (
-          <div className="inline-error" role="alert">
-            {cmbPdfPreviewError}
-          </div>
-        ) : null}
-        {cmbPdfImportError ? (
-          <div className="inline-error" role="alert">
-            {cmbPdfImportError}
-          </div>
-        ) : null}
-
-        <div className="db-grid">
-          <div className="subcard">
-            <h3>招行 PDF 预览结果</h3>
-            <CmbBankPdfPreviewSummaryReport
-              data={cmbPdfPreviewResult}
-              PreviewStat={PreviewStat}
-              formatCentsShort={formatCentsShort}
-            />
-            {showRawJson ? <JsonResultCard title="招行 PDF 预览 JSON" data={cmbPdfPreviewResult} emptyText="尚未预览。" /> : null}
-          </div>
-          <div className="subcard">
-            <h3>招行 PDF 导入结果</h3>
-            <CmbBankPdfImportSummaryReport data={cmbPdfImportResult} PreviewStat={PreviewStat} />
-            {showRawJson ? <JsonResultCard title="招行 PDF 导入 JSON" data={cmbPdfImportResult} emptyText="尚未导入。" /> : null}
-          </div>
-        </div>
-      </section> : null}
+      {isTab("import-center") ? (
+        <ImportFlowCard
+          title="有知有行导入"
+          description="选择导出文件后，系统会自动先预检，再写入账本。"
+          pathLabel="有知有行导出文件"
+          pathValue={yzxyFilePath}
+          onPathChange={setYzxyFilePath}
+          browseButtons={
+            <button
+              type="button"
+              className="secondary-btn"
+              onClick={() => void handlePickYzxyFilePath()}
+              disabled={yzxyPreviewBusy || yzxyImportBusy}
+            >
+              浏览...
+            </button>
+          }
+          actionLabel={yzxyPreviewBusy ? "正在预检..." : yzxyImportBusy ? "正在导入..." : "开始导入"}
+          onRun={handleYzxyRunImportFlow}
+          disabled={yzxyPreviewBusy || yzxyImportBusy || !yzxyFilePath.trim()}
+          status={yzxyStatus}
+        />
+      ) : null}
 
       {isTab("import-center") ? (
-        <RulesAdminPanel
-          showRawJson={showRawJson}
-          PreviewStat={PreviewStat}
-          BoolField={BoolField}
-          DateInput={DateInput}
-          JsonResultCard={JsonResultCard}
-          AutoRefreshHint={AutoRefreshHint}
-          maskAmountDisplayText={maskAmountDisplayText}
+        <ImportFlowCard
+          title="招行信用卡 EML 导入"
+          description="支持单个 `.eml` 文件或账单目录，点击后自动完成预检和导入。"
+          pathLabel="EML 文件 / 目录"
+          pathValue={emlSourcePath}
+          onPathChange={setEmlSourcePath}
+          browseButtons={
+            <>
+              <button
+                type="button"
+                className="secondary-btn"
+                onClick={() => void handlePickEmlFile()}
+                disabled={emlPreviewBusy || emlImportBusy}
+              >
+                选择文件...
+              </button>
+              <button
+                type="button"
+                className="secondary-btn"
+                onClick={() => void handlePickEmlFolder()}
+                disabled={emlPreviewBusy || emlImportBusy}
+              >
+                选择目录...
+              </button>
+            </>
+          }
+          actionLabel={emlPreviewBusy ? "正在预检..." : emlImportBusy ? "正在导入..." : "开始导入"}
+          onRun={handleCmbEmlRunImportFlow}
+          disabled={emlPreviewBusy || emlImportBusy || !emlSourcePath.trim()}
+          status={emlStatus}
         />
+      ) : null}
+
+      {isTab("import-center") ? (
+        <ImportFlowCard
+          title="招行银行流水 PDF 导入"
+          description="选择 PDF 后自动执行预检与导入，适合银行流水批量入账。"
+          pathLabel="银行流水 PDF"
+          pathValue={cmbPdfPath}
+          onPathChange={setCmbPdfPath}
+          browseButtons={
+            <button
+              type="button"
+              className="secondary-btn"
+              onClick={() => void handlePickCmbPdfFile()}
+              disabled={cmbPdfPreviewBusy || cmbPdfImportBusy}
+            >
+              选择 PDF...
+            </button>
+          }
+          actionLabel={cmbPdfPreviewBusy ? "正在预检..." : cmbPdfImportBusy ? "正在导入..." : "开始导入"}
+          onRun={handleCmbBankPdfRunImportFlow}
+          disabled={cmbPdfPreviewBusy || cmbPdfImportBusy || !cmbPdfPath.trim()}
+          status={cmbPdfStatus}
+        />
+      ) : null}
+
+      {isTab("import-center") ? (
+        <section className="card panel">
+          <div className="panel-header">
+            <h2>导入记录</h2>
+            <p>展示最近导入任务，方便确认是否已导入，以及每次导入覆盖的数据范围。</p>
+          </div>
+
+          <div className="db-actions">
+            <button
+              type="button"
+              className="secondary-btn"
+              onClick={() => void handleImportJobsQuery()}
+              disabled={importJobsBusy}
+            >
+              {importJobsBusy ? "刷新中..." : "刷新导入记录"}
+            </button>
+            <div className="smoke-last-run">
+              最近刷新：{importJobsLastRunAt ? new Date(importJobsLastRunAt).toLocaleTimeString() : "-"}
+            </div>
+          </div>
+
+          <div className="preview-stat-grid">
+            <PreviewStat label="总记录数" value={typeof importJobsSummary.total_count === "number" ? importJobsSummary.total_count : 0} />
+            <PreviewStat label="成功" value={typeof importJobsSummary.success_count === "number" ? importJobsSummary.success_count : 0} tone="good" />
+            <PreviewStat label="失败" value={typeof importJobsSummary.failed_count === "number" ? importJobsSummary.failed_count : 0} tone={importJobsSummary.failed_count > 0 ? "warn" : "default"} />
+            <PreviewStat label="运行中" value={typeof importJobsSummary.running_count === "number" ? importJobsSummary.running_count : 0} />
+          </div>
+
+          {importJobsError ? (
+            <div className="inline-error" role="alert">
+              {importJobsError}
+            </div>
+          ) : null}
+
+          {importJobRows.length > 0 ? (
+            <div className="table-wrap">
+              <table className="data-table compact">
+                <thead>
+                  <tr>
+                    <th>状态</th>
+                    <th>来源</th>
+                    <th>时间范围</th>
+                    <th>导入结果</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {importJobRows.map((row, index) => {
+                    const status = typeof row?.status === "string" ? row.status : "unknown";
+                    const statusTone = mapImportJobStatusTone(status);
+                    const sourceType = typeof row?.source_type === "string" ? row.source_type : "-";
+                    const rangeLabel = typeof row?.data_label === "string" ? row.data_label : "时间范围";
+                    const rangeText = formatImportJobRange(row);
+                    const totalCount = typeof row?.total_count === "number" ? row.total_count : 0;
+                    const importedCount = typeof row?.imported_count === "number" ? row.imported_count : 0;
+                    const errorCount = typeof row?.error_count === "number" ? row.error_count : 0;
+                    return (
+                      <tr key={typeof row?.id === "string" ? row.id : `${sourceType}-${index}`}>
+                        <td>
+                          <span className={`status-pill status-${statusTone}`}>{status.toUpperCase()}</span>
+                        </td>
+                        <td>{sourceType}</td>
+                        <td style={{ whiteSpace: "normal", minWidth: "158px" }} title={rangeText}>
+                          <div>{rangeLabel}</div>
+                          <div className="pipeline-last-run">{rangeText}</div>
+                        </td>
+                        <td style={{ whiteSpace: "normal", minWidth: "138px" }}>
+                          <div>{importedCount} / {totalCount}</div>
+                          <div className="pipeline-last-run">错误：{errorCount}</div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="placeholder">暂无导入记录。完成任一导入后，这里会显示最近任务及其数据时间范围。</p>
+          )}
+        </section>
       ) : null}
     </>
   );

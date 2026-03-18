@@ -1,5 +1,9 @@
 // @ts-nocheck
 import { useEffect, useState } from "react";
+import QRCode from "qrcode";
+
+const SYNC_QR_RENDER_SIZE = 360;
+const SYNC_QR_DISPLAY_SIZE = 280;
 
 export function AppSettingsModal(props: any) {
   const {
@@ -7,13 +11,50 @@ export function AppSettingsModal(props: any) {
     setSettingsOpen,
     appSettings,
     setAppSettings,
+    syncStatus,
+    handleManualSyncNow,
+    syncSetupBusy,
+    syncSetupError,
+    syncActionMessage,
+    syncShareCode,
+    syncCreateForm,
+    setSyncCreateForm,
+    syncLinkForm,
+    setSyncLinkForm,
+    handleSyncSetupCreate,
+    handleSyncSetupLink,
+    handleSyncShareCodeRefresh,
   } = props;
-  const [activeCategory, setActiveCategory] = useState<"display" | "fire">("display");
+  const [activeCategory, setActiveCategory] = useState<"display" | "fire" | "sync">("display");
+  const [syncShareQrDataUrl, setSyncShareQrDataUrl] = useState("");
 
   useEffect(() => {
     if (!settingsOpen) return;
     setActiveCategory("display");
   }, [settingsOpen]);
+
+  useEffect(() => {
+    if (!syncShareCode || !syncShareCode.trim()) {
+      setSyncShareQrDataUrl("");
+      return;
+    }
+    let cancelled = false;
+    void QRCode.toDataURL(syncShareCode.trim(), {
+      width: SYNC_QR_RENDER_SIZE,
+      margin: 3,
+      errorCorrectionLevel: "L",
+      color: { dark: "#000000", light: "#FFFFFF" },
+    })
+      .then((url) => {
+        if (!cancelled) setSyncShareQrDataUrl(url);
+      })
+      .catch(() => {
+        if (!cancelled) setSyncShareQrDataUrl("");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [syncShareCode]);
 
   return (
     <>
@@ -54,6 +95,14 @@ export function AppSettingsModal(props: any) {
                   >
                     <span className="settings-nav-item-title">FIRE</span>
                     <span className="settings-nav-item-subtitle">提取率与测算参数</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`settings-nav-item ${activeCategory === "sync" ? "active" : ""}`}
+                    onClick={() => setActiveCategory("sync")}
+                  >
+                    <span className="settings-nav-item-title">云同步</span>
+                    <span className="settings-nav-item-subtitle">多端状态与手动触发</span>
                   </button>
                 </aside>
 
@@ -147,7 +196,7 @@ export function AppSettingsModal(props: any) {
                         </div>
                       </div>
                     </>
-                  ) : (
+                  ) : activeCategory === "fire" ? (
                     <>
                       <div className="settings-group-head">
                         <h4>FIRE</h4>
@@ -190,6 +239,232 @@ export function AppSettingsModal(props: any) {
                             </button>
                           </div>
                         </div>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="settings-group-head">
+                        <h4>云同步</h4>
+                        <p>查看同步状态，并可手动触发一次同步。</p>
+                      </div>
+
+                      <div className="settings-item-card">
+                        <div className="settings-item-card-head">
+                          <h5>同步状态</h5>
+                          <p>应用会轮询远端更新并自动拉取；本地写入后可点击同步按钮手动上传。</p>
+                        </div>
+                        <div className="settings-item-grid">
+                          <div className="field">
+                            <span>配置状态</span>
+                            <strong>{syncStatus?.configured ? "已配置" : "未配置"}</strong>
+                          </div>
+                          <div className="field">
+                            <span>工作区</span>
+                            <strong>{syncStatus?.workspace_id || "-"}</strong>
+                          </div>
+                          <div className="field">
+                            <span>本地 Head</span>
+                            <strong>{syncStatus?.local_head || "-"}</strong>
+                          </div>
+                          <div className="field">
+                            <span>远端 Head</span>
+                            <strong>{syncStatus?.remote_head || "-"}</strong>
+                          </div>
+                          <div className="field">
+                            <span>最近同步</span>
+                            <strong>{syncStatus?.last_sync_at || "-"}</strong>
+                          </div>
+                          <div className="field">
+                            <span>下一次自动同步</span>
+                            <strong>{syncStatus?.next_sync_at || "-"}</strong>
+                          </div>
+                          <div className="field">
+                            <span>冲突状态</span>
+                            <strong>{syncStatus?.conflict ? "存在冲突" : "无冲突"}</strong>
+                          </div>
+                          <div className="field">
+                            <span>最近错误</span>
+                            <strong>{syncStatus?.last_error || "-"}</strong>
+                          </div>
+                        </div>
+                        <div className="settings-item-grid">
+                          <button
+                            type="button"
+                            className="primary-btn"
+                            onClick={() => {
+                              if (typeof handleManualSyncNow === "function") {
+                                void handleManualSyncNow();
+                              }
+                            }}
+                            disabled={!syncStatus?.configured || !!syncStatus?.syncing}
+                          >
+                            {syncStatus?.syncing ? "同步中..." : "立即同步"}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="settings-item-card">
+                        <div className="settings-item-card-head">
+                          <h5>创建同步库</h5>
+                          <p>首台设备填写 COS 参数并创建同步库。创建成功后可生成二维码给其他设备扫码。</p>
+                        </div>
+                        <div className="settings-item-grid">
+                          <label className="field">
+                            <span>SecretId</span>
+                            <input
+                              value={syncCreateForm?.secret_id || ""}
+                              onChange={(e) =>
+                                setSyncCreateForm?.((prev: any) => ({ ...prev, secret_id: e.target.value }))
+                              }
+                              placeholder="AKID..."
+                            />
+                          </label>
+                          <label className="field">
+                            <span>SecretKey</span>
+                            <input
+                              type="password"
+                              value={syncCreateForm?.secret_key || ""}
+                              onChange={(e) =>
+                                setSyncCreateForm?.((prev: any) => ({ ...prev, secret_key: e.target.value }))
+                              }
+                              placeholder="请输入 SecretKey"
+                            />
+                          </label>
+                          <label className="field">
+                            <span>Region</span>
+                            <input
+                              value={syncCreateForm?.region || ""}
+                              onChange={(e) =>
+                                setSyncCreateForm?.((prev: any) => ({ ...prev, region: e.target.value }))
+                              }
+                              placeholder="ap-shanghai"
+                            />
+                          </label>
+                          <label className="field">
+                            <span>AppID</span>
+                            <input
+                              value={syncCreateForm?.app_id || ""}
+                              onChange={(e) =>
+                                setSyncCreateForm?.((prev: any) => ({ ...prev, app_id: e.target.value }))
+                              }
+                              placeholder="腾讯云账号 AppID"
+                            />
+                          </label>
+                          <label className="field">
+                            <span>同步密码</span>
+                            <input
+                              type="password"
+                              value={syncCreateForm?.sync_password || ""}
+                              onChange={(e) =>
+                                setSyncCreateForm?.((prev: any) => ({ ...prev, sync_password: e.target.value }))
+                              }
+                              placeholder="用于端到端加密"
+                            />
+                          </label>
+                        </div>
+                        <div className="settings-item-grid">
+                          <button
+                            type="button"
+                            className="primary-btn"
+                            onClick={() => {
+                              if (typeof handleSyncSetupCreate === "function") {
+                                void handleSyncSetupCreate();
+                              }
+                            }}
+                            disabled={!!syncSetupBusy}
+                          >
+                            {syncSetupBusy ? "处理中..." : "创建并绑定"}
+                          </button>
+                          <button
+                            type="button"
+                            className="secondary-btn table-inline-btn"
+                            onClick={() => {
+                              if (typeof handleSyncShareCodeRefresh === "function") {
+                                void handleSyncShareCodeRefresh();
+                              }
+                            }}
+                            disabled={!!syncSetupBusy}
+                          >
+                            生成/刷新同步链接码
+                          </button>
+                        </div>
+                        {syncShareCode ? (
+                          <div className="settings-item-grid">
+                            <label className="field">
+                              <span>同步链接码</span>
+                              <textarea
+                                value={syncShareCode}
+                                rows={4}
+                                readOnly
+                                onFocus={(e) => e.currentTarget.select()}
+                              />
+                            </label>
+                            {syncShareQrDataUrl ? (
+                              <div className="field">
+                                <span>同步二维码</span>
+                                <img
+                                  src={syncShareQrDataUrl}
+                                  alt="同步链接二维码"
+                                  style={{
+                                    width: SYNC_QR_DISPLAY_SIZE,
+                                    height: SYNC_QR_DISPLAY_SIZE,
+                                    imageRendering: "pixelated",
+                                    background: "#fff",
+                                    padding: 8,
+                                    borderRadius: 8,
+                                  }}
+                                />
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
+
+                      <div className="settings-item-card">
+                        <div className="settings-item-card-head">
+                          <h5>链接已有同步库</h5>
+                          <p>在新设备输入同步密码并扫描二维码（或粘贴链接码）完成绑定。</p>
+                        </div>
+                        <div className="settings-item-grid">
+                          <label className="field">
+                            <span>同步链接码</span>
+                            <textarea
+                              value={syncLinkForm?.share_code || ""}
+                              rows={3}
+                              onChange={(e) =>
+                                setSyncLinkForm?.((prev: any) => ({ ...prev, share_code: e.target.value }))
+                              }
+                              placeholder="扫码后自动填入，或手动粘贴"
+                            />
+                          </label>
+                          <label className="field">
+                            <span>同步密码</span>
+                            <input
+                              type="password"
+                              value={syncLinkForm?.sync_password || ""}
+                              onChange={(e) =>
+                                setSyncLinkForm?.((prev: any) => ({ ...prev, sync_password: e.target.value }))
+                              }
+                              placeholder="请输入同步密码"
+                            />
+                          </label>
+                        </div>
+                        <div className="settings-item-grid">
+                          <button
+                            type="button"
+                            className="primary-btn"
+                            onClick={() => {
+                              if (typeof handleSyncSetupLink === "function") {
+                                void handleSyncSetupLink();
+                              }
+                            }}
+                            disabled={!!syncSetupBusy}
+                          >
+                            {syncSetupBusy ? "处理中..." : "链接并同步"}
+                          </button>
+                        </div>
+                        {syncSetupError ? <p className="inline-hint" style={{ color: "#c0392b" }}>{syncSetupError}</p> : null}
+                        {syncActionMessage ? <p className="inline-hint">{syncActionMessage}</p> : null}
                       </div>
                     </>
                   )}

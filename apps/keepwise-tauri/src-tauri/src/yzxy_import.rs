@@ -1004,14 +1004,22 @@ mod tests {
             yzxy_import_file_at_db_path(&db_path, &csv_path, "yzxy_csv").expect("first import");
         let import2 =
             yzxy_import_file_at_db_path(&db_path, &csv_path, "yzxy_csv").expect("second import");
-        assert_eq!(import1.get("imported_count").and_then(Value::as_i64), Some(2));
-        assert_eq!(import2.get("imported_count").and_then(Value::as_i64), Some(2));
+        assert_eq!(
+            import1.get("imported_count").and_then(Value::as_i64),
+            Some(2)
+        );
+        assert_eq!(
+            import2.get("imported_count").and_then(Value::as_i64),
+            Some(2)
+        );
         assert_eq!(import1.get("error_count").and_then(Value::as_i64), Some(0));
         assert_eq!(import2.get("error_count").and_then(Value::as_i64), Some(0));
 
         let conn = Connection::open(&db_path).expect("open temp db for verification");
         let inv_count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM investment_records", [], |row| row.get(0))
+            .query_row("SELECT COUNT(*) FROM investment_records", [], |row| {
+                row.get(0)
+            })
             .expect("count investment_records");
         let acct_count: i64 = conn
             .query_row(
@@ -1035,9 +1043,18 @@ mod tests {
             )
             .expect("query latest assets");
 
-        assert_eq!(inv_count, 2, "same file re-import should upsert, not duplicate");
-        assert_eq!(acct_count, 1, "same account name should map to one investment account");
-        assert_eq!(import_job_count, 2, "import jobs should record each import run");
+        assert_eq!(
+            inv_count, 2,
+            "same file re-import should upsert, not duplicate"
+        );
+        assert_eq!(
+            acct_count, 1,
+            "same account name should map to one investment account"
+        );
+        assert_eq!(
+            import_job_count, 2,
+            "import jobs should record each import run"
+        );
         assert_eq!(latest_assets, 1_080_000);
 
         let _ = fs::remove_file(&csv_path);

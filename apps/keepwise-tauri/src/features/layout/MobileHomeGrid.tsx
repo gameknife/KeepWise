@@ -11,7 +11,8 @@ type MobileHomeGridProps = {
   activeTab: ProductTabKey;
   onSelectTab: (tabKey: ProductTabKey) => void;
   onOpenManualEntry: () => void;
-  quickMetricsByTab: Partial<Record<ProductTabKey, MobileHomeMetric>>;
+  onOpenManualAssetEntry: () => void;
+  quickMetricsByTab: Partial<Record<ProductTabKey, MobileHomeMetric[]>>;
 };
 
 export function MobileHomeGrid({
@@ -19,14 +20,16 @@ export function MobileHomeGrid({
   activeTab,
   onSelectTab,
   onOpenManualEntry,
+  onOpenManualAssetEntry,
   quickMetricsByTab,
 }: MobileHomeGridProps) {
 
   return (
     <section className="mobile-home-grid" aria-label="移动端功能首页">
       {tabs.map((tab) => {
-        const metric = quickMetricsByTab[tab.key] ?? null;
+        const metrics = quickMetricsByTab[tab.key] ?? [];
         const isManualEntry = tab.key === "manual-entry";
+        const isManualAssetEntry = tab.key === "manual-asset-entry";
         return (
           <button
             key={tab.key}
@@ -35,6 +38,10 @@ export function MobileHomeGrid({
             onClick={() => {
               if (isManualEntry) {
                 onOpenManualEntry();
+                return;
+              }
+              if (isManualAssetEntry) {
+                onOpenManualAssetEntry();
                 return;
               }
               onSelectTab(tab.key);
@@ -49,10 +56,14 @@ export function MobileHomeGrid({
                 <div className="mobile-home-tile-title">{tab.label}</div>
               </div>
             </div>
-            {metric ? (
-              <div className={`mobile-home-tile-metric tone-${metric.tone}`}>
-                <span className="mobile-home-tile-metric-label">{metric.label}</span>
-                <span className="mobile-home-tile-metric-value">{metric.value}</span>
+            {metrics.length > 0 ? (
+              <div className={`mobile-home-tile-metrics metrics-${Math.min(metrics.length, 2) || 1}`}>
+                {metrics.map((metric, index) => (
+                  <div key={`${tab.key}-metric-${index}`} className={`mobile-home-tile-metric tone-${metric.tone}`}>
+                    <span className="mobile-home-tile-metric-label">{metric.label}</span>
+                    <span className="mobile-home-tile-metric-value">{metric.value}</span>
+                  </div>
+                ))}
               </div>
             ) : null}
           </button>

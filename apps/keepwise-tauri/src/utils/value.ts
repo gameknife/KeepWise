@@ -5,6 +5,12 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 export function readPath(root: unknown, path: string): unknown {
   let current: unknown = root;
   for (const part of path.split(".")) {
+    if (Array.isArray(current)) {
+      const idx = Number(part);
+      if (!Number.isInteger(idx) || idx < 0 || idx >= current.length) return undefined;
+      current = current[idx];
+      continue;
+    }
     if (!isRecord(current)) return undefined;
     current = current[part];
   }

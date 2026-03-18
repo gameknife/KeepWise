@@ -83,6 +83,9 @@ export function AdminSections(props: any) {
     assetListError,
     AssetValuationsPreview,
     assetListResult,
+    RulesAdminPanel,
+    BoolField,
+    maskAmountDisplayText,
   } = props;
   return (
     <>
@@ -544,6 +547,18 @@ export function AdminSections(props: any) {
           </div> : null}
         </div>
       </section> : null}
+
+      {isTab("admin") ? (
+        <RulesAdminPanel
+          showRawJson={showRawJson}
+          PreviewStat={PreviewStat}
+          BoolField={BoolField}
+          DateInput={DateInput}
+          JsonResultCard={JsonResultCard}
+          AutoRefreshHint={AutoRefreshHint}
+          maskAmountDisplayText={maskAmountDisplayText}
+        />
+      ) : null}
     </>
   );
 }

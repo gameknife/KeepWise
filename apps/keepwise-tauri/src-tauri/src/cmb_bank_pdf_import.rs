@@ -1481,7 +1481,11 @@ mod tests {
 
     fn temp_db_path(name: &str) -> PathBuf {
         let mut p = std::env::temp_dir();
-        p.push(format!("keepwise_cmb_pdf_test_{}_{}.db", name, Uuid::new_v4()));
+        p.push(format!(
+            "keepwise_cmb_pdf_test_{}_{}.db",
+            name,
+            Uuid::new_v4()
+        ));
         p
     }
 
@@ -1641,16 +1645,19 @@ mod tests {
             sample_bank_tx("2026-01-05", "代发工资", "某公司", 30_000_00, "CNY"),
             sample_bank_tx("2026-01-06", "代发住房公积金", "某公司", 5_000_00, "CNY"),
             sample_bank_tx("2026-01-07", "银联消费", "星巴克", -35_00, "CNY"),
-            sample_bank_tx("2026-01-08", "转账汇款", "张三 6222021234567890", -200_00, "CNY"),
+            sample_bank_tx(
+                "2026-01-08",
+                "转账汇款",
+                "张三 6222021234567890",
+                -200_00,
+                "CNY",
+            ),
             sample_bank_tx("2026-01-09", "基金申购", "基金公司", -1000_00, "CNY"),
             sample_bank_tx("2026-01-10", "银联消费", "Tokyo Shop", -50_00, "USD"),
         ];
         let mut whitelist = HashSet::new();
         whitelist.insert("张三".to_string());
-        let merchant_map = HashMap::from([(
-            "星巴克".to_string(),
-            ("餐饮".to_string(), 0.99_f64),
-        )]);
+        let merchant_map = HashMap::from([("星巴克".to_string(), ("餐饮".to_string(), 0.99_f64))]);
         let category_rules = Vec::<CategoryRule>::new();
 
         let (rows, preview) = classify_transactions(
@@ -1669,14 +1676,32 @@ mod tests {
         assert_eq!(preview["summary"]["expense_rows_count"].as_i64(), Some(2));
         assert_eq!(preview["summary"]["income_rows_count"].as_i64(), Some(2));
         assert_eq!(preview["summary"]["skipped_rows_count"].as_i64(), Some(2));
-        assert_eq!(preview["summary"]["expense_total_cents"].as_i64(), Some(-23500));
-        assert_eq!(preview["summary"]["income_total_cents"].as_i64(), Some(3500000));
+        assert_eq!(
+            preview["summary"]["expense_total_cents"].as_i64(),
+            Some(-23500)
+        );
+        assert_eq!(
+            preview["summary"]["income_total_cents"].as_i64(),
+            Some(3500000)
+        );
 
         assert_eq!(preview["rule_counts"]["salary"].as_i64(), Some(1));
-        assert_eq!(preview["rule_counts"]["housing_fund_income"].as_i64(), Some(1));
-        assert_eq!(preview["rule_counts"]["debit_merchant_spend"].as_i64(), Some(1));
-        assert_eq!(preview["rule_counts"]["bank_transfer_whitelist"].as_i64(), Some(1));
-        assert_eq!(preview["rule_counts"]["skip_irrelevant_summary"].as_i64(), Some(1));
+        assert_eq!(
+            preview["rule_counts"]["housing_fund_income"].as_i64(),
+            Some(1)
+        );
+        assert_eq!(
+            preview["rule_counts"]["debit_merchant_spend"].as_i64(),
+            Some(1)
+        );
+        assert_eq!(
+            preview["rule_counts"]["bank_transfer_whitelist"].as_i64(),
+            Some(1)
+        );
+        assert_eq!(
+            preview["rule_counts"]["skip_irrelevant_summary"].as_i64(),
+            Some(1)
+        );
         assert_eq!(preview["rule_counts"]["skip_non_cny"].as_i64(), Some(1));
     }
 
@@ -1691,10 +1716,7 @@ mod tests {
             "CNY",
         )];
         let whitelist = HashSet::<String>::new();
-        let merchant_map = HashMap::from([(
-            "星巴克".to_string(),
-            ("餐饮".to_string(), 0.99_f64),
-        )]);
+        let merchant_map = HashMap::from([("星巴克".to_string(), ("餐饮".to_string(), 0.99_f64))]);
         let category_rules = Vec::<CategoryRule>::new();
 
         let (rows, preview) = classify_transactions(
@@ -1709,7 +1731,10 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(preview["summary"]["import_rows_count"].as_i64(), Some(1));
         assert_eq!(preview["summary"]["expense_rows_count"].as_i64(), Some(1));
-        assert_eq!(preview["rule_counts"]["debit_merchant_spend"].as_i64(), Some(1));
+        assert_eq!(
+            preview["rule_counts"]["debit_merchant_spend"].as_i64(),
+            Some(1)
+        );
         assert_eq!(
             preview["rule_counts"]["skip_quickpay_person_non_whitelist"]
                 .as_i64()

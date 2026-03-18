@@ -12,6 +12,7 @@ mod read_queries;
 mod record_mutations;
 mod rules_management;
 mod rules_store;
+mod sync_management;
 mod transaction_mutations;
 pub mod wealth_analytics;
 mod yzxy_import;
@@ -58,6 +59,7 @@ pub fn run() {
             read_queries::query_transactions,
             read_queries::query_investments,
             read_queries::query_asset_valuations,
+            read_queries::query_import_jobs,
             account_catalog::query_account_catalog,
             account_catalog::upsert_account_catalog_entry,
             account_catalog::delete_account_catalog_entry,
@@ -88,7 +90,17 @@ pub fn run() {
             rules_management::query_analysis_exclusion_rules,
             rules_management::upsert_analysis_exclusion_rule,
             rules_management::delete_analysis_exclusion_rule,
-            rules_management::query_merchant_rule_suggestions
+            rules_management::query_merchant_rule_suggestions,
+            sync_management::sync_setup_create,
+            sync_management::sync_share_code_generate,
+            sync_management::sync_share_code_parse,
+            sync_management::sync_setup_link,
+            sync_management::sync_test_connection,
+            sync_management::sync_status,
+            sync_management::sync_poll_remote_update,
+            sync_management::sync_reconcile,
+            sync_management::sync_resolve_conflict,
+            sync_management::sync_set_auto_policy
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

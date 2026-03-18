@@ -721,6 +721,10 @@ h3 {
   gap: 0.45rem;
 }
 
+.import-flow-status-head h3 {
+  margin: 0;
+}
+
 .smoke-row-head code {
   color: #d6edf8;
 }
@@ -2038,16 +2042,16 @@ h3 {
 }
 
 .mobile-home-brand {
-  gap: 0.68rem;
+  gap: 0.82rem;
 }
 
 .mobile-home-brand .workspace-brand-icon {
-  width: 2.75rem;
-  height: 2.75rem;
+  width: 3.15rem;
+  height: 3.15rem;
 }
 
 .mobile-home-brand .workspace-brand-name {
-  font-size: 1.04rem;
+  font-size: 1.18rem;
 }
 
 .mobile-brand {
@@ -2099,11 +2103,11 @@ h3 {
 .mobile-page-title-group {
   min-width: 0;
   display: grid;
-  gap: 0.24rem;
+  gap: 0.28rem;
 }
 
 .mobile-page-title {
-  font-size: 1.2rem;
+  font-size: 1.34rem;
   line-height: 1.08;
   font-weight: 760;
   color: #f7f3ea;
@@ -2113,7 +2117,7 @@ h3 {
 }
 
 .mobile-page-subtitle {
-  font-size: 0.82rem;
+  font-size: 0.88rem;
   line-height: 1.3;
   color: rgba(243, 239, 229, 0.7);
   white-space: nowrap;
@@ -2247,21 +2251,31 @@ h3 {
   line-height: 1.15;
 }
 
-.mobile-home-tile-metric {
+.mobile-home-tile-metrics {
   display: grid;
-  gap: clamp(2px, 1.4cqw, 4px);
+  grid-template-columns: 1fr;
+  gap: clamp(6px, 3.4cqw, 10px);
   margin-top: clamp(3px, 2.2cqw, 6px);
 }
 
+.mobile-home-tile-metric {
+  display: grid;
+  gap: clamp(2px, 1.4cqw, 4px);
+  min-width: 0;
+}
+
 .mobile-home-tile-metric-label {
-  font-size: clamp(13px, 7.5cqw, 18px);
+  font-size: clamp(12px, 6.8cqw, 16px);
   color: rgba(243, 239, 229, 0.7);
+  line-height: 1.15;
 }
 
 .mobile-home-tile-metric-value {
-  font-size: clamp(20px, 11.2cqw, 27px);
+  font-size: clamp(17px, 9.8cqw, 23px);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .mobile-home-tile-metric.tone-good .mobile-home-tile-metric-value {
@@ -2551,6 +2565,57 @@ h3 {
     rgba(255, 255, 255, 0.015);
 }
 
+.sidebar-sync-btn.state-synced {
+  color: #6ee7a2;
+  border-color: rgba(110, 231, 162, 0.45);
+  background: linear-gradient(180deg, rgba(110, 231, 162, 0.14), rgba(110, 231, 162, 0.04));
+}
+
+.sidebar-sync-btn.state-pending {
+  color: #f5cf6a;
+  border-color: rgba(245, 207, 106, 0.46);
+  background: linear-gradient(180deg, rgba(245, 207, 106, 0.14), rgba(245, 207, 106, 0.04));
+}
+
+.sidebar-sync-btn.state-syncing {
+  color: #8bc8ff;
+  border-color: rgba(139, 200, 255, 0.44);
+  background: linear-gradient(180deg, rgba(139, 200, 255, 0.14), rgba(139, 200, 255, 0.04));
+}
+
+.sidebar-sync-btn:disabled {
+  cursor: default;
+  transform: none;
+}
+
+.sidebar-sync-btn:disabled:hover {
+  transform: none;
+}
+
+.sidebar-sync-icon {
+  width: 1.1rem;
+  height: 1.1rem;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+}
+
+.sidebar-sync-icon svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.sync-icon-spin {
+  animation: kw-sync-spin 1s linear infinite;
+}
+
+@keyframes kw-sync-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .sidebar-privacy-icon {
   width: 1.15rem;
   height: 1.15rem;
@@ -2613,7 +2678,7 @@ h3 {
 
 .tab-nav-btn-featured {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(104px, 124px);
   align-items: center;
   gap: 0.55rem;
   min-height: 4.15rem;
@@ -2659,7 +2724,8 @@ h3 {
 }
 
 .workspace-layout.sidebar-collapsed .tab-nav-main {
-  justify-content: center;
+  grid-template-columns: 1fr;
+  justify-items: center;
   gap: 0;
 }
 
@@ -2834,43 +2900,59 @@ h3 {
   align-items: center;
   gap: 0.65rem;
   min-width: 0;
+  overflow: visible;
   transition: gap 220ms ease;
+}
+
+.tab-nav-quick-metrics {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.32rem;
+  justify-items: stretch;
+  min-width: 0;
+  padding: 0.04rem 0;
+  line-height: 1.05;
+  align-self: center;
+}
+
+.tab-nav-quick-metrics.metrics-1 {
+  grid-template-columns: 1fr;
 }
 
 .tab-nav-quick-metric {
   display: grid;
   gap: 0.05rem;
-  justify-items: end;
   min-width: 0;
-  padding: 0.12rem 0 0.08rem;
-  line-height: 1.05;
+  text-align: right;
+  justify-items: end;
 }
 
 .tab-nav-quick-metric-label {
-  font-size: 0.66rem;
+  font-size: 0.52rem;
   color: rgba(243, 239, 229, 0.62);
   letter-spacing: 0.02em;
   white-space: nowrap;
 }
 
 .tab-nav-quick-metric-value {
-  font-size: 0.98rem;
+  font-size: 0.86rem;
   font-weight: 600;
   color: #f5f1e8;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  min-width: 0;
 }
 
 .tab-nav-quick-metric-value.size-md {
-  font-size: 0.98rem;
+  font-size: 0.86rem;
 }
 
 .tab-nav-quick-metric-value.size-sm {
-  font-size: 0.9rem;
+  font-size: 0.79rem;
 }
 
 .tab-nav-quick-metric-value.size-xs {
-  font-size: 0.82rem;
+  font-size: 0.73rem;
 }
 
 .tab-nav-quick-metric.tone-good .tab-nav-quick-metric-value {
@@ -2919,6 +3001,12 @@ h3 {
   color: #baf5df;
 }
 
+.tab-icon-manual-asset-entry {
+  border-color: rgba(116, 196, 255, 0.32);
+  background: rgba(37, 109, 165, 0.16);
+  color: #cae8ff;
+}
+
 .tab-icon-wealth-overview {
   border-color: rgba(103, 184, 255, 0.3);
   background: rgba(40, 112, 176, 0.16);
@@ -2962,13 +3050,15 @@ h3 {
 }
 
 .tab-nav-title {
+  position: relative;
+  z-index: 1;
   font-weight: 700;
   font-size: 0.95rem;
   color: #f7f3ea;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 140px;
+  overflow: visible;
+  text-overflow: clip;
+  max-width: none;
   opacity: 1;
   transform: translateX(0);
   transition: max-width 220ms ease, opacity 180ms ease, transform 220ms ease;
@@ -3360,12 +3450,21 @@ h3 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .mobile-home-brand .workspace-brand-icon {
+    width: 3rem;
+    height: 3rem;
+  }
+
+  .mobile-home-brand .workspace-brand-name {
+    font-size: 1.14rem;
+  }
+
   .mobile-page-title {
-    font-size: 1.1rem;
+    font-size: 1.22rem;
   }
 
   .mobile-page-subtitle {
-    font-size: 0.78rem;
+    font-size: 0.82rem;
   }
 
   .tab-nav {

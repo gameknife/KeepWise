@@ -19,6 +19,7 @@ export type ImportStepKey = "yzxy" | "cmb-eml" | "cmb-pdf";
 export type ProductTabKey =
   | "import-center"
   | "manual-entry"
+  | "manual-asset-entry"
   | "return-analysis"
   | "wealth-overview"
   | "budget-fire"

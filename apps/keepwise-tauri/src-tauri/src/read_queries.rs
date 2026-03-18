@@ -47,6 +47,11 @@ pub struct AssetValuationsQueryRequest {
     pub account_id: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct ImportJobsQueryRequest {
+    pub limit: Option<u32>,
+}
+
 fn cents_to_yuan_text(cents: i64) -> String {
     format!("{:.2}", cents as f64 / 100.0)
 }
@@ -67,6 +72,14 @@ fn parse_optional_date_text(raw: Option<String>, field_name: &str) -> Result<Str
     NaiveDate::parse_from_str(&text, "%Y-%m-%d")
         .map_err(|_| format!("{field_name} 日期格式必须为 YYYY-MM-DD"))?;
     Ok(text)
+}
+
+fn min_non_empty_date(values: &[Option<String>]) -> Option<String> {
+    values.iter().flatten().min().cloned()
+}
+
+fn max_non_empty_date(values: &[Option<String>]) -> Option<String> {
+    values.iter().flatten().max().cloned()
 }
 
 pub fn meta_accounts_query_at_db_path(
@@ -589,6 +602,198 @@ pub fn query_transactions_at_db_path(
     }))
 }
 
+pub fn query_import_jobs_at_db_path(
+    db_path: &Path,
+    req: ImportJobsQueryRequest,
+) -> Result<Value, String> {
+    let limit = parse_limit(req.limit, 12, 100) as i64;
+    let conn = Connection::open(db_path).map_err(|e| format!("打开数据库失败: {e}"))?;
+    let import_jobs_exists = conn
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='import_jobs')",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(|e| format!("检查导入记录表失败: {e}"))?
+        != 0;
+    if !import_jobs_exists {
+        return Ok(json!({
+            "summary": {
+                "total_count": 0,
+                "success_count": 0,
+                "failed_count": 0,
+                "running_count": 0,
+                "returned_count": 0,
+                "limit": limit,
+            },
+            "rows": [],
+        }));
+    }
+
+    let (total_count, success_count, failed_count, running_count) = conn
+        .query_row(
+            r#"
+            SELECT
+                COUNT(*) AS total_count,
+                COALESCE(SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END), 0) AS success_count,
+                COALESCE(SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END), 0) AS failed_count,
+                COALESCE(SUM(CASE WHEN status = 'running' THEN 1 ELSE 0 END), 0) AS running_count
+            FROM import_jobs
+            "#,
+            [],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, i64>(2)?,
+                    row.get::<_, i64>(3)?,
+                ))
+            },
+        )
+        .map_err(|e| format!("统计导入记录失败: {e}"))?;
+
+    let mut stmt = conn
+        .prepare(
+            r#"
+            SELECT
+                j.id,
+                j.source_type,
+                j.source_file,
+                j.status,
+                j.started_at,
+                j.finished_at,
+                j.total_count,
+                j.imported_count,
+                j.error_count,
+                j.error_message,
+                COALESCE(tx.txn_count, 0) AS txn_count,
+                tx.date_from AS txn_date_from,
+                tx.date_to AS txn_date_to,
+                COALESCE(inv.record_count, 0) AS investment_count,
+                inv.date_from AS investment_date_from,
+                inv.date_to AS investment_date_to
+            FROM import_jobs j
+            LEFT JOIN (
+                SELECT
+                    import_job_id,
+                    COUNT(*) AS txn_count,
+                    MIN(SUBSTR(COALESCE(posted_at, occurred_at), 1, 10)) AS date_from,
+                    MAX(SUBSTR(COALESCE(posted_at, occurred_at), 1, 10)) AS date_to
+                FROM transactions
+                WHERE import_job_id IS NOT NULL
+                GROUP BY import_job_id
+            ) tx ON tx.import_job_id = j.id
+            LEFT JOIN (
+                SELECT
+                    import_job_id,
+                    COUNT(*) AS record_count,
+                    MIN(snapshot_date) AS date_from,
+                    MAX(snapshot_date) AS date_to
+                FROM investment_records
+                WHERE import_job_id IS NOT NULL
+                GROUP BY import_job_id
+            ) inv ON inv.import_job_id = j.id
+            ORDER BY COALESCE(j.finished_at, j.started_at) DESC, j.started_at DESC
+            LIMIT ?1
+            "#,
+        )
+        .map_err(|e| format!("查询导入记录失败: {e}"))?;
+
+    let row_iter = stmt
+        .query_map([limit], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<String>>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, Option<String>>(5)?,
+                row.get::<_, i64>(6)?,
+                row.get::<_, i64>(7)?,
+                row.get::<_, i64>(8)?,
+                row.get::<_, Option<String>>(9)?,
+                row.get::<_, i64>(10)?,
+                row.get::<_, Option<String>>(11)?,
+                row.get::<_, Option<String>>(12)?,
+                row.get::<_, i64>(13)?,
+                row.get::<_, Option<String>>(14)?,
+                row.get::<_, Option<String>>(15)?,
+            ))
+        })
+        .map_err(|e| format!("查询导入记录失败: {e}"))?;
+
+    let mut rows = Vec::<Value>::new();
+    for row in row_iter {
+        let (
+            id,
+            source_type,
+            source_file,
+            status,
+            started_at,
+            finished_at,
+            total_count_row,
+            imported_count,
+            error_count,
+            error_message,
+            txn_count,
+            txn_date_from,
+            txn_date_to,
+            investment_count,
+            investment_date_from,
+            investment_date_to,
+        ) = row.map_err(|e| format!("读取导入记录失败: {e}"))?;
+
+        let data_date_from =
+            min_non_empty_date(&[txn_date_from.clone(), investment_date_from.clone()]);
+        let data_date_to = max_non_empty_date(&[txn_date_to.clone(), investment_date_to.clone()]);
+        let active_kinds = [txn_count > 0, investment_count > 0]
+            .into_iter()
+            .filter(|flag| *flag)
+            .count();
+
+        let (data_kind, data_label) = if active_kinds > 1 {
+            ("mixed", "混合数据")
+        } else if txn_count > 0 {
+            ("transaction", "交易时间范围")
+        } else if investment_count > 0 {
+            ("investment_snapshot", "投资快照时间范围")
+        } else {
+            ("unknown", "时间范围")
+        };
+
+        rows.push(json!({
+            "id": id,
+            "source_type": source_type,
+            "source_file": source_file,
+            "status": status,
+            "started_at": started_at,
+            "finished_at": finished_at,
+            "total_count": total_count_row,
+            "imported_count": imported_count,
+            "error_count": error_count,
+            "error_message": error_message,
+            "transaction_count": txn_count,
+            "investment_record_count": investment_count,
+            "data_kind": data_kind,
+            "data_label": data_label,
+            "data_date_from": data_date_from,
+            "data_date_to": data_date_to,
+        }));
+    }
+
+    Ok(json!({
+        "summary": {
+            "total_count": total_count,
+            "success_count": success_count,
+            "failed_count": failed_count,
+            "running_count": running_count,
+            "returned_count": rows.len(),
+            "limit": limit,
+        },
+        "rows": rows,
+    }))
+}
+
 #[tauri::command]
 pub fn meta_accounts_query(app: AppHandle, req: MetaAccountsQueryRequest) -> Result<Value, String> {
     let db_path = resolve_ledger_db_path(&app)?;
@@ -614,4 +819,10 @@ pub fn query_asset_valuations(
 ) -> Result<Value, String> {
     let db_path = resolve_ledger_db_path(&app)?;
     query_asset_valuations_at_db_path(&db_path, req)
+}
+
+#[tauri::command]
+pub fn query_import_jobs(app: AppHandle, req: ImportJobsQueryRequest) -> Result<Value, String> {
+    let db_path = resolve_ledger_db_path(&app)?;
+    query_import_jobs_at_db_path(&db_path, req)
 }

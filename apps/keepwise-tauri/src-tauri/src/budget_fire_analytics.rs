@@ -1188,7 +1188,8 @@ fn query_consumption_report_with_category_overrides_at_db_path(
         .filter_map(|r| r.get("source_path").and_then(Value::as_str))
         .filter(|s| !s.trim().is_empty())
         .collect::<std::collections::HashSet<_>>();
-    let all_expense_categories = collect_all_expense_categories(&conn, merchant_category_overrides)?;
+    let all_expense_categories =
+        collect_all_expense_categories(&conn, merchant_category_overrides)?;
 
     let raw_total_cents = consumption_total_cents + excluded_total_cents;
     Ok(json!({

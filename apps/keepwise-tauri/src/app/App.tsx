@@ -17,14 +17,6 @@ import {
   FireProgressPreview,
 } from "../features/budget/BudgetFirePreviews";
 import { ConsumptionOverviewPreview } from "../features/consumption/ConsumptionOverviewPreview";
-import {
-  CmbBankPdfImportSummaryReport,
-  CmbBankPdfPreviewSummaryReport,
-  CmbEmlImportSummaryReport,
-  CmbEmlPreviewSummaryReport,
-  YzxyImportSummaryReport,
-  YzxyPreviewSummaryReport,
-} from "../features/import/ImportSummaryPreviews";
 import { ImportCenterSections } from "../features/import/ImportCenterSections";
 import { SalaryIncomeOverviewPreview } from "../features/income/SalaryIncomeOverviewPreview";
 import { MobileHomeGrid } from "../features/layout/MobileHomeGrid";
@@ -32,6 +24,7 @@ import { WorkspaceSidebar } from "../features/layout/WorkspaceSidebar";
 import { WorkspaceContentPanels } from "../features/layout/WorkspaceContentPanels";
 import { AppSettingsModal } from "../features/modals/AppSettingsModal";
 import { InvestmentEditModal } from "../features/modals/InvestmentEditModal";
+import { QuickManualAssetValuationModal } from "../features/modals/QuickManualAssetValuationModal";
 import { QuickManualInvestmentModal } from "../features/modals/QuickManualInvestmentModal";
 import { InvestmentCurvePreview } from "../features/records/InvestmentCurvePreview";
 import {
@@ -73,6 +66,7 @@ import {
   loadBootstrapProbe,
   loadLedgerDbAdminStats,
   loadLedgerDbStatus,
+  queryImportJobs,
   queryAccountCatalog,
   queryBudgetMonthlyReview,
   queryBudgetOverview,
@@ -93,9 +87,16 @@ import {
   runLedgerDbAdminResetTransactions,
   runRuntimeDbHealthCheck,
   runLedgerDbMigrate,
+  syncReconcile,
+  syncPollRemoteUpdate,
+  syncSetupCreate,
+  syncSetupLink,
+  syncShareCodeGenerate,
+  syncStatus,
   updateTransactionAnalysisExclusion,
   updateInvestmentRecord,
   upsertAccountCatalogEntry,
+  upsertManualAssetValuation,
   upsertMonthlyBudgetItem,
   upsertMerchantMapRule,
   upsertManualInvestment,
@@ -136,10 +137,15 @@ import {
   type QueryTransactionsRequest,
   type QueryAccountCatalogRequest,
   type RuntimeDbHealthCheckPayload,
+  type SyncReconcilePayload,
   type SalaryIncomeOverviewPayload,
+  type ImportJobsPayload,
+  type SyncStatusPayload,
   type UpdateInvestmentRecordRequest,
   type UpsertManualInvestmentRequest,
+  type UpsertManualAssetValuationRequest,
   type UpsertAccountCatalogEntryRequest,
+  type QueryImportJobsRequest,
   type WealthCurvePayload,
   type WealthOverviewPayload,
   type YzxyImportPayload,
@@ -169,7 +175,6 @@ import {
   getCurrentMonthDateRangeLocal,
   getTodayDateInputValueLocal,
   makeEnterToQueryHandler,
-  makeInitialImportStepRows,
   makeInitialSmokeRows,
   parseMonthNumberFromMonthKey,
   parseNumericInputWithFallback,
@@ -179,16 +184,10 @@ import {
   withSmokeResult,
 } from "./helpers";
 import {
-  summarizeCmbBankPdfImportPayload,
-  summarizeCmbBankPdfPreviewPayload,
-  summarizeCmbEmlImportPayload,
-  summarizeCmbEmlPreviewPayload,
   summarizeInvestmentCurvePayload,
   summarizeInvestmentReturnPayload,
   summarizeWealthCurvePayload,
   summarizeWealthOverviewPayload,
-  summarizeYzxyImportPayload,
-  summarizeYzxyPreviewPayload,
 } from "./summaries";
 import {
   buildAccountCatalogQueryRequest,
@@ -213,9 +212,6 @@ import {
 import {
   type AppSettings,
   type BoolString,
-  type ImportStepKey,
-  type ImportStepRow,
-  type ImportStepStatus,
   type LoadStatus,
   type PipelineStatus,
   type MobileView,
@@ -227,21 +223,25 @@ import { isRecord, readArray, readNumber, readString } from "../utils/value";
 
 const PRODUCT_TABS: ProductTabDef[] = [
   { key: "manual-entry", icon: "✎", label: "更新收益", subtitle: "快捷录入投资快照", status: "partial" },
+  { key: "manual-asset-entry", icon: "▣", label: "更新资产", subtitle: "快捷录入现金/房产快照", status: "partial" },
   { key: "wealth-overview", icon: "◔", label: "财富总览", subtitle: "总览与财富曲线", status: "ready" },
   { key: "return-analysis", icon: "↗", label: "投资收益", subtitle: "投资收益率与收益曲线", status: "ready" },
   { key: "budget-fire", icon: "◎", label: "FIRE进度", subtitle: "FIRE 进度、预算与复盘", status: "partial" },
   { key: "income-analysis", icon: "¥", label: "收入分析", subtitle: "工资/公积金收入结构与趋势", status: "partial" },
   { key: "consumption-analysis", icon: "¤", label: "消费分析", subtitle: "交易筛选与排除规则", status: "partial" },
-  { key: "import-center", icon: "⇩", label: "导入中心", subtitle: "YZXY / EML / CMB PDF", status: "ready" },
+  { key: "import-center", icon: "⇩", label: "数据导入", subtitle: "YZXY / EML / CMB PDF", status: "ready" },
   { key: "admin", icon: "⚙", label: "高级管理", subtitle: "调试、健康检查、管理操作", status: "ready" },
 ];
 
 const APP_SETTINGS_STORAGE_KEY = "keepwise.desktop.app-settings.v1";
 const QUICK_MANUAL_INV_LAST_ACCOUNT_ID_STORAGE_KEY = "keepwise.desktop.quick-manual-investment.last-account-id.v1";
+const QUICK_MANUAL_ASSET_LAST_ACCOUNT_ID_STORAGE_KEY = "keepwise.desktop.quick-manual-asset.last-account-id.v1";
+const QUICK_MANUAL_ASSET_LAST_ASSET_CLASS_STORAGE_KEY = "keepwise.desktop.quick-manual-asset.last-asset-class.v1";
+const SYNC_REMOTE_POLL_INTERVAL_MS = 8000;
 
 function getVisibleTabsForMode(tabs: ProductTabDef[], isMobileMode: boolean): ProductTabDef[] {
   if (!isMobileMode) return tabs;
-  return tabs.filter((tab) => tab.key !== "admin" && tab.key !== "import-center");
+  return tabs.filter((tab) => tab.key !== "admin");
 }
 
 function JsonResultCard({
@@ -271,6 +271,16 @@ function JsonResultCard({
   );
 }
 
+function normalizeQuickManualAssetClass(value?: string): "cash" | "real_estate" | "liability" {
+  if (value === "real_estate" || value === "liability") return value;
+  return "cash";
+}
+
+function accountKindMatchesAssetClass(assetClass: "cash" | "real_estate" | "liability", accountKind?: string): boolean {
+  const allowedKinds = accountKindsForAssetClass(assetClass) ?? [];
+  return !!accountKind && allowedKinds.includes(accountKind);
+}
+
 function PreviewStat({
   label,
   value,
@@ -293,9 +303,8 @@ function App() {
   const [dbStatusError, setDbStatusError] = useState<string>("");
   const [dbBusy, setDbBusy] = useState(false);
   const [dbImportPath, setDbImportPath] = useState("");
-  // 导入中心输入源与执行结果：分别维护 YZXY / EML / CMB-PDF 三条导入链路。
+  // 数据导入输入源与执行结果：分别维护 YZXY / EML / CMB-PDF 三条导入链路。
   const [yzxyFilePath, setYzxyFilePath] = useState("");
-  const [yzxySourceType, setYzxySourceType] = useState("yzxy_xlsx");
   const [yzxyPreviewBusy, setYzxyPreviewBusy] = useState(false);
   const [yzxyPreviewError, setYzxyPreviewError] = useState("");
   const [yzxyPreviewResult, setYzxyPreviewResult] = useState<YzxyPreviewPayload | null>(null);
@@ -303,8 +312,6 @@ function App() {
   const [yzxyImportError, setYzxyImportError] = useState("");
   const [yzxyImportResult, setYzxyImportResult] = useState<YzxyImportPayload | null>(null);
   const [emlSourcePath, setEmlSourcePath] = useState("");
-  const [emlSourceType, setEmlSourceType] = useState("cmb_eml");
-  const [emlReviewThreshold, setEmlReviewThreshold] = useState(0.7);
   const [emlPreviewBusy, setEmlPreviewBusy] = useState(false);
   const [emlPreviewError, setEmlPreviewError] = useState("");
   const [emlPreviewResult, setEmlPreviewResult] = useState<CmbEmlPreviewPayload | null>(null);
@@ -312,8 +319,6 @@ function App() {
   const [emlImportError, setEmlImportError] = useState("");
   const [emlImportResult, setEmlImportResult] = useState<CmbEmlImportPayload | null>(null);
   const [cmbPdfPath, setCmbPdfPath] = useState("");
-  const [cmbPdfSourceType, setCmbPdfSourceType] = useState("cmb_bank_pdf");
-  const [cmbPdfReviewThreshold, setCmbPdfReviewThreshold] = useState(0.7);
   const [cmbPdfPreviewBusy, setCmbPdfPreviewBusy] = useState(false);
   const [cmbPdfPreviewError, setCmbPdfPreviewError] = useState("");
   const [cmbPdfPreviewResult, setCmbPdfPreviewResult] = useState<CmbBankPdfPreviewPayload | null>(null);
@@ -337,10 +342,10 @@ function App() {
   const [runtimeHealthError, setRuntimeHealthError] = useState("");
   const [runtimeHealthResult, setRuntimeHealthResult] = useState<RuntimeDbHealthCheckPayload | null>(null);
   const [runtimeHealthLastRunAt, setRuntimeHealthLastRunAt] = useState<number | null>(null);
-  const [importCenterStatus, setImportCenterStatus] = useState<PipelineStatus>("idle");
-  const [importCenterLastRunAt, setImportCenterLastRunAt] = useState<number | null>(null);
-  const [importCenterMessage, setImportCenterMessage] = useState("");
-  const [importCenterRows, setImportCenterRows] = useState<ImportStepRow[]>(() => makeInitialImportStepRows());
+  const [importJobsBusy, setImportJobsBusy] = useState(false);
+  const [importJobsError, setImportJobsError] = useState("");
+  const [importJobsResult, setImportJobsResult] = useState<ImportJobsPayload | null>(null);
+  const [importJobsLastRunAt, setImportJobsLastRunAt] = useState<number | null>(null);
   const [pipelineStatus, setPipelineStatus] = useState<PipelineStatus>("idle");
   const [pipelineBusy, setPipelineBusy] = useState(false);
   const [pipelineLastRunAt, setPipelineLastRunAt] = useState<number | null>(null);
@@ -542,9 +547,42 @@ function App() {
     total_assets: "",
     transfer_amount: "0",
   });
+  const [quickManualAssetOpen, setQuickManualAssetOpen] = useState(false);
+  const [quickManualAssetBusy, setQuickManualAssetBusy] = useState(false);
+  const [quickManualAssetError, setQuickManualAssetError] = useState("");
+  const [quickManualAssetAccountValueBusy, setQuickManualAssetAccountValueBusy] = useState(false);
+  const [quickManualAssetAccountValueError, setQuickManualAssetAccountValueError] = useState("");
+  const [quickManualAssetAccountValueCents, setQuickManualAssetAccountValueCents] = useState<number | null>(null);
+  const [quickManualAssetAccountValueDate, setQuickManualAssetAccountValueDate] = useState("");
+  const [quickManualAssetLastAccountId, setQuickManualAssetLastAccountId] = useState<string>(() => {
+    if (typeof window === "undefined") return "";
+    try {
+      return window.localStorage.getItem(QUICK_MANUAL_ASSET_LAST_ACCOUNT_ID_STORAGE_KEY) ?? "";
+    } catch {
+      return "";
+    }
+  });
+  const [quickManualAssetLastAssetClass, setQuickManualAssetLastAssetClass] = useState<"cash" | "real_estate" | "liability">(() => {
+    if (typeof window === "undefined") return "cash";
+    try {
+      return normalizeQuickManualAssetClass(window.localStorage.getItem(QUICK_MANUAL_ASSET_LAST_ASSET_CLASS_STORAGE_KEY) ?? "");
+    } catch {
+      return "cash";
+    }
+  });
+  const [quickManualAssetForm, setQuickManualAssetForm] = useState<UpsertManualAssetValuationRequest>({
+    asset_class: "cash",
+    snapshot_date: "",
+    account_id: "",
+    account_name: "",
+    value: "",
+  });
   const [returnTabYtdAnnualizedRate, setReturnTabYtdAnnualizedRate] = useState<number | null>(null);
+  const [returnTabYtdNetGrowthCents, setReturnTabYtdNetGrowthCents] = useState<number | null>(null);
   const [manualEntryTabMonthCountBusy, setManualEntryTabMonthCountBusy] = useState(false);
   const [manualEntryTabMonthCount, setManualEntryTabMonthCount] = useState<number | null>(null);
+  const [manualAssetEntryLastDateBusy, setManualAssetEntryLastDateBusy] = useState(false);
+  const [manualAssetEntryLastDate, setManualAssetEntryLastDate] = useState<string>("");
   const [invEditModalOpen, setInvEditModalOpen] = useState(false);
   const [updateInvBusy, setUpdateInvBusy] = useState(false);
   const [updateInvError, setUpdateInvError] = useState("");
@@ -558,6 +596,29 @@ function App() {
   });
   const [deleteInvBusy, setDeleteInvBusy] = useState(false);
   const [deleteInvId, setDeleteInvId] = useState("");
+  const [syncRuntimeStatus, setSyncRuntimeStatus] = useState<SyncStatusPayload | null>(null);
+  const [syncSetupBusy, setSyncSetupBusy] = useState(false);
+  const [syncSetupError, setSyncSetupError] = useState("");
+  const [syncActionMessage, setSyncActionMessage] = useState("");
+  const [syncShareCode, setSyncShareCode] = useState("");
+  const [syncCreateForm, setSyncCreateForm] = useState({
+    secret_id: "",
+    secret_key: "",
+    region: "ap-shanghai",
+    app_id: "",
+    sync_password: "",
+  });
+  const [syncLinkForm, setSyncLinkForm] = useState({
+    share_code: "",
+    sync_password: "",
+  });
+  const syncReconcileBusyRef = useRef(false);
+  const [syncPendingLocalWrite, setSyncPendingLocalWrite] = useState(false);
+  const [syncQuickBusy, setSyncQuickBusy] = useState(false);
+
+  function markLocalMutationForSync() {
+    setSyncPendingLocalWrite(true);
+  }
 
   // 基础探针与 DB 管理动作：用于启动可用性判定和高级管理面板操作。
   async function refreshProbe() {
@@ -595,6 +656,174 @@ function App() {
     }
   }
 
+  async function refreshSyncRuntimeStatus() {
+    try {
+      const next = await syncStatus();
+      startTransition(() => {
+        setSyncRuntimeStatus(next);
+      });
+    } catch {
+      // Sync is optional before first setup; keep silent.
+    }
+  }
+
+  function refreshDataViewsAfterManualSync() {
+    void refreshDbStatus();
+    void handleRefreshAdminDbStats();
+    void handleImportJobsQuery();
+    void handleRunRuntimeHealthCheck();
+    void handleMetaAccountsQuery();
+    void handleAccountCatalogQuery();
+    void handleRefreshAccountSelectCatalog();
+    void handleTransactionsQuery();
+    void handleInvestmentsListQuery();
+    void handleAssetValuationsQuery();
+    void handleMonthlyBudgetItemsQuery();
+    void handleBudgetOverviewQuery();
+    void handleBudgetMonthlyReviewQuery();
+    void handleSalaryIncomeOverviewQuery();
+    void handleConsumptionOverviewQuery();
+    void handleInvestmentReturnQuery();
+    void handleInvestmentReturnsQuery();
+    void handleInvestmentCurveQuery();
+    void handleWealthOverviewQuery();
+    void handleWealthCurveQuery();
+    void handleFireProgressQuery();
+    void handleRefreshManualEntryTabMonthCount();
+    void handleRefreshManualAssetEntryLastDate();
+  }
+
+  async function triggerAutoSyncReconcile(
+    _reason: "manual" | "remote_poll",
+  ): Promise<SyncReconcilePayload | null> {
+    if (syncReconcileBusyRef.current) return null;
+    try {
+      const current = await syncStatus();
+      startTransition(() => {
+        setSyncRuntimeStatus(current);
+      });
+      if (!current.configured || current.syncing) return null;
+      syncReconcileBusyRef.current = true;
+      const result = await syncReconcile();
+      startTransition(() => {
+        setSyncRuntimeStatus(result.status);
+      });
+      if (result.ok && !result.status.conflict) {
+        setSyncPendingLocalWrite(false);
+      }
+      return result;
+    } catch {
+      // Keep auto-sync best-effort, don't block business flows.
+      return null;
+    } finally {
+      syncReconcileBusyRef.current = false;
+    }
+  }
+
+  async function handleManualSyncNow() {
+    if (syncQuickBusy) return;
+    setSyncQuickBusy(true);
+    try {
+      const result = await triggerAutoSyncReconcile("manual");
+      if (result?.ok) {
+        setSyncActionMessage("同步完成，正在刷新本地数据视图...");
+        refreshDataViewsAfterManualSync();
+      }
+      await refreshSyncRuntimeStatus();
+    } finally {
+      setSyncQuickBusy(false);
+    }
+  }
+
+  async function handleQuickSyncIndicatorClick() {
+    if (!syncRuntimeStatus?.configured) {
+      setSettingsOpen(true);
+      setSyncActionMessage("请先在设置中完成云同步配置");
+      return;
+    }
+    await handleManualSyncNow();
+  }
+
+  async function handleSyncSetupCreate() {
+    const req = {
+      secret_id: syncCreateForm.secret_id.trim(),
+      secret_key: syncCreateForm.secret_key.trim(),
+      region: syncCreateForm.region.trim(),
+      app_id: syncCreateForm.app_id.trim(),
+      sync_password: syncCreateForm.sync_password,
+    };
+    if (!req.secret_id || !req.secret_key || !req.region || !req.app_id || !req.sync_password) {
+      setSyncSetupError("请完整填写 SecretId / SecretKey / Region / AppID / 同步密码");
+      return;
+    }
+
+    setSyncSetupBusy(true);
+    setSyncSetupError("");
+    setSyncActionMessage("");
+    try {
+      const payload = await syncSetupCreate(req);
+      startTransition(() => {
+        setSyncShareCode(payload.share_code || "");
+        setSyncRuntimeStatus(payload.status);
+        setSyncActionMessage("同步库创建并绑定成功");
+      });
+      setSyncPendingLocalWrite(false);
+    } catch (err) {
+      setSyncSetupError(toErrorMessage(err));
+    } finally {
+      setSyncSetupBusy(false);
+    }
+  }
+
+  async function handleSyncSetupLink() {
+    const req = {
+      share_code: syncLinkForm.share_code.trim(),
+      sync_password: syncLinkForm.sync_password,
+    };
+    if (!req.share_code || !req.sync_password) {
+      setSyncSetupError("请填写同步链接码与同步密码");
+      return;
+    }
+
+    setSyncSetupBusy(true);
+    setSyncSetupError("");
+    setSyncActionMessage("");
+    try {
+      const payload = await syncSetupLink(req);
+      startTransition(() => {
+        setSyncRuntimeStatus(payload.status);
+        setSyncActionMessage("同步库链接成功");
+      });
+      setSyncPendingLocalWrite(false);
+    } catch (err) {
+      setSyncSetupError(toErrorMessage(err));
+    } finally {
+      setSyncSetupBusy(false);
+    }
+  }
+
+  async function handleSyncShareCodeRefresh() {
+    const syncPassword = syncCreateForm.sync_password.trim();
+    if (!syncPassword) {
+      setSyncSetupError("请输入同步密码后再生成同步链接码");
+      return;
+    }
+    setSyncSetupBusy(true);
+    setSyncSetupError("");
+    setSyncActionMessage("");
+    try {
+      const payload = await syncShareCodeGenerate({ sync_password: syncPassword });
+      startTransition(() => {
+        setSyncShareCode(payload.share_code || "");
+        setSyncActionMessage("同步链接码已刷新");
+      });
+    } catch (err) {
+      setSyncSetupError(toErrorMessage(err));
+    } finally {
+      setSyncSetupBusy(false);
+    }
+  }
+
   async function handleRefreshAdminDbStats() {
     setAdminDbStatsBusy(true);
     setAdminDbStatsError("");
@@ -611,6 +840,24 @@ function App() {
     }
   }
 
+  async function handleImportJobsQuery() {
+    setImportJobsBusy(true);
+    setImportJobsError("");
+    try {
+      const payload = await queryImportJobs({
+        limit: 12,
+      } satisfies QueryImportJobsRequest);
+      startTransition(() => {
+        setImportJobsResult(payload);
+        setImportJobsLastRunAt(Date.now());
+      });
+    } catch (err) {
+      setImportJobsError(toErrorMessage(err));
+    } finally {
+      setImportJobsBusy(false);
+    }
+  }
+
   async function handleAdminResetTransactions() {
     setAdminResetTxBusy(true);
     setAdminResetTxError("");
@@ -620,6 +867,7 @@ function App() {
         setAdminResetTxResult(payload);
       });
       void handleRefreshAdminDbStats();
+      void handleImportJobsQuery();
       void handleRunRuntimeHealthCheck();
       void handleTransactionsQuery();
       void handleConsumptionOverviewQuery();
@@ -639,6 +887,7 @@ function App() {
         setAdminResetAllResult(payload);
       });
       void handleRefreshAdminDbStats();
+      void handleImportJobsQuery();
       void handleRunRuntimeHealthCheck();
       void handleTransactionsQuery();
       void handleConsumptionOverviewQuery();
@@ -749,7 +998,7 @@ function App() {
     }
   }
 
-  // 导入中心动作：先预览再导入；导入完成后联动刷新相关业务面板。
+  // 数据导入动作：导入按钮会串行执行预检与导入；完成后联动刷新相关业务面板。
   async function handlePickYzxyFilePath() {
     try {
       const selected = await open({
@@ -769,12 +1018,7 @@ function App() {
     }
   }
 
-  async function handleYzxyPreview() {
-    const sourcePath = yzxyFilePath.trim();
-    if (!sourcePath) {
-      setYzxyPreviewError("请先选择有知有行导出文件（.csv / .xlsx）");
-      return;
-    }
+  async function runYzxyPreviewRequest(sourcePath: string): Promise<YzxyPreviewPayload> {
     setYzxyPreviewBusy(true);
     setYzxyPreviewError("");
     try {
@@ -782,33 +1026,30 @@ function App() {
       startTransition(() => {
         setYzxyPreviewResult(payload);
       });
+      return payload;
     } catch (err) {
       setYzxyPreviewError(toErrorMessage(err));
+      throw err;
     } finally {
       setYzxyPreviewBusy(false);
     }
   }
 
-  async function handleYzxyImport() {
-    const sourcePath = yzxyFilePath.trim();
-    const sourceType = yzxySourceType.trim() || "yzxy_xlsx";
-    if (!sourcePath) {
-      setYzxyImportError("请先选择有知有行导出文件（.csv / .xlsx）");
-      return;
-    }
-
+  async function runYzxyImportRequest(sourcePath: string): Promise<YzxyImportPayload> {
     setYzxyImportBusy(true);
     setYzxyImportError("");
     try {
       const payload = await yzxyImportFile({
         source_path: sourcePath,
-        source_type: sourceType,
+        source_type: "yzxy_xlsx",
       });
       startTransition(() => {
         setYzxyImportResult(payload);
       });
+      markLocalMutationForSync();
       void refreshDbStatus();
       void handleRefreshAdminDbStats();
+      void handleImportJobsQuery();
       void handleRunRuntimeHealthCheck();
       void handleMetaAccountsQuery();
       void handleAccountCatalogQuery();
@@ -819,10 +1060,32 @@ function App() {
       void handleInvestmentCurveQuery();
       void handleWealthOverviewQuery();
       void handleWealthCurveQuery();
+      return payload;
     } catch (err) {
       setYzxyImportError(toErrorMessage(err));
+      throw err;
     } finally {
       setYzxyImportBusy(false);
+    }
+  }
+
+  async function handleYzxyRunImportFlow() {
+    const sourcePath = yzxyFilePath.trim();
+    if (!sourcePath) {
+      setYzxyPreviewError("请先选择有知有行导出文件（.csv / .xlsx）");
+      return;
+    }
+    startTransition(() => {
+      setYzxyPreviewError("");
+      setYzxyImportError("");
+      setYzxyPreviewResult(null);
+      setYzxyImportResult(null);
+    });
+    try {
+      await runYzxyPreviewRequest(sourcePath);
+      await runYzxyImportRequest(sourcePath);
+    } catch {
+      // Step-level errors are already surfaced in the import panel.
     }
   }
 
@@ -860,49 +1123,42 @@ function App() {
     }
   }
 
-  async function handleCmbEmlPreview() {
-    const sourcePath = emlSourcePath.trim();
-    if (!sourcePath) {
-      setEmlPreviewError("请先选择 EML 文件或目录");
-      return;
-    }
+  async function runCmbEmlPreviewRequest(sourcePath: string): Promise<CmbEmlPreviewPayload> {
     setEmlPreviewBusy(true);
     setEmlPreviewError("");
     try {
       const payload = await cmbEmlPreview({
         source_path: sourcePath,
-        review_threshold: Number.isFinite(emlReviewThreshold) ? emlReviewThreshold : 0.7,
+        review_threshold: 0.7,
       });
       startTransition(() => {
         setEmlPreviewResult(payload);
       });
+      return payload;
     } catch (err) {
       setEmlPreviewError(toErrorMessage(err));
+      throw err;
     } finally {
       setEmlPreviewBusy(false);
     }
   }
 
-  async function handleCmbEmlImport() {
-    const sourcePath = emlSourcePath.trim();
-    const sourceType = emlSourceType.trim() || "cmb_eml";
-    if (!sourcePath) {
-      setEmlImportError("请先选择 EML 文件或目录");
-      return;
-    }
+  async function runCmbEmlImportRequest(sourcePath: string): Promise<CmbEmlImportPayload> {
     setEmlImportBusy(true);
     setEmlImportError("");
     try {
       const payload = await cmbEmlImport({
         source_path: sourcePath,
-        source_type: sourceType,
-        review_threshold: Number.isFinite(emlReviewThreshold) ? emlReviewThreshold : 0.7,
+        source_type: "cmb_eml",
+        review_threshold: 0.7,
       });
       startTransition(() => {
         setEmlImportResult(payload);
       });
+      markLocalMutationForSync();
       void refreshDbStatus();
       void handleRefreshAdminDbStats();
+      void handleImportJobsQuery();
       void handleRunRuntimeHealthCheck();
       void handleConsumptionOverviewQuery();
       void handleTransactionsQuery();
@@ -911,10 +1167,32 @@ function App() {
       void handleMetaAccountsQuery();
       void handleAccountCatalogQuery();
       void handleRefreshAccountSelectCatalog();
+      return payload;
     } catch (err) {
       setEmlImportError(toErrorMessage(err));
+      throw err;
     } finally {
       setEmlImportBusy(false);
+    }
+  }
+
+  async function handleCmbEmlRunImportFlow() {
+    const sourcePath = emlSourcePath.trim();
+    if (!sourcePath) {
+      setEmlPreviewError("请先选择 EML 文件或目录");
+      return;
+    }
+    startTransition(() => {
+      setEmlPreviewError("");
+      setEmlImportError("");
+      setEmlPreviewResult(null);
+      setEmlImportResult(null);
+    });
+    try {
+      await runCmbEmlPreviewRequest(sourcePath);
+      await runCmbEmlImportRequest(sourcePath);
+    } catch {
+      // Step-level errors are already surfaced in the import panel.
     }
   }
 
@@ -937,49 +1215,42 @@ function App() {
     }
   }
 
-  async function handleCmbBankPdfPreview() {
-    const sourcePath = cmbPdfPath.trim();
-    if (!sourcePath) {
-      setCmbPdfPreviewError("请先选择银行流水 PDF 文件");
-      return;
-    }
+  async function runCmbBankPdfPreviewRequest(sourcePath: string): Promise<CmbBankPdfPreviewPayload> {
     setCmbPdfPreviewBusy(true);
     setCmbPdfPreviewError("");
     try {
       const payload = await cmbBankPdfPreview({
         source_path: sourcePath,
-        review_threshold: Number.isFinite(cmbPdfReviewThreshold) ? cmbPdfReviewThreshold : 0.7,
+        review_threshold: 0.7,
       });
       startTransition(() => {
         setCmbPdfPreviewResult(payload);
       });
+      return payload;
     } catch (err) {
       setCmbPdfPreviewError(toErrorMessage(err));
+      throw err;
     } finally {
       setCmbPdfPreviewBusy(false);
     }
   }
 
-  async function handleCmbBankPdfImport() {
-    const sourcePath = cmbPdfPath.trim();
-    const sourceType = cmbPdfSourceType.trim() || "cmb_bank_pdf";
-    if (!sourcePath) {
-      setCmbPdfImportError("请先选择银行流水 PDF 文件");
-      return;
-    }
+  async function runCmbBankPdfImportRequest(sourcePath: string): Promise<CmbBankPdfImportPayload> {
     setCmbPdfImportBusy(true);
     setCmbPdfImportError("");
     try {
       const payload = await cmbBankPdfImport({
         source_path: sourcePath,
-        source_type: sourceType,
-        review_threshold: Number.isFinite(cmbPdfReviewThreshold) ? cmbPdfReviewThreshold : 0.7,
+        source_type: "cmb_bank_pdf",
+        review_threshold: 0.7,
       });
       startTransition(() => {
         setCmbPdfImportResult(payload);
       });
+      markLocalMutationForSync();
       void refreshDbStatus();
       void handleRefreshAdminDbStats();
+      void handleImportJobsQuery();
       void handleRunRuntimeHealthCheck();
       void handleConsumptionOverviewQuery();
       void handleTransactionsQuery();
@@ -989,10 +1260,32 @@ function App() {
       void handleMetaAccountsQuery();
       void handleAccountCatalogQuery();
       void handleRefreshAccountSelectCatalog();
+      return payload;
     } catch (err) {
       setCmbPdfImportError(toErrorMessage(err));
+      throw err;
     } finally {
       setCmbPdfImportBusy(false);
+    }
+  }
+
+  async function handleCmbBankPdfRunImportFlow() {
+    const sourcePath = cmbPdfPath.trim();
+    if (!sourcePath) {
+      setCmbPdfPreviewError("请先选择银行流水 PDF 文件");
+      return;
+    }
+    startTransition(() => {
+      setCmbPdfPreviewError("");
+      setCmbPdfImportError("");
+      setCmbPdfPreviewResult(null);
+      setCmbPdfImportResult(null);
+    });
+    try {
+      await runCmbBankPdfPreviewRequest(sourcePath);
+      await runCmbBankPdfImportRequest(sourcePath);
+    } catch {
+      // Step-level errors are already surfaced in the import panel.
     }
   }
 
@@ -1104,6 +1397,7 @@ function App() {
       startTransition(() => {
         setBudgetItemUpsertResult(payload);
       });
+      markLocalMutationForSync();
       setBudgetItemCreateOpen(false);
       setBudgetItemForm({
         id: "",
@@ -1132,6 +1426,7 @@ function App() {
       startTransition(() => {
         setBudgetItemDeleteResult(payload);
       });
+      markLocalMutationForSync();
       void handleMonthlyBudgetItemsQuery();
       void handleBudgetOverviewQuery();
       void handleBudgetMonthlyReviewQuery();
@@ -1256,6 +1551,7 @@ function App() {
         setAcctCatalogCreateOpen(false);
         resetAccountCatalogCreateForm();
       });
+      markLocalMutationForSync();
       void handleAccountCatalogQuery();
       void handleRefreshAccountSelectCatalog();
       void handleMetaAccountsQuery();
@@ -1279,6 +1575,7 @@ function App() {
       startTransition(() => {
         setAcctCatalogDeleteResult(payload);
       });
+      markLocalMutationForSync();
       void handleAccountCatalogQuery();
       void handleRefreshAccountSelectCatalog();
       void handleMetaAccountsQuery();
@@ -1344,6 +1641,57 @@ function App() {
     setQuickManualInvAccountAssetsDate("");
   }
 
+  function resetQuickManualAssetForm(
+    nextAssetClass: "cash" | "real_estate" | "liability" = "cash",
+    nextAccountId = "",
+  ) {
+    setQuickManualAssetForm({
+      asset_class: nextAssetClass,
+      snapshot_date: getTodayDateInputValueLocal(),
+      account_id: nextAccountId,
+      account_name: "",
+      value: "",
+    });
+  }
+
+  function openQuickManualAssetValuationModal() {
+    const nextAssetClass = normalizeQuickManualAssetClass(quickManualAssetLastAssetClass);
+    setQuickManualAssetError("");
+    setQuickManualAssetAccountValueError("");
+    setQuickManualAssetAccountValueCents(null);
+    setQuickManualAssetAccountValueDate("");
+    resetQuickManualAssetForm(nextAssetClass, quickManualAssetLastAccountId);
+    void handleRefreshAccountSelectCatalog();
+    setQuickManualAssetOpen(true);
+  }
+
+  function closeQuickManualAssetValuationModal() {
+    if (quickManualAssetBusy) return;
+    if (typeof document !== "undefined") {
+      const activeEl = document.activeElement;
+      if (activeEl instanceof HTMLElement) activeEl.blur();
+    }
+    setQuickManualAssetOpen(false);
+    setQuickManualAssetError("");
+    setQuickManualAssetAccountValueError("");
+    setQuickManualAssetAccountValueCents(null);
+    setQuickManualAssetAccountValueDate("");
+  }
+
+  function handleQuickManualAssetClassChange(nextValue: string) {
+    const nextAssetClass = normalizeQuickManualAssetClass(nextValue);
+    setQuickManualAssetForm((prev) => {
+      const currentAccountId = `${prev.account_id ?? ""}`.trim();
+      const currentAccountKind = accountSelectOptions.find((opt) => opt.account_id === currentAccountId)?.account_kind;
+      const keepAccount = accountKindMatchesAssetClass(nextAssetClass, currentAccountKind);
+      return {
+        ...prev,
+        asset_class: nextAssetClass,
+        account_id: keepAccount ? currentAccountId : "",
+      };
+    });
+  }
+
   function closeInvestmentEditModal() {
     if (updateInvBusy) return;
     setInvEditModalOpen(false);
@@ -1391,6 +1739,7 @@ function App() {
       await upsertManualInvestment(compactStringFields(quickManualInvForm));
       const accountId = `${quickManualInvForm.account_id ?? ""}`.trim();
       if (accountId) setQuickManualInvLastAccountId(accountId);
+      markLocalMutationForSync();
       void handleInvestmentsListQuery();
       void handleMetaAccountsQuery();
       void handleAccountCatalogQuery();
@@ -1414,11 +1763,77 @@ function App() {
     }
   }
 
+  async function handleQuickManualAssetAccountValueQuery() {
+    const accountId = `${quickManualAssetForm.account_id ?? ""}`.trim();
+    const assetClass = normalizeQuickManualAssetClass(quickManualAssetForm.asset_class);
+    if (!quickManualAssetOpen || !accountId) {
+      setQuickManualAssetAccountValueBusy(false);
+      setQuickManualAssetAccountValueError("");
+      setQuickManualAssetAccountValueCents(null);
+      setQuickManualAssetAccountValueDate("");
+      return;
+    }
+    setQuickManualAssetAccountValueBusy(true);
+    setQuickManualAssetAccountValueError("");
+    try {
+      const payload = await queryAssetValuations({
+        limit: 1,
+        account_id: accountId,
+        asset_class: assetClass,
+      });
+      const rows = readArray(payload, "rows").filter(isRecord);
+      const latestValueCents = readNumber(payload, "rows.0.value_cents");
+      const latestSnapshotDate = readString(payload, "rows.0.snapshot_date") ?? "";
+      const hasSnapshot = rows.length > 0;
+      startTransition(() => {
+        setQuickManualAssetAccountValueCents(hasSnapshot ? (latestValueCents ?? 0) : null);
+        setQuickManualAssetAccountValueDate(hasSnapshot ? latestSnapshotDate : "");
+      });
+    } catch (err) {
+      setQuickManualAssetAccountValueError(toErrorMessage(err));
+      setQuickManualAssetAccountValueCents(null);
+      setQuickManualAssetAccountValueDate("");
+    } finally {
+      setQuickManualAssetAccountValueBusy(false);
+    }
+  }
+
+  async function handleQuickManualAssetValuationSubmit() {
+    setQuickManualAssetBusy(true);
+    setQuickManualAssetError("");
+    try {
+      await upsertManualAssetValuation(compactStringFields(quickManualAssetForm));
+      const accountId = `${quickManualAssetForm.account_id ?? ""}`.trim();
+      const assetClass = normalizeQuickManualAssetClass(quickManualAssetForm.asset_class);
+      if (accountId) setQuickManualAssetLastAccountId(accountId);
+      setQuickManualAssetLastAssetClass(assetClass);
+      markLocalMutationForSync();
+      void handleAssetValuationsQuery();
+      void handleMetaAccountsQuery();
+      void handleAccountCatalogQuery();
+      void handleRefreshAccountSelectCatalog();
+      void handleWealthOverviewQuery();
+      void handleWealthCurveQuery();
+      void handleFireProgressQuery();
+      void handleRefreshManualAssetEntryLastDate();
+      if (typeof document !== "undefined") {
+        const activeEl = document.activeElement;
+        if (activeEl instanceof HTMLElement) activeEl.blur();
+      }
+      setQuickManualAssetOpen(false);
+    } catch (err) {
+      setQuickManualAssetError(toErrorMessage(err));
+    } finally {
+      setQuickManualAssetBusy(false);
+    }
+  }
+
   async function handleUpdateInvestmentRecordMutation() {
     setUpdateInvBusy(true);
     setUpdateInvError("");
     try {
       await updateInvestmentRecord(compactStringFields(updateInvForm));
+      markLocalMutationForSync();
       setInvEditModalOpen(false);
       void handleInvestmentsListQuery();
       void handleMetaAccountsQuery();
@@ -1464,6 +1879,7 @@ function App() {
     setDeleteInvBusy(true);
     try {
       await deleteInvestmentRecord({ id: targetId } satisfies DeleteByIdRequest);
+      markLocalMutationForSync();
       void handleInvestmentsListQuery();
       void handleMetaAccountsQuery();
       void handleAccountCatalogQuery();
@@ -1505,154 +1921,52 @@ function App() {
     }
   }
 
-  // 导入中心总状态推导：把三条导入链路折叠成统一的进度摘要卡片。
+  async function handleRefreshManualAssetEntryLastDate() {
+    setManualAssetEntryLastDateBusy(true);
+    try {
+      const payload = await queryAssetValuations({
+        limit: 1,
+      } satisfies QueryAssetValuationsRequest);
+      const rows = readArray(payload, "rows").filter(isRecord);
+      const latestDate = rows.length > 0
+        ? (typeof rows[0]?.snapshot_date === "string" ? rows[0].snapshot_date : "")
+        : "";
+      startTransition(() => {
+        setManualAssetEntryLastDate(latestDate);
+      });
+    } catch {
+      // Keep this quick metric best-effort only.
+    } finally {
+      setManualAssetEntryLastDateBusy(false);
+    }
+  }
+
   useEffect(() => {
-    const deriveRouteRow = (args: {
-      key: ImportStepKey;
-      label: string;
-      pathText: string;
-      previewBusy: boolean;
-      previewError: string;
-      previewResult: unknown;
-      importBusy: boolean;
-      importError: string;
-      importResult: unknown;
-      summarizePreview: (payload: unknown) => string;
-      summarizeImport: (payload: unknown) => string;
-    }): ImportStepRow => {
-      const pathReady = args.pathText.trim().length > 0;
-      const previewState: ImportStepStatus = args.previewBusy
-        ? "running"
-        : args.previewError
-          ? "fail"
-          : args.previewResult
-            ? "pass"
-            : pathReady
-              ? "idle"
-              : "skip";
-      const importState: ImportStepStatus = args.importBusy
-        ? "running"
-        : args.importError
-          ? "fail"
-          : args.importResult
-            ? "pass"
-            : "idle";
-
-      let status: ImportStepStatus = "idle";
-      if (!pathReady) status = "skip";
-      if (previewState === "running" || importState === "running") status = "running";
-      else if (previewState === "fail" || importState === "fail") status = "fail";
-      else if (importState === "pass") status = "pass";
-      else if (previewState === "pass") status = "pass";
-      else if (pathReady) status = "idle";
-
-      const previewSummary = args.previewResult ? args.summarizePreview(args.previewResult) : "";
-      const importSummary = args.importResult ? args.summarizeImport(args.importResult) : "";
-
-      let detail = "";
-      if (!pathReady) {
-        detail = "请选择文件/目录，然后先执行预览";
-      } else if (args.previewBusy || args.importBusy) {
-        detail = "正在执行...";
-      } else if (args.previewError) {
-        detail = `预览失败：${args.previewError}`;
-      } else if (args.importError) {
-        detail = `导入失败：${args.importError}`;
-      } else if (args.importResult) {
-        detail = importSummary || "已导入，可查看查询/健康面板确认结果";
-      } else if (args.previewResult) {
-        detail = `${previewSummary || "预览已完成"} | 可执行导入`;
-      } else {
-        detail = "路径已设置，先执行预览确认";
-      }
-
-      return { key: args.key, label: args.label, status, detail };
-    };
-
-    const nextRows = [
-      deriveRouteRow({
-        key: "yzxy",
-        label: "有知有行 XLSX/CSV",
-        pathText: yzxyFilePath,
-        previewBusy: yzxyPreviewBusy,
-        previewError: yzxyPreviewError,
-        previewResult: yzxyPreviewResult,
-        importBusy: yzxyImportBusy,
-        importError: yzxyImportError,
-        importResult: yzxyImportResult,
-        summarizePreview: summarizeYzxyPreviewPayload,
-        summarizeImport: summarizeYzxyImportPayload,
-      }),
-      deriveRouteRow({
-        key: "cmb-eml",
-        label: "招行信用卡 EML",
-        pathText: emlSourcePath,
-        previewBusy: emlPreviewBusy,
-        previewError: emlPreviewError,
-        previewResult: emlPreviewResult,
-        importBusy: emlImportBusy,
-        importError: emlImportError,
-        importResult: emlImportResult,
-        summarizePreview: summarizeCmbEmlPreviewPayload,
-        summarizeImport: summarizeCmbEmlImportPayload,
-      }),
-      deriveRouteRow({
-        key: "cmb-pdf",
-        label: "招行银行流水 PDF",
-        pathText: cmbPdfPath,
-        previewBusy: cmbPdfPreviewBusy,
-        previewError: cmbPdfPreviewError,
-        previewResult: cmbPdfPreviewResult,
-        importBusy: cmbPdfImportBusy,
-        importError: cmbPdfImportError,
-        importResult: cmbPdfImportResult,
-        summarizePreview: summarizeCmbBankPdfPreviewPayload,
-        summarizeImport: summarizeCmbBankPdfImportPayload,
-      }),
-    ] satisfies ImportStepRow[];
-
-    const failCount = nextRows.filter((r) => r.status === "fail").length;
-    const runningCount = nextRows.filter((r) => r.status === "running").length;
-    const passCount = nextRows.filter((r) => r.status === "pass").length;
-    const skipCount = nextRows.filter((r) => r.status === "skip").length;
-    const idleCount = nextRows.filter((r) => r.status === "idle").length;
-
-    const nextStatus: PipelineStatus =
-      runningCount > 0 ? "running" : failCount > 0 ? "fail" : passCount > 0 ? "pass" : "idle";
-    const nextMessage =
-      nextStatus === "idle"
-        ? "请在下方三个导入面板中手动执行预览 / 导入；此处展示当前准备状态与最近结果摘要。"
-        : `通过=${passCount} | 失败=${failCount} | 运行中=${runningCount} | 空闲=${idleCount} | 跳过=${skipCount}`;
-
     startTransition(() => {
-      setImportCenterRows(nextRows);
-      setImportCenterStatus(nextStatus);
-      setImportCenterMessage(nextMessage);
-      setImportCenterLastRunAt(Date.now());
+      setYzxyPreviewError("");
+      setYzxyImportError("");
+      setYzxyPreviewResult(null);
+      setYzxyImportResult(null);
     });
-  }, [
-    yzxyFilePath,
-    yzxyPreviewBusy,
-    yzxyPreviewError,
-    yzxyPreviewResult,
-    yzxyImportBusy,
-    yzxyImportError,
-    yzxyImportResult,
-    emlSourcePath,
-    emlPreviewBusy,
-    emlPreviewError,
-    emlPreviewResult,
-    emlImportBusy,
-    emlImportError,
-    emlImportResult,
-    cmbPdfPath,
-    cmbPdfPreviewBusy,
-    cmbPdfPreviewError,
-    cmbPdfPreviewResult,
-    cmbPdfImportBusy,
-    cmbPdfImportError,
-    cmbPdfImportResult,
-  ]);
+  }, [yzxyFilePath]);
+
+  useEffect(() => {
+    startTransition(() => {
+      setEmlPreviewError("");
+      setEmlImportError("");
+      setEmlPreviewResult(null);
+      setEmlImportResult(null);
+    });
+  }, [emlSourcePath]);
+
+  useEffect(() => {
+    startTransition(() => {
+      setCmbPdfPreviewError("");
+      setCmbPdfImportError("");
+      setCmbPdfPreviewResult(null);
+      setCmbPdfImportResult(null);
+    });
+  }, [cmbPdfPath]);
 
   // 核心分析 smoke：串行验证四个核心接口并回填各自结果，供 pipeline 复用。
   async function runCoreAnalyticsSmokeSequence(): Promise<SmokeRow[]> {
@@ -1797,9 +2111,11 @@ function App() {
         queryInvestmentReturn(buildReturnTabQuickMetricRequest(invQuery)),
       ]);
       const ytdAnnualizedRate = readNumber(quickMetricPayload, "metrics.annualized_rate");
+      const ytdNetGrowthCents = readNumber(quickMetricPayload, "metrics.net_growth_cents");
       startTransition(() => {
         setInvResult(payload);
         setReturnTabYtdAnnualizedRate(ytdAnnualizedRate ?? null);
+        setReturnTabYtdNetGrowthCents(ytdNetGrowthCents ?? null);
       });
     } catch (err) {
       const message = toErrorMessage(err);
@@ -1934,8 +2250,38 @@ function App() {
 
   // 首次挂载时只做一次探针 + DB 状态初始化。
   useEffect(() => {
-    void Promise.all([refreshProbe(), refreshDbStatus()]);
+    void Promise.all([refreshProbe(), refreshDbStatus(), refreshSyncRuntimeStatus()]);
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!syncRuntimeStatus?.configured) return;
+    let canceled = false;
+    const pollOnce = async () => {
+      if (canceled || syncReconcileBusyRef.current || syncQuickBusy) return;
+      try {
+        const poll = await syncPollRemoteUpdate();
+        startTransition(() => {
+          setSyncRuntimeStatus(poll.status);
+        });
+        if (!poll.configured || !poll.has_remote_update) return;
+        const result = await triggerAutoSyncReconcile("remote_poll");
+        if (result?.ok) {
+          refreshDataViewsAfterManualSync();
+        }
+      } catch {
+        // Keep remote polling best-effort.
+      }
+    };
+    const timer = window.setInterval(() => {
+      void pollOnce();
+    }, SYNC_REMOTE_POLL_INTERVAL_MS);
+    void pollOnce();
+    return () => {
+      canceled = true;
+      window.clearInterval(timer);
+    };
+  }, [syncRuntimeStatus?.configured, syncQuickBusy]);
 
   // 壳层 UI 状态：TAB、侧边栏、设置、隐私开关、开发者模式。
   const isForcedMobilePreview = import.meta.env.VITE_FORCE_MOBILE === "1";
@@ -1991,11 +2337,28 @@ function App() {
   }, [quickManualInvLastAccountId]);
 
   useEffect(() => {
+    try {
+      if (quickManualAssetLastAccountId.trim()) {
+        window.localStorage.setItem(QUICK_MANUAL_ASSET_LAST_ACCOUNT_ID_STORAGE_KEY, quickManualAssetLastAccountId.trim());
+      } else {
+        window.localStorage.removeItem(QUICK_MANUAL_ASSET_LAST_ACCOUNT_ID_STORAGE_KEY);
+      }
+      window.localStorage.setItem(QUICK_MANUAL_ASSET_LAST_ASSET_CLASS_STORAGE_KEY, quickManualAssetLastAssetClass);
+    } catch {
+      // Ignore localStorage persistence errors.
+    }
+  }, [quickManualAssetLastAccountId, quickManualAssetLastAssetClass]);
+
+  useEffect(() => {
     if (!isMobileMode) return;
     setMobileView("home");
   }, [isMobileMode]);
 
   function handleMobileBackNavigation() {
+    if (quickManualAssetOpen) {
+      if (!quickManualAssetBusy) closeQuickManualAssetValuationModal();
+      return true;
+    }
     if (quickManualInvOpen) {
       if (!quickManualInvBusy) closeQuickManualInvestmentModal();
       return true;
@@ -2049,6 +2412,8 @@ function App() {
   }, [
     isMobileMode,
     mobileView,
+    quickManualAssetOpen,
+    quickManualAssetBusy,
     quickManualInvOpen,
     quickManualInvBusy,
     invEditModalOpen,
@@ -2081,6 +2446,18 @@ function App() {
 
   // 视图模型：将原始查询结果规整为侧边栏指标、提示文案和面板开关。
   const isReady = status === "ready";
+  const syncQuickState =
+    (syncQuickBusy || !!syncRuntimeStatus?.syncing)
+      ? "syncing"
+      : (!syncRuntimeStatus?.configured || syncPendingLocalWrite ? "pending" : "synced");
+  const syncQuickTitle =
+    syncQuickState === "syncing"
+      ? "同步中..."
+      : syncQuickState === "pending"
+        ? (syncRuntimeStatus?.configured ? "有本地更新待同步，点击立即同步" : "未配置云同步，点击前往设置")
+        : "已同步";
+  const syncQuickAriaLabel =
+    syncQuickState === "syncing" ? "同步中" : syncQuickState === "pending" ? "待同步" : "已同步";
   const activeTabMeta = visibleTabs.find((tab) => tab.key === activeTab) ?? visibleTabs[0] ?? PRODUCT_TABS[0];
   const isTab = (...keys: ProductTabKey[]) => keys.includes(activeTab);
   const isAdminTab = isTab("admin");
@@ -2100,12 +2477,16 @@ function App() {
   const returnTabQuickMetricLabel = `${new Date().getFullYear()}年预估`;
   const returnTabAnnualizedText = formatRatePct(returnTabAnnualizedRate);
   const returnTabAnnualizedTone = signedMetricTone(returnTabAnnualizedRate);
+  const returnTabNetGrowthText = formatSignedDeltaCentsShort(returnTabYtdNetGrowthCents ?? undefined);
+  const returnTabNetGrowthTone = signedMetricTone(returnTabYtdNetGrowthCents ?? undefined);
   const wealthTabMonthlyGrowth = computeMonthlyTotalAssetGrowthFromWealthCurve(wealthCurveResult);
   const wealthTabMonthlyGrowthText = formatSignedDeltaCentsShort(wealthTabMonthlyGrowth?.deltaCents);
   const wealthTabMonthlyGrowthTone = signedMetricTone(wealthTabMonthlyGrowth?.deltaCents);
   const wealthTabMonthlyGrowthLabel = wealthTabMonthlyGrowth?.baselineDate
     ? `相比${formatMonthDayLabel(wealthTabMonthlyGrowth.baselineDate)}`
     : "月度增长";
+  const wealthTabNetAssetText = formatCentsShort(readNumber(wealthOverviewResult, "summary.net_asset_total_cents") ?? undefined);
+  const wealthTabNetAssetTone: "default" = "default";
   const fireTabFreedomText = readString(fireProgressResult, "metrics.freedom_ratio_pct_text")
     ?? readString(fireProgressResult, "freedom_ratio_pct_text")
     ?? "-";
@@ -2113,6 +2494,10 @@ function App() {
   const manualEntryTabMonthCountText = manualEntryTabMonthCountBusy && manualEntryTabMonthCount === null
     ? "..."
     : `${manualEntryTabMonthCount ?? 0}笔`;
+  const manualAssetEntryLastDateText = manualAssetEntryLastDateBusy && !manualAssetEntryLastDate
+    ? "..."
+    : (manualAssetEntryLastDate || "未更新");
+  const manualAssetEntryLastDateLabel = "最后更新";
   const incomeMonthRows = readArray(salaryIncomeResult, "rows").filter(isRecord);
   const latestIncomeMonthWithData = incomeMonthRows.reduce<{ monthKey: string; totalIncomeCents: number } | null>((best, row) => {
     const monthKey = typeof row.month_key === "string" ? row.month_key : "";
@@ -2132,6 +2517,9 @@ function App() {
   const incomeTabMonthlyLabel = `${incomeMonthNumber}月收入`;
   const incomeTabMonthlyText = formatCentsShort(latestIncomeMonthWithData?.totalIncomeCents ?? 0);
   const incomeTabMonthlyTone: "default" = "default";
+  const incomeTabYearTotalLabel = `${currentYearText}年收入`;
+  const incomeTabYearTotalText = formatCentsShort(readNumber(salaryIncomeResult, "summary.total_income_cents") ?? undefined);
+  const incomeTabYearTotalTone: "default" = "default";
   const consumptionMonthRows = readArray(consumptionOverviewResult, "months").filter(isRecord);
   const latestConsumptionMonth = consumptionMonthRows.reduce<{ monthKey: string; amountCents: number } | null>((best, row) => {
     const monthKey = typeof row.month === "string" ? row.month : "";
@@ -2146,13 +2534,34 @@ function App() {
   const consumptionTabMonthlyLabel = `${consumptionMonthNumber}月消费`;
   const consumptionTabMonthlyText = formatCentsShort(latestConsumptionMonth?.amountCents ?? 0);
   const consumptionTabMonthlyTone: "warn" = "warn";
+  const consumptionTabYearTotalValue = readNumber(consumptionOverviewResult, "consumption_total_value");
+  const consumptionTabYearTotalLabel = `${currentYearText}年消费`;
+  const consumptionTabYearTotalText = formatCentsShort(
+    typeof consumptionTabYearTotalValue === "number" && Number.isFinite(consumptionTabYearTotalValue)
+      ? Math.round(consumptionTabYearTotalValue * 100)
+      : undefined,
+  );
+  const consumptionTabYearTotalTone: "warn" = "warn";
   const mobileQuickMetricsByTab = {
-    "manual-entry": { label: "本月已记", value: manualEntryTabMonthCountText, tone: "default" as const },
-    "return-analysis": { label: returnTabQuickMetricLabel, value: returnTabAnnualizedText, tone: returnTabAnnualizedTone },
-    "wealth-overview": { label: wealthTabMonthlyGrowthLabel, value: wealthTabMonthlyGrowthText, tone: wealthTabMonthlyGrowthTone },
-    "budget-fire": { label: "自由度", value: fireTabFreedomText, tone: fireTabFreedomTone },
-    "income-analysis": { label: incomeTabMonthlyLabel, value: incomeTabMonthlyText, tone: incomeTabMonthlyTone },
-    "consumption-analysis": { label: consumptionTabMonthlyLabel, value: consumptionTabMonthlyText, tone: consumptionTabMonthlyTone },
+    "manual-entry": [{ label: "本月已记", value: manualEntryTabMonthCountText, tone: "default" as const }],
+    "manual-asset-entry": [{ label: manualAssetEntryLastDateLabel, value: manualAssetEntryLastDateText, tone: "default" as const }],
+    "return-analysis": [
+      { label: returnTabQuickMetricLabel, value: returnTabAnnualizedText, tone: returnTabAnnualizedTone },
+      { label: `${currentYearText}年净增`, value: returnTabNetGrowthText, tone: returnTabNetGrowthTone },
+    ],
+    "wealth-overview": [
+      { label: wealthTabMonthlyGrowthLabel, value: wealthTabMonthlyGrowthText, tone: wealthTabMonthlyGrowthTone },
+      { label: "净资产", value: wealthTabNetAssetText, tone: wealthTabNetAssetTone },
+    ],
+    "budget-fire": [{ label: "自由度", value: fireTabFreedomText, tone: fireTabFreedomTone }],
+    "income-analysis": [
+      { label: incomeTabMonthlyLabel, value: incomeTabMonthlyText, tone: incomeTabMonthlyTone },
+      { label: incomeTabYearTotalLabel, value: incomeTabYearTotalText, tone: incomeTabYearTotalTone },
+    ],
+    "consumption-analysis": [
+      { label: consumptionTabMonthlyLabel, value: consumptionTabMonthlyText, tone: consumptionTabMonthlyTone },
+      { label: consumptionTabYearTotalLabel, value: consumptionTabYearTotalText, tone: consumptionTabYearTotalTone },
+    ],
   };
   const quickManualAccountId = `${quickManualInvForm.account_id ?? ""}`.trim();
   const quickManualAccountHintText = !quickManualAccountId
@@ -2171,12 +2580,33 @@ function App() {
   const quickManualTotalAssetsWanText = quickManualTotalAssetsInputYuan !== null && Math.abs(quickManualTotalAssetsInputYuan) >= 100000
     ? `${(quickManualTotalAssetsInputYuan / 10000).toFixed(2)} 万`
     : "";
+  const quickManualAssetClass = normalizeQuickManualAssetClass(quickManualAssetForm.asset_class);
+  const quickManualAssetAccountKinds = accountKindsForAssetClass(quickManualAssetClass) ?? [];
+  const quickManualAssetAccountId = `${quickManualAssetForm.account_id ?? ""}`.trim();
+  const quickManualAssetHintText = !quickManualAssetAccountId
+    ? ""
+    : quickManualAssetAccountValueError
+      ? quickManualAssetAccountValueError
+      : quickManualAssetAccountValueBusy
+        ? "当前快照加载中..."
+        : quickManualAssetAccountValueCents !== null
+          ? `当前快照：${formatCentsYuanText(quickManualAssetAccountValueCents)} 元${
+              quickManualAssetAccountValueDate ? `（${quickManualAssetAccountValueDate}）` : ""
+            }`
+          : "当前快照：暂无历史记录";
+  const quickManualAssetHintToneClass = quickManualAssetAccountValueError ? "warn-text" : "";
+  const quickManualAssetValueInputYuan = parseYuanInputToNumber(`${quickManualAssetForm.value ?? ""}`);
+  const quickManualAssetValueWanText = quickManualAssetValueInputYuan !== null && Math.abs(quickManualAssetValueInputYuan) >= 100000
+    ? `${(quickManualAssetValueInputYuan / 10000).toFixed(2)} 万`
+    : "";
   const shouldPrefetchReturnTabQuickMetric = Boolean(dbStatus?.ready) && returnTabYtdAnnualizedRate === null && !invBusy;
+  const shouldPrefetchWealthOverviewTabQuickMetric = Boolean(dbStatus?.ready) && wealthOverviewResult === null && !wealthOverviewBusy;
   const shouldPrefetchWealthTabQuickMetric = Boolean(dbStatus?.ready) && wealthCurveResult === null && !wealthCurveBusy;
   const shouldPrefetchFireTabQuickMetric = Boolean(dbStatus?.ready) && fireProgressResult === null && !fireProgressBusy;
   const shouldPrefetchIncomeTabQuickMetric = Boolean(dbStatus?.ready) && salaryIncomeResult === null && !salaryIncomeBusy;
   const shouldPrefetchConsumptionTabQuickMetric = Boolean(dbStatus?.ready) && consumptionOverviewResult === null && !consumptionOverviewBusy;
   const shouldPrefetchManualEntryTabQuickMetric = Boolean(dbStatus?.ready) && manualEntryTabMonthCount === null && !manualEntryTabMonthCountBusy;
+  const shouldPrefetchManualAssetEntryTabQuickMetric = Boolean(dbStatus?.ready) && !manualAssetEntryLastDate && !manualAssetEntryLastDateBusy;
   const showQueryWorkbench = isAdminVisibleWorkbench;
   const showDebugJson = showRawJson && isAdminDeveloperMode;
   const queryWorkbenchHeader = isManualEntryTab
@@ -2232,6 +2662,7 @@ function App() {
     ],
     { enabled: isAdminTab, delayMs: 220 },
   );
+  useDebouncedAutoRun(handleImportJobsQuery, [activeTab], { enabled: isTab("import-center"), delayMs: 220 });
 
   useDebouncedAutoRun(
     handleQuickManualAccountAssetsQuery,
@@ -2239,10 +2670,16 @@ function App() {
     { enabled: quickManualInvOpen, delayMs: 180 },
   );
   useDebouncedAutoRun(
+    handleQuickManualAssetAccountValueQuery,
+    [quickManualAssetOpen ? "open" : "closed", quickManualAssetClass, `${quickManualAssetForm.account_id ?? ""}`],
+    { enabled: quickManualAssetOpen, delayMs: 180 },
+  );
+  useDebouncedAutoRun(
     handleConsumptionOverviewQuery,
     [consumptionYear],
     { enabled: isConsumptionAnalysisTab || shouldPrefetchConsumptionTabQuickMetric, delayMs: 220 },
   );
+  useDebouncedAutoRun(handleRefreshManualAssetEntryLastDate, [], { enabled: shouldPrefetchManualAssetEntryTabQuickMetric, delayMs: 260 });
   useDebouncedAutoRun(
     handleInvestmentReturnQuery,
     [invQuery.account_id, invQuery.preset, invQuery.from, invQuery.to],
@@ -2266,7 +2703,7 @@ function App() {
       wealthOverviewQuery.include_real_estate ?? "true",
       wealthOverviewQuery.include_liability ?? "true",
     ],
-    { enabled: isWealthOverviewTab, delayMs: 260 },
+    { enabled: isWealthOverviewTab || shouldPrefetchWealthOverviewTabQuickMetric, delayMs: 260 },
   );
   useDebouncedAutoRun(
     handleWealthCurveQuery,
@@ -2310,25 +2747,42 @@ function App() {
             PRODUCT_TABS={PRODUCT_TABS}
             activeTab={activeTab}
             openQuickManualInvestmentModal={openQuickManualInvestmentModal}
+            openQuickManualAssetValuationModal={openQuickManualAssetValuationModal}
             setActiveTab={setActiveTab}
             returnTabQuickMetricLabel={returnTabQuickMetricLabel}
             incomeTabMonthlyLabel={incomeTabMonthlyLabel}
             consumptionTabMonthlyLabel={consumptionTabMonthlyLabel}
             wealthTabMonthlyGrowthLabel={wealthTabMonthlyGrowthLabel}
             returnTabAnnualizedText={returnTabAnnualizedText}
+            returnTabNetGrowthText={returnTabNetGrowthText}
             manualEntryTabMonthCountText={manualEntryTabMonthCountText}
+            manualAssetEntryLastDateLabel={manualAssetEntryLastDateLabel}
+            manualAssetEntryLastDateText={manualAssetEntryLastDateText}
             wealthTabMonthlyGrowthText={wealthTabMonthlyGrowthText}
+            wealthTabNetAssetText={wealthTabNetAssetText}
             fireTabFreedomText={fireTabFreedomText}
             incomeTabMonthlyText={incomeTabMonthlyText}
+            incomeTabYearTotalLabel={incomeTabYearTotalLabel}
+            incomeTabYearTotalText={incomeTabYearTotalText}
             consumptionTabMonthlyText={consumptionTabMonthlyText}
+            consumptionTabYearTotalLabel={consumptionTabYearTotalLabel}
+            consumptionTabYearTotalText={consumptionTabYearTotalText}
             returnTabAnnualizedTone={returnTabAnnualizedTone}
+            returnTabNetGrowthTone={returnTabNetGrowthTone}
             wealthTabMonthlyGrowthTone={wealthTabMonthlyGrowthTone}
+            wealthTabNetAssetTone={wealthTabNetAssetTone}
             fireTabFreedomTone={fireTabFreedomTone}
             incomeTabMonthlyTone={incomeTabMonthlyTone}
+            incomeTabYearTotalTone={incomeTabYearTotalTone}
             consumptionTabMonthlyTone={consumptionTabMonthlyTone}
+            consumptionTabYearTotalTone={consumptionTabYearTotalTone}
             setSettingsOpen={setSettingsOpen}
             amountPrivacyMasked={amountPrivacyMasked}
             setAmountPrivacyMasked={setAmountPrivacyMasked}
+            syncQuickState={syncQuickState}
+            syncQuickTitle={syncQuickTitle}
+            syncQuickAriaLabel={syncQuickAriaLabel}
+            handleQuickSyncIndicatorClick={handleQuickSyncIndicatorClick}
           />
         ) : null}
 
@@ -2348,6 +2802,26 @@ function App() {
           quickManualAccountHintText={quickManualAccountHintText}
           quickManualTotalAssetsWanText={quickManualTotalAssetsWanText}
           quickManualInvError={quickManualInvError}
+        />
+
+        <QuickManualAssetValuationModal
+          quickManualAssetOpen={quickManualAssetOpen}
+          closeQuickManualAssetValuationModal={closeQuickManualAssetValuationModal}
+          quickManualAssetBusy={quickManualAssetBusy}
+          makeEnterToQueryHandler={makeEnterToQueryHandler}
+          handleQuickManualAssetValuationSubmit={handleQuickManualAssetValuationSubmit}
+          DateInput={DateInput}
+          quickManualAssetForm={quickManualAssetForm}
+          setQuickManualAssetForm={setQuickManualAssetForm}
+          handleQuickManualAssetClassChange={handleQuickManualAssetClassChange}
+          AccountIdSelect={AccountIdSelect}
+          accountSelectOptions={accountSelectOptions}
+          accountSelectOptionsLoading={accountSelectOptionsLoading}
+          quickManualAssetAccountKinds={quickManualAssetAccountKinds}
+          quickManualAssetHintToneClass={quickManualAssetHintToneClass}
+          quickManualAssetHintText={quickManualAssetHintText}
+          quickManualAssetValueWanText={quickManualAssetValueWanText}
+          quickManualAssetError={quickManualAssetError}
         />
 
         <InvestmentEditModal
@@ -2370,6 +2844,19 @@ function App() {
           setSettingsOpen={setSettingsOpen}
           appSettings={appSettings}
           setAppSettings={setAppSettings}
+          syncStatus={syncRuntimeStatus}
+          handleManualSyncNow={handleManualSyncNow}
+          syncSetupBusy={syncSetupBusy}
+          syncSetupError={syncSetupError}
+          syncActionMessage={syncActionMessage}
+          syncShareCode={syncShareCode}
+          syncCreateForm={syncCreateForm}
+          setSyncCreateForm={setSyncCreateForm}
+          syncLinkForm={syncLinkForm}
+          setSyncLinkForm={setSyncLinkForm}
+          handleSyncSetupCreate={handleSyncSetupCreate}
+          handleSyncSetupLink={handleSyncSetupLink}
+          handleSyncShareCodeRefresh={handleSyncShareCodeRefresh}
         />
 
         {isMobileMode ? (
@@ -2431,6 +2918,36 @@ function App() {
               </button>
               <button
                 type="button"
+                className={`sidebar-tool-btn mobile-icon-btn sidebar-sync-btn state-${syncQuickState}`}
+                onClick={() => {
+                  void handleQuickSyncIndicatorClick();
+                }}
+                title={syncQuickTitle}
+                aria-label={syncQuickAriaLabel}
+                disabled={syncQuickState === "syncing"}
+              >
+                <span className={`sidebar-sync-icon ${syncQuickState === "syncing" ? "sync-icon-spin" : ""}`} aria-hidden="true">
+                  {syncQuickState === "synced" ? (
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="12" r="8.2" />
+                      <path d="m8.4 12.3 2.4 2.5 4.8-5.1" />
+                    </svg>
+                  ) : syncQuickState === "pending" ? (
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="12" r="8.2" />
+                      <path d="M12 7.8v4.6" />
+                      <path d="M12 12.4h3.5" />
+                    </svg>
+                  ) : (
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M20 12a8 8 0 1 1-2.34-5.66" />
+                      <path d="M20 4v5h-5" />
+                    </svg>
+                  )}
+                </span>
+              </button>
+              <button
+                type="button"
                 className="sidebar-tool-btn mobile-icon-btn"
                 onClick={() => setSettingsOpen(true)}
                 aria-label="打开设置"
@@ -2460,6 +2977,7 @@ function App() {
               tabs={visibleTabs}
               activeTab={activeTab}
               onOpenManualEntry={openQuickManualInvestmentModal}
+              onOpenManualAssetEntry={openQuickManualAssetValuationModal}
               onSelectTab={(tabKey: ProductTabKey) => {
                 setActiveTab(tabKey);
                 setMobileView(tabKey);
@@ -2619,40 +3137,29 @@ function App() {
 
       <ImportCenterSections
         isTab={isTab}
-        importCenterLastRunAt={importCenterLastRunAt}
-        importCenterStatus={importCenterStatus}
-        importCenterMessage={importCenterMessage}
-        importCenterRows={importCenterRows}
+        handleImportJobsQuery={handleImportJobsQuery}
+        importJobsBusy={importJobsBusy}
+        importJobsError={importJobsError}
+        importJobsResult={importJobsResult}
+        importJobsLastRunAt={importJobsLastRunAt}
         yzxyFilePath={yzxyFilePath}
         setYzxyFilePath={setYzxyFilePath}
         handlePickYzxyFilePath={handlePickYzxyFilePath}
         yzxyPreviewBusy={yzxyPreviewBusy}
         yzxyImportBusy={yzxyImportBusy}
-        yzxySourceType={yzxySourceType}
-        setYzxySourceType={setYzxySourceType}
-        handleYzxyPreview={handleYzxyPreview}
-        handleYzxyImport={handleYzxyImport}
+        handleYzxyRunImportFlow={handleYzxyRunImportFlow}
         yzxyPreviewError={yzxyPreviewError}
         yzxyImportError={yzxyImportError}
         yzxyPreviewResult={yzxyPreviewResult}
         yzxyImportResult={yzxyImportResult}
         PreviewStat={PreviewStat}
-        showRawJson={showRawJson}
-        JsonResultCard={JsonResultCard}
         emlSourcePath={emlSourcePath}
         setEmlSourcePath={setEmlSourcePath}
         handlePickEmlFile={handlePickEmlFile}
         handlePickEmlFolder={handlePickEmlFolder}
         emlPreviewBusy={emlPreviewBusy}
         emlImportBusy={emlImportBusy}
-        safeNumericInputValue={safeNumericInputValue}
-        emlReviewThreshold={emlReviewThreshold}
-        setEmlReviewThreshold={setEmlReviewThreshold}
-        parseNumericInputWithFallback={parseNumericInputWithFallback}
-        emlSourceType={emlSourceType}
-        setEmlSourceType={setEmlSourceType}
-        handleCmbEmlPreview={handleCmbEmlPreview}
-        handleCmbEmlImport={handleCmbEmlImport}
+        handleCmbEmlRunImportFlow={handleCmbEmlRunImportFlow}
         emlPreviewError={emlPreviewError}
         emlImportError={emlImportError}
         emlPreviewResult={emlPreviewResult}
@@ -2662,28 +3169,11 @@ function App() {
         handlePickCmbPdfFile={handlePickCmbPdfFile}
         cmbPdfPreviewBusy={cmbPdfPreviewBusy}
         cmbPdfImportBusy={cmbPdfImportBusy}
-        cmbPdfReviewThreshold={cmbPdfReviewThreshold}
-        setCmbPdfReviewThreshold={setCmbPdfReviewThreshold}
-        cmbPdfSourceType={cmbPdfSourceType}
-        setCmbPdfSourceType={setCmbPdfSourceType}
-        handleCmbBankPdfPreview={handleCmbBankPdfPreview}
-        handleCmbBankPdfImport={handleCmbBankPdfImport}
+        handleCmbBankPdfRunImportFlow={handleCmbBankPdfRunImportFlow}
         cmbPdfPreviewError={cmbPdfPreviewError}
         cmbPdfImportError={cmbPdfImportError}
         cmbPdfPreviewResult={cmbPdfPreviewResult}
         cmbPdfImportResult={cmbPdfImportResult}
-        formatCentsShort={formatCentsShort}
-        YzxyPreviewSummaryReport={YzxyPreviewSummaryReport}
-        YzxyImportSummaryReport={YzxyImportSummaryReport}
-        CmbEmlPreviewSummaryReport={CmbEmlPreviewSummaryReport}
-        CmbEmlImportSummaryReport={CmbEmlImportSummaryReport}
-        CmbBankPdfPreviewSummaryReport={CmbBankPdfPreviewSummaryReport}
-        CmbBankPdfImportSummaryReport={CmbBankPdfImportSummaryReport}
-        RulesAdminPanel={RulesAdminPanel}
-        BoolField={BoolField}
-        DateInput={DateInput}
-        AutoRefreshHint={AutoRefreshHint}
-        maskAmountDisplayText={maskAmountDisplayText}
       />
 
       <AdminSections
@@ -2769,6 +3259,9 @@ function App() {
         assetListError={assetListError}
         AssetValuationsPreview={AssetValuationsPreview}
         assetListResult={assetListResult}
+        RulesAdminPanel={RulesAdminPanel}
+        BoolField={BoolField}
+        maskAmountDisplayText={maskAmountDisplayText}
       />
 
       <ReturnAnalysisSection

@@ -7,25 +7,42 @@ export function WorkspaceSidebar(props: any) {
     PRODUCT_TABS,
     activeTab,
     openQuickManualInvestmentModal,
+    openQuickManualAssetValuationModal,
     setActiveTab,
     returnTabQuickMetricLabel,
     incomeTabMonthlyLabel,
     consumptionTabMonthlyLabel,
     wealthTabMonthlyGrowthLabel,
     returnTabAnnualizedText,
+    returnTabNetGrowthText,
     manualEntryTabMonthCountText,
+    manualAssetEntryLastDateLabel,
+    manualAssetEntryLastDateText,
     wealthTabMonthlyGrowthText,
+    wealthTabNetAssetText,
     fireTabFreedomText,
     incomeTabMonthlyText,
+    incomeTabYearTotalLabel,
+    incomeTabYearTotalText,
     consumptionTabMonthlyText,
+    consumptionTabYearTotalLabel,
+    consumptionTabYearTotalText,
     returnTabAnnualizedTone,
+    returnTabNetGrowthTone,
     wealthTabMonthlyGrowthTone,
+    wealthTabNetAssetTone,
     fireTabFreedomTone,
     incomeTabMonthlyTone,
+    incomeTabYearTotalTone,
     consumptionTabMonthlyTone,
+    consumptionTabYearTotalTone,
     setSettingsOpen,
     amountPrivacyMasked,
     setAmountPrivacyMasked,
+    syncQuickState,
+    syncQuickTitle,
+    syncQuickAriaLabel,
+    handleQuickSyncIndicatorClick,
   } = props;
 
   return (
@@ -60,70 +77,47 @@ export function WorkspaceSidebar(props: any) {
               const isConsumptionTabButton = tab.key === "consumption-analysis";
               const isManualEntryLauncherButton = tab.key === "manual-entry";
               const isManualEntryTabButton = tab.key === "manual-entry";
+              const isManualAssetEntryTabButton = tab.key === "manual-asset-entry";
+              const isManualAssetEntryLauncherButton = tab.key === "manual-asset-entry";
               const isFeaturedTabButton =
                 (isManualEntryTabButton
+                || isManualAssetEntryTabButton
                 || isReturnTabButton
                 || isWealthTabButton
                 || isFireTabButton
                 || isIncomeTabButton
                 || isConsumptionTabButton)
                 && !sidebarCollapsed;
-              const quickMetricLabel = isManualEntryTabButton
-                ? "本月已记"
-                : isReturnTabButton
-                  ? returnTabQuickMetricLabel
-                  : isWealthTabButton
-                    ? "月度增长"
-                    : isFireTabButton
-                      ? "自由度"
-                      : isIncomeTabButton
-                        ? incomeTabMonthlyLabel
-                        : isConsumptionTabButton
-                          ? consumptionTabMonthlyLabel
-                          : "";
-              const resolvedQuickMetricLabel = isWealthTabButton ? wealthTabMonthlyGrowthLabel : quickMetricLabel;
-              const quickMetricText = isReturnTabButton
-                ? returnTabAnnualizedText
-                : isManualEntryTabButton
-                  ? manualEntryTabMonthCountText
-                : isWealthTabButton
-                  ? wealthTabMonthlyGrowthText
-                  : isFireTabButton
-                    ? fireTabFreedomText
-                  : isIncomeTabButton
-                    ? incomeTabMonthlyText
-                    : isConsumptionTabButton
-                      ? consumptionTabMonthlyText
-                  : "-";
-              const quickMetricTone = isReturnTabButton
-                ? returnTabAnnualizedTone
-                : isManualEntryTabButton
-                  ? "default"
-                : isWealthTabButton
-                  ? wealthTabMonthlyGrowthTone
-                  : isFireTabButton
-                    ? fireTabFreedomTone
-                  : isIncomeTabButton
-                    ? incomeTabMonthlyTone
-                    : isConsumptionTabButton
-                      ? consumptionTabMonthlyTone
-                  : "default";
-              const quickMetricTextLen = quickMetricText.replace(/\s+/g, "").length;
-              const quickMetricSizeClass =
-                quickMetricTextLen >= 14 ? "size-xs" : quickMetricTextLen >= 11 ? "size-sm" : "size-md";
-              const titleSuffix = isReturnTabButton
-                ? ` · ${resolvedQuickMetricLabel} ${quickMetricText}`
-                : isManualEntryTabButton
-                  ? ` · ${resolvedQuickMetricLabel} ${quickMetricText}`
-                : isWealthTabButton
-                  ? ` · ${resolvedQuickMetricLabel} ${quickMetricText}`
-                  : isFireTabButton
-                    ? ` · ${resolvedQuickMetricLabel} ${quickMetricText}`
-                  : isIncomeTabButton
-                    ? ` · ${resolvedQuickMetricLabel} ${quickMetricText}`
-                    : isConsumptionTabButton
-                      ? ` · ${resolvedQuickMetricLabel} ${quickMetricText}`
-                  : "";
+              const quickMetrics = isManualEntryTabButton
+                ? [{ label: "本月已记", value: manualEntryTabMonthCountText, tone: "default" }]
+                : isManualAssetEntryTabButton
+                  ? [{ label: manualAssetEntryLastDateLabel, value: manualAssetEntryLastDateText, tone: "default" }]
+                  : isReturnTabButton
+                    ? [
+                        { label: returnTabQuickMetricLabel, value: returnTabAnnualizedText, tone: returnTabAnnualizedTone },
+                        { label: `${new Date().getFullYear()}年净增`, value: returnTabNetGrowthText, tone: returnTabNetGrowthTone },
+                      ]
+                    : isWealthTabButton
+                      ? [
+                          { label: wealthTabMonthlyGrowthLabel, value: wealthTabMonthlyGrowthText, tone: wealthTabMonthlyGrowthTone },
+                          { label: "净资产", value: wealthTabNetAssetText, tone: wealthTabNetAssetTone },
+                        ]
+                      : isFireTabButton
+                        ? [{ label: "自由度", value: fireTabFreedomText, tone: fireTabFreedomTone }]
+                        : isIncomeTabButton
+                          ? [
+                              { label: incomeTabMonthlyLabel, value: incomeTabMonthlyText, tone: incomeTabMonthlyTone },
+                              { label: incomeTabYearTotalLabel, value: incomeTabYearTotalText, tone: incomeTabYearTotalTone },
+                            ]
+                          : isConsumptionTabButton
+                            ? [
+                                { label: consumptionTabMonthlyLabel, value: consumptionTabMonthlyText, tone: consumptionTabMonthlyTone },
+                                { label: consumptionTabYearTotalLabel, value: consumptionTabYearTotalText, tone: consumptionTabYearTotalTone },
+                              ]
+                            : [];
+              const titleSuffix = quickMetrics.length > 0
+                ? ` · ${quickMetrics.map((metric) => `${metric.label} ${metric.value}`).join(" · ")}`
+                : "";
               return (
                 <button
                   key={tab.key}
@@ -132,6 +126,10 @@ export function WorkspaceSidebar(props: any) {
                   onClick={() => {
                     if (isManualEntryLauncherButton) {
                       openQuickManualInvestmentModal();
+                      return;
+                    }
+                    if (isManualAssetEntryLauncherButton) {
+                      openQuickManualAssetValuationModal();
                       return;
                     }
                     setActiveTab(tab.key);
@@ -145,9 +143,18 @@ export function WorkspaceSidebar(props: any) {
                     <span className="tab-nav-title">{tab.label}</span>
                   </span>
                   {isFeaturedTabButton ? (
-                    <span className={`tab-nav-quick-metric tone-${quickMetricTone}`} aria-hidden="true">
-                      <span className="tab-nav-quick-metric-label">{resolvedQuickMetricLabel}</span>
-                      <span className={`tab-nav-quick-metric-value ${quickMetricSizeClass}`}>{quickMetricText}</span>
+                    <span className={`tab-nav-quick-metrics metrics-${Math.min(quickMetrics.length, 2) || 1}`} aria-hidden="true">
+                      {quickMetrics.map((metric, index) => {
+                        const quickMetricTextLen = metric.value.replace(/\s+/g, "").length;
+                        const quickMetricSizeClass =
+                          quickMetricTextLen >= 14 ? "size-xs" : quickMetricTextLen >= 11 ? "size-sm" : "size-md";
+                        return (
+                          <span key={`${tab.key}-metric-${index}`} className={`tab-nav-quick-metric tone-${metric.tone}`}>
+                            <span className="tab-nav-quick-metric-label">{metric.label}</span>
+                            <span className={`tab-nav-quick-metric-value ${quickMetricSizeClass}`}>{metric.value}</span>
+                          </span>
+                        );
+                      })}
                     </span>
                   ) : null}
                 </button>
@@ -175,6 +182,36 @@ export function WorkspaceSidebar(props: any) {
                   <path d="M18.4 18.4 16.8 16.8" />
                   <path d="M7.2 7.2 5.6 5.6" />
                 </svg>
+              </span>
+            </button>
+            <button
+              type="button"
+              className={`sidebar-tool-btn sidebar-sync-btn state-${syncQuickState}`}
+              onClick={() => {
+                void handleQuickSyncIndicatorClick();
+              }}
+              title={syncQuickTitle}
+              aria-label={syncQuickAriaLabel}
+              disabled={syncQuickState === "syncing"}
+            >
+              <span className={`sidebar-sync-icon ${syncQuickState === "syncing" ? "sync-icon-spin" : ""}`} aria-hidden="true">
+                {syncQuickState === "synced" ? (
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="8.2" />
+                    <path d="m8.4 12.3 2.4 2.5 4.8-5.1" />
+                  </svg>
+                ) : syncQuickState === "pending" ? (
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="8.2" />
+                    <path d="M12 7.8v4.6" />
+                    <path d="M12 12.4h3.5" />
+                  </svg>
+                ) : (
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M20 12a8 8 0 1 1-2.34-5.66" />
+                    <path d="M20 4v5h-5" />
+                  </svg>
+                )}
               </span>
             </button>
             <button
