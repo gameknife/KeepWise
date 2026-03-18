@@ -366,10 +366,7 @@ export function LineAreaChart({
     valueFormatter ? valueFormatter(value) : value.toLocaleString(undefined, { maximumFractionDigits: 2 });
   const effectiveHeight = (() => {
     if (width > 560) return height;
-    // Narrow/mobile layouts: reduce chart height to keep trend aspect ratio
-    // closer to desktop after horizontal width is compressed.
-    const compact = Math.round(width * 0.5);
-    return Math.max(150, Math.min(height, compact));
+    return Math.max(140, Math.round(height * 0.7));
   })();
   const compactYAxisLabel = (value: number) => {
     const raw = formattedValue(value);
@@ -523,22 +520,6 @@ export function LineAreaChart({
         {areaPath ? <path d={areaPath} fill={`url(#${gradientId})`} stroke="none" /> : null}
         {linePath ? <path d={linePath} fill="none" stroke={color} strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" /> : null}
 
-        {clean.map((p, idx) => {
-          const x = toX(idx);
-          const y = toY(p.value);
-          const isActive = hoverIndex === idx;
-          return (
-            <circle
-              key={`pt-${p.label}-${idx}`}
-              cx={x}
-              cy={y}
-              r={isActive ? 4.2 : 2.4}
-              className={isActive ? "line-area-point active" : "line-area-point"}
-              style={{ fill: color, fillOpacity: isActive ? 1 : 0.72 }}
-            />
-          );
-        })}
-
         {active && activeX != null && activeY != null ? (
           <g>
             <line
@@ -556,13 +537,6 @@ export function LineAreaChart({
               y2={activeY}
               className="line-area-crosshair horizontal"
               style={{ stroke: color, strokeOpacity: 0.22 }}
-            />
-            <circle
-              cx={activeX}
-              cy={activeY}
-              r={5.2}
-              className="line-area-point-ring"
-              style={{ fill: color, fillOpacity: 0.16, stroke: color, strokeOpacity: 0.72 }}
             />
           </g>
         ) : null}

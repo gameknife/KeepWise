@@ -57,6 +57,7 @@ function WealthStackedTrendChart({
   }
 
   const width = measuredWidth;
+  const effectiveHeight = width > 560 ? height : Math.max(180, Math.round(height * 0.7));
   const layers = [
     { key: "cash", label: "现金", color: "#6fb4ff", visible: visibility.cash },
     { key: "realEstate", label: "不动产", color: "#9b84ff", visible: visibility.realEstate },
@@ -117,7 +118,7 @@ function WealthStackedTrendChart({
 
   const baseMargin = { top: 14, right: 12, bottom: 42 };
   const yTickCount = 4;
-  const innerH = height - baseMargin.top - baseMargin.bottom;
+  const innerH = effectiveHeight - baseMargin.top - baseMargin.bottom;
   const yTickMeta = Array.from({ length: yTickCount + 1 }, (_, i) => {
     const ratio = i / yTickCount;
     const value = yMax - ySpan * ratio;
@@ -176,7 +177,7 @@ function WealthStackedTrendChart({
   return (
     <div className="stacked-wealth-chart-wrap" ref={wrapRef}>
       <svg
-        viewBox={`0 0 ${width} ${height}`}
+        viewBox={`0 0 ${width} ${effectiveHeight}`}
         className="stacked-wealth-chart"
         onMouseLeave={() => {
           setHoverIndex(null);
@@ -197,7 +198,7 @@ function WealthStackedTrendChart({
           }
         }}
       >
-        <rect x={0} y={0} width={width} height={height} fill="transparent" />
+        <rect x={0} y={0} width={width} height={effectiveHeight} fill="transparent" />
         <defs>
           <pattern
             id={debtPatternId}
@@ -251,8 +252,6 @@ function WealthStackedTrendChart({
         {activePoint && activeIndex != null ? (
           <g pointerEvents="none">
             <line x1={toX(activeIndex)} x2={toX(activeIndex)} y1={margin.top} y2={margin.top + innerH} className="stacked-hover-line" />
-            <circle cx={toX(activeIndex)} cy={toY(activePoint.investmentTop)} r="3.2" fill="#eab35f" />
-            {visibility.liability ? <circle cx={toX(activeIndex)} cy={toY(activePoint.liabilityBottom)} r="3.2" fill={debtColor} /> : null}
           </g>
         ) : null}
       </svg>
@@ -354,10 +353,12 @@ function WealthSankeyDiagram({
   overviewData,
   visibility,
   isAmountPrivacyMasked,
+  isMobileMode = false,
 }: {
   overviewData: unknown;
   visibility: WealthVisibility;
   isAmountPrivacyMasked: () => boolean;
+  isMobileMode?: boolean;
 }) {
   if (!isRecord(overviewData)) return null;
   const summary = readPath(overviewData, "summary");
@@ -390,7 +391,7 @@ function WealthSankeyDiagram({
   const hasAnyPositiveSelected = visibility.investment || visibility.cash || visibility.realEstate;
   const hasChartData = !(categories.length === 0 && liabilityTotal <= 0 && grossTotal <= 0);
   const width = 980;
-  const height = 390;
+  const height = isMobileMode ? 720 : 420;
 
   const debtFlowValue = Math.min(liabilityTotal, grossTotal);
   const netFlowValue = Math.max(0, grossTotal - debtFlowValue);
@@ -398,11 +399,11 @@ function WealthSankeyDiagram({
   const showDebtNode = liabilityTotal > 0 && grossTotal > 0;
 
   if (!hasAnyPositiveSelected) {
-    return <div className="wealth-sankey-empty">财富结构图至少需要选择一项正向资产（投资 / 现金 / 不动产）。</div>;
+    return <div className="wealth-sankey-empty">资产构成图至少需要选择一项正向资产（投资 / 现金 / 不动产）。</div>;
   }
 
   if (!hasChartData) {
-    return <div className="wealth-sankey-empty">当前筛选条件下暂无财富结构数据。</div>;
+    return <div className="wealth-sankey-empty">当前筛选条件下暂无资产构成数据。</div>;
   }
 
   type SankeyNodeDatum = {
@@ -459,13 +460,37 @@ function WealthSankeyDiagram({
       : []),
   ];
 
+  const sankeyExtent = isMobileMode
+    ? [[254, 150], [764, 520]]
+    : [[162, 100], [836, 350]];
+  const nodeWidth = isMobileMode ? 16 : 14;
+  const nodePadding = isMobileMode ? 26 : 20;
+  const categoryCardBaseX = isMobileMode ? 28 : 28;
+  const categoryCardW = isMobileMode ? 170 : 110;
+  const categoryCardH = isMobileMode ? 82 : 48;
+  const summaryCenterCardW = isMobileMode ? 139 : 82;
+  const summaryCenterCardH = isMobileMode ? 84 : 48;
+  const summarySideCardW = isMobileMode ? 149 : 91;
+  const summarySideCardH = isMobileMode ? 80 : 46;
+  const summaryLabelOffsetX = isMobileMode ? 18 : 12;
+  const summaryLabelMinY = isMobileMode ? 126 : 96;
+  const categoryAccentW = isMobileMode ? 10 : 8;
+  const summaryAccentW = isMobileMode ? 10 : 7;
+  const categoryNameFontSize = isMobileMode ? 18 : 12.5;
+  const categoryRatioFontSize = isMobileMode ? 14 : 10;
+  const categoryValueFontSize = isMobileMode ? 15.5 : 11;
+  const summaryCenterTitleFontSize = isMobileMode ? 17 : 11;
+  const summaryCenterValueFontSize = isMobileMode ? 18 : 12;
+  const summarySideTitleFontSize = isMobileMode ? 16.5 : 11;
+  const summarySideValueFontSize = isMobileMode ? 17.5 : 11.5;
+
   const sankeyGraph = d3Sankey<any, any>()
     .nodeId((d: any) => d.name)
     .nodeAlign(sankeyJustify)
-    .nodeWidth(16)
-    .nodePadding(18)
+    .nodeWidth(nodeWidth)
+    .nodePadding(nodePadding)
     .nodeSort(null)
-    .extent([[210, 90], [820, 335]])({
+    .extent(sankeyExtent as [[number, number], [number, number]])({
       nodes: nodeData.map((node) => ({ ...node })),
       links: linkData.map((link) => ({ ...link })),
     } as any);
@@ -474,16 +499,10 @@ function WealthSankeyDiagram({
   for (const node of nodeData) nodeValueByName.set(node.name, node.value_cents);
 
   const pathGen = sankeyLinkHorizontal<any, any>();
-  const categoryCardBaseX = 34;
-  const categoryCardW = 166;
-  const categoryCardH = 44;
 
   return (
     <div className="wealth-sankey-panel">
-      <div className="wealth-sankey-title-row">
-        <h4>财富结构关系图</h4>
-      </div>
-      <div className="wealth-sankey-stage" role="img" aria-label="财富结构关系图：资产构成、总资产、净资产与负债关系">
+      <div className="wealth-sankey-stage" role="img" aria-label="资产构成关系图：资产构成、总资产、净资产与负债关系">
         <svg viewBox={`0 0 ${width} ${height}`} className="wealth-sankey-svg" preserveAspectRatio="xMidYMid meet">
           <defs>
             <linearGradient id="kwWealthSankeyBg" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -547,11 +566,21 @@ function WealthSankeyDiagram({
             const cardColor = String(node.color ?? "#7cc3ff");
             return (
               <g key={`cat-card-${name}`}>
-                <rect x={categoryCardBaseX} y={cardY} width={categoryCardW} height={categoryCardH} rx="10" ry="10" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.08)" />
-                <rect x={categoryCardBaseX} y={cardY} width="7" height={categoryCardH} fill={cardColor} />
-                <text x={categoryCardBaseX + 14} y={cardY + 17} fontSize="11.5" fill="#f3efe5">{name}</text>
-                <text x={categoryCardBaseX + 14} y={cardY + 33} fontSize="10.5" fill="rgba(243,239,229,0.72)">
-                  {formatCentsCompactCny(total, isAmountPrivacyMasked)} · {ratio.toFixed(1)}%
+                <rect x={categoryCardBaseX} y={cardY} width={categoryCardW} height={categoryCardH} rx="12" ry="12" fill="rgba(255,255,255,0.045)" stroke="rgba(255,255,255,0.08)" />
+                <rect x={categoryCardBaseX} y={cardY} width={categoryAccentW} height={categoryCardH} fill={cardColor} />
+                <text x={categoryCardBaseX + 18} y={cardY + categoryCardH * 0.38} fontSize={categoryNameFontSize} fontWeight="600" fill="#f3efe5">{name}</text>
+                <text
+                  x={categoryCardBaseX + categoryCardW - 16}
+                  y={cardY + categoryCardH * 0.38}
+                  fontSize={categoryRatioFontSize}
+                  fontWeight="600"
+                  fill="rgba(243,239,229,0.7)"
+                  textAnchor="end"
+                >
+                  {ratio.toFixed(1)}%
+                </text>
+                <text x={categoryCardBaseX + 18} y={cardY + categoryCardH * 0.74} fontSize={categoryValueFontSize} fill="rgba(243,239,229,0.76)">
+                  {formatCentsCompactCny(total, isAmountPrivacyMasked)}
                 </text>
               </g>
             );
@@ -560,36 +589,36 @@ function WealthSankeyDiagram({
           {(sankeyGraph.nodes as any[]).map((node, idx) => {
             const name = String(node.name ?? idx);
             if (String(node.role ?? "") !== "summary") return null;
-            const x = Number(node.x1) + 12;
+            const x = Number(node.x1) + summaryLabelOffsetX;
             const amount = nodeValueByName.get(name) ?? 0;
             const color = String(node.color ?? "#f3efe5");
             if (name === "总资产") {
               const cx = (Number(node.x0) + Number(node.x1)) / 2;
               const cy = (Number(node.y0) + Number(node.y1)) / 2;
-              const cardW = 112;
-              const cardH = 40;
+              const cardW = summaryCenterCardW;
+              const cardH = summaryCenterCardH;
               const cardX = cx - cardW / 2;
               const cardY = cy - cardH / 2;
               return (
                 <g key={`summary-label-${name}`}>
-                  <rect x={cardX} y={cardY} width={cardW} height={cardH} rx="10" ry="10" fill="rgba(9, 14, 20, 0.58)" stroke="rgba(255,255,255,0.08)" />
-                  <rect x={cardX + cardW - 6} y={cardY} width="6" height={cardH} fill={color} />
-                  <text x={cx} y={cy - 3} fontSize="11.5" fill="rgba(243,239,229,0.78)" textAnchor="middle">{name}</text>
-                  <text x={cx} y={cy + 14} fontSize="12.5" fontWeight="700" fill={color} textAnchor="middle">
+                  <rect x={cardX} y={cardY} width={cardW} height={cardH} rx="12" ry="12" fill="rgba(9, 14, 20, 0.62)" stroke="rgba(255,255,255,0.08)" />
+                  <rect x={cardX + cardW - summaryAccentW} y={cardY} width={summaryAccentW} height={cardH} fill={color} />
+                  <text x={cx} y={cy - cardH * 0.14} fontSize={summaryCenterTitleFontSize} fill="rgba(243,239,229,0.8)" textAnchor="middle">{name}</text>
+                  <text x={cx} y={cy + cardH * 0.28} fontSize={summaryCenterValueFontSize} fontWeight="700" fill={color} textAnchor="middle">
                     {formatCentsCompactCny(amount, isAmountPrivacyMasked)}
                   </text>
                 </g>
               );
             }
-            const labelCardW = 126;
-            const labelCardH = 40;
-            const labelCardY = Math.max(92, Number(node.y0) + (Number(node.y1) - Number(node.y0)) / 2 - labelCardH / 2);
+            const labelCardW = summarySideCardW;
+            const labelCardH = summarySideCardH;
+            const labelCardY = Math.max(summaryLabelMinY, Number(node.y0) + (Number(node.y1) - Number(node.y0)) / 2 - labelCardH / 2);
             return (
               <g key={`summary-label-${name}`}>
-                <rect x={x} y={labelCardY} width={labelCardW} height={labelCardH} rx="10" ry="10" fill="rgba(255,255,255,0.035)" stroke="rgba(255,255,255,0.08)" />
-                <rect x={x + labelCardW - 6} y={labelCardY} width="6" height={labelCardH} fill={color} />
-                <text x={x + 10} y={labelCardY + 15} fontSize="12" fill="rgba(243,239,229,0.72)">{name}</text>
-                <text x={x + 10} y={labelCardY + 31} fontSize="13" fontWeight="700" fill={color}>
+                <rect x={x} y={labelCardY} width={labelCardW} height={labelCardH} rx="12" ry="12" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.08)" />
+                <rect x={x + labelCardW - summaryAccentW} y={labelCardY} width={summaryAccentW} height={labelCardH} fill={color} />
+                <text x={x + 16} y={labelCardY + labelCardH * 0.4} fontSize={summarySideTitleFontSize} fill="rgba(243,239,229,0.76)">{name}</text>
+                <text x={x + 16} y={labelCardY + labelCardH * 0.77} fontSize={summarySideValueFontSize} fontWeight="700" fill={color}>
                   {formatCentsCompactCny(amount, isAmountPrivacyMasked, { negative: name === "负债" })}
                 </text>
               </g>
@@ -607,12 +636,14 @@ export function WealthOverviewPreview({
   PreviewStat,
   formatCentsShort,
   isAmountPrivacyMasked,
+  isMobileMode = false,
 }: {
   data: unknown;
   visibility: WealthVisibility;
   PreviewStat: ComponentType<PreviewStatProps>;
   formatCentsShort: (cents?: number) => string;
   isAmountPrivacyMasked: () => boolean;
+  isMobileMode?: boolean;
 }) {
   if (!isRecord(data)) return null;
   const rows = readArray(data, "rows").filter(isRecord);
@@ -625,7 +656,7 @@ export function WealthOverviewPreview({
   return (
     <div className="wealth-section-block">
       <div className="preview-header">
-        <h3>财富总览结果</h3>
+        <h3>资产构成</h3>
         <div className="preview-subtle">
           统计日期 <code>{asOf}</code>
           {requestedAsOf !== "-" && requestedAsOf !== asOf ? (
@@ -633,12 +664,12 @@ export function WealthOverviewPreview({
           ) : null}
         </div>
       </div>
-      <div className="preview-stat-grid">
+      <div className="preview-stat-grid wealth-overview-stat-grid">
         <PreviewStat label="财富总额（元）" value={formatCentsShort(wealthTotal)} />
         <PreviewStat label="净资产（元）" value={formatCentsShort(netAssetTotal)} />
         <PreviewStat label="负债（元）" value={formatCentsShort(liabilityTotal)} />
       </div>
-      <WealthSankeyDiagram overviewData={data} visibility={visibility} isAmountPrivacyMasked={isAmountPrivacyMasked} />
+      <WealthSankeyDiagram overviewData={data} visibility={visibility} isAmountPrivacyMasked={isAmountPrivacyMasked} isMobileMode={isMobileMode} />
       {rows.length === 0 ? <p className="preview-note">当前筛选条件下暂无可展示的财富条目。</p> : null}
     </div>
   );
@@ -696,7 +727,7 @@ export function WealthCurvePreview({
   return (
     <div className="wealth-section-block">
       <div className="preview-header">
-        <h3>财富变化趋势</h3>
+        <h3>资产趋势</h3>
         <div className="preview-subtle">
           统计区间 <code>{from}</code> ~ <code>{to}</code>
         </div>
@@ -713,7 +744,6 @@ export function WealthCurvePreview({
       </div>
       <div className="preview-chart-stack">
         <div className="wealth-trend-chart-block full-width-chart-panel">
-          <div className="sparkline-title">财产趋势（堆叠）</div>
           <WealthStackedTrendChart
             rows={stackedRows}
             visibility={visibility}

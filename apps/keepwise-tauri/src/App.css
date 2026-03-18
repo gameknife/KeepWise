@@ -1127,6 +1127,11 @@ h3 {
   gap: 0.6rem;
 }
 
+.wealth-overview-stat-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.72rem;
+}
+
 .preview-stat {
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.06);
@@ -1278,24 +1283,11 @@ h3 {
 .wealth-sankey-panel {
   margin-top: 0.8rem;
   display: grid;
-  gap: 0.55rem;
-}
-
-.wealth-sankey-title-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.wealth-sankey-title-row h4 {
-  margin: 0;
-  font-size: 0.96rem;
-  font-weight: 700;
-  color: #f3efe5;
+  gap: 0.45rem;
 }
 
 .wealth-sankey-stage {
-  border-radius: 14px;
+  border-radius: 16px;
   overflow: hidden;
   background: rgba(255, 255, 255, 0.01);
 }
@@ -1816,6 +1808,10 @@ h3 {
 
   .return-analysis-focus {
     min-height: 126px;
+  }
+
+  .wealth-overview-stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .settings-shell {
@@ -3500,6 +3496,10 @@ h3 {
 @media (max-width: 420px) {
   .mobile-shell .return-analysis-stat-grid,
   .mobile-shell .fire-progress-stat-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .wealth-overview-stat-grid {
     grid-template-columns: 1fr;
   }
 }

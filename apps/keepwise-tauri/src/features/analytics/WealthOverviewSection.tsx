@@ -20,6 +20,7 @@ export function WealthOverviewSection(props: any) {
     PreviewStat,
     formatCentsShort,
     isAmountPrivacyMasked,
+    isMobileMode,
     WealthCurvePreview,
     wealthCurveResult,
     formatPct,
@@ -161,6 +162,7 @@ export function WealthOverviewSection(props: any) {
           PreviewStat={PreviewStat}
           formatCentsShort={formatCentsShort}
           isAmountPrivacyMasked={isAmountPrivacyMasked}
+          isMobileMode={isMobileMode}
         />
         <WealthCurvePreview
           data={wealthCurveResult}

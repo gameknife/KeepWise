@@ -3320,6 +3320,7 @@ function App() {
         PreviewStat={PreviewStat}
         formatCentsShort={formatCentsShort}
         isAmountPrivacyMasked={isAmountPrivacyMasked}
+        isMobileMode={isMobileMode}
         WealthCurvePreview={WealthCurvePreview}
         wealthCurveResult={wealthCurveResult}
         formatPct={formatPct}
