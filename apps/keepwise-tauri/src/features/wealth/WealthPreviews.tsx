@@ -108,8 +108,10 @@ function WealthStackedTrendChart({
   const ySpan = yMax - yMin || 1;
 
   const compactYAxisLabel = (valueCents: number) => {
+    const raw = formatCentsShort(valueCents);
+    if (/\*/.test(raw)) return raw;
     const abs = Math.abs(valueCents);
-    if (abs < 1_000_000) return formatCentsShort(valueCents);
+    if (abs < 1_000_000) return raw;
     const wan = valueCents / 1_000_000;
     const absWan = Math.abs(wan);
     const digits = absWan >= 1000 ? 0 : absWan >= 100 ? 1 : 2;

@@ -356,6 +356,13 @@ function App() {
   const [smokeLastRunAt, setSmokeLastRunAt] = useState<number | null>(null);
   const [dbLastResult, setDbLastResult] = useState<LedgerDbMigrateResult | null>(null);
   const [dbImportLastResult, setDbImportLastResult] = useState<LedgerDbImportRepoRuntimeResult | null>(null);
+  const [viewportSize, setViewportSize] = useState(() => {
+    if (typeof window === "undefined") return { width: 0, height: 0 };
+    return {
+      width: Math.round(window.visualViewport?.width ?? window.innerWidth),
+      height: Math.round(window.visualViewport?.height ?? window.innerHeight),
+    };
+  });
   // 核心分析 TAB（收益/财富）的查询条件与结果状态。
   const [invBusy, setInvBusy] = useState(false);
   const [invError, setInvError] = useState("");
@@ -2287,7 +2294,9 @@ function App() {
   // 壳层 UI 状态：TAB、侧边栏、设置、隐私开关、开发者模式。
   const isForcedMobilePreview = import.meta.env.VITE_FORCE_MOBILE === "1";
   const isNativeMobileUA = typeof navigator !== "undefined" && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-  const isMobileMode = isForcedMobilePreview || isNativeMobileUA;
+  const isLandscapeViewport = viewportSize.width > 0 && viewportSize.width > viewportSize.height;
+  const forceDesktopLayout = !isForcedMobilePreview && isNativeMobileUA && isLandscapeViewport;
+  const isMobileMode = isForcedMobilePreview || (isNativeMobileUA && !forceDesktopLayout);
   const [activeTab, setActiveTab] = useState<ProductTabKey>("wealth-overview");
   const [mobileView, setMobileView] = useState<MobileView>("home");
   const mobileSceneViewRef = useRef<MobileView>("home");
@@ -2317,6 +2326,29 @@ function App() {
     amountPrivacyMasked,
     gainLossColorScheme: appSettings.gainLossColorScheme,
   });
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const syncViewportSize = () => {
+      const nextWidth = Math.round(window.visualViewport?.width ?? window.innerWidth);
+      const nextHeight = Math.round(window.visualViewport?.height ?? window.innerHeight);
+      setViewportSize((prev) => (
+        prev.width === nextWidth && prev.height === nextHeight
+          ? prev
+          : { width: nextWidth, height: nextHeight }
+      ));
+    };
+    syncViewportSize();
+    const visualViewport = window.visualViewport;
+    window.addEventListener("resize", syncViewportSize);
+    window.addEventListener("orientationchange", syncViewportSize);
+    visualViewport?.addEventListener("resize", syncViewportSize);
+    return () => {
+      window.removeEventListener("resize", syncViewportSize);
+      window.removeEventListener("orientationchange", syncViewportSize);
+      visualViewport?.removeEventListener("resize", syncViewportSize);
+    };
+  }, []);
 
   useEffect(() => {
     try {
@@ -2737,9 +2769,9 @@ function App() {
 
   // 页面装配：左侧导航 + 全局弹窗 + 主内容区各业务面板。
   return (
-    <main className={`app-shell ${isMobileMode ? "mobile-shell" : ""}`}>
+    <main className={`app-shell ${isMobileMode ? "mobile-shell" : ""} ${forceDesktopLayout ? "force-desktop-layout" : ""}`}>
       <div
-        className={`workspace-layout ${!isMobileMode && sidebarCollapsed ? "sidebar-collapsed" : ""} ${appSettings.uiMotionEnabled ? "" : "motion-disabled"} ${isMobileMode ? "mobile-layout" : ""}`}
+        className={`workspace-layout ${!isMobileMode && sidebarCollapsed ? "sidebar-collapsed" : ""} ${appSettings.uiMotionEnabled ? "" : "motion-disabled"} ${isMobileMode ? "mobile-layout" : ""} ${forceDesktopLayout ? "force-desktop-layout" : ""}`}
       >
         {!isMobileMode ? (
           <WorkspaceSidebar

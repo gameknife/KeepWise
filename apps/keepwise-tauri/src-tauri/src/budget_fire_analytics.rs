@@ -363,6 +363,35 @@ fn budget_year_months_elapsed(selected_year: i32, today: chrono::NaiveDate) -> i
     }
 }
 
+fn deduped_cmb_pdf_income_cte() -> &'static str {
+    r#"
+    WITH deduped_income AS (
+        SELECT
+            COALESCE(month_key, SUBSTR(COALESCE(posted_at, occurred_at), 1, 7)) AS month_key,
+            COALESCE(posted_at, occurred_at, '') AS tx_date,
+            statement_category,
+            COALESCE(NULLIF(TRIM(merchant_normalized), ''), NULLIF(TRIM(merchant), ''), '未知来源') AS employer,
+            amount_cents
+        FROM transactions
+        WHERE source_type = 'cmb_bank_pdf'
+          AND direction = 'income'
+          AND month_key >= ?1
+          AND month_key <= ?2
+          AND statement_category IN ('代发工资', '代发住房公积金')
+        GROUP BY
+            account_id,
+            COALESCE(month_key, SUBSTR(COALESCE(posted_at, occurred_at), 1, 7)),
+            COALESCE(posted_at, occurred_at, ''),
+            amount_cents,
+            currency,
+            COALESCE(description, ''),
+            COALESCE(merchant, ''),
+            COALESCE(merchant_normalized, ''),
+            COALESCE(statement_category, '')
+    )
+    "#
+}
+
 pub fn query_monthly_budget_items_at_db_path(
     db_path: &Path,
     _req: MonthlyBudgetItemsQueryRequest,
@@ -1226,27 +1255,24 @@ pub fn query_salary_income_overview_at_db_path(
     let year = parse_year_param(req.year.as_deref(), today.year())?;
     let month_start = format!("{year:04}-01");
     let month_end = format!("{year:04}-12");
+    let deduped_income_cte = deduped_cmb_pdf_income_cte();
 
     let conn = Connection::open(db_path).map_err(|e| format!("打开数据库失败: {e}"))?;
 
     let mut monthly_stmt = conn
-        .prepare(
+        .prepare(&format!(
             r#"
+            {deduped_income_cte}
             SELECT
                 month_key,
                 statement_category,
                 COUNT(*) AS tx_count,
                 COALESCE(SUM(amount_cents), 0) AS amount_cents
-            FROM transactions
-            WHERE source_type = 'cmb_bank_pdf'
-              AND direction = 'income'
-              AND month_key >= ?1
-              AND month_key <= ?2
-              AND statement_category IN ('代发工资', '代发住房公积金')
+            FROM deduped_income
             GROUP BY month_key, statement_category
             ORDER BY month_key ASC, statement_category ASC
             "#,
-        )
+        ))
         .map_err(|e| format!("查询收入月度明细失败: {e}"))?;
     let monthly_iter = monthly_stmt
         .query_map(params![month_start, month_end], |row| {
@@ -1264,22 +1290,19 @@ pub fn query_salary_income_overview_at_db_path(
     }
 
     let mut employer_stmt = conn
-        .prepare(
+        .prepare(&format!(
             r#"
+            {deduped_income_cte}
             SELECT
-                COALESCE(NULLIF(TRIM(merchant_normalized), ''), NULLIF(TRIM(merchant), ''), '未知来源') AS employer,
+                employer,
                 COUNT(*) AS tx_count,
                 COALESCE(SUM(amount_cents), 0) AS amount_cents
-            FROM transactions
-            WHERE source_type = 'cmb_bank_pdf'
-              AND direction = 'income'
-              AND month_key >= ?1
-              AND month_key <= ?2
-              AND statement_category = '代发工资'
+            FROM deduped_income
+            WHERE statement_category = '代发工资'
             GROUP BY employer
             ORDER BY amount_cents DESC, employer ASC
             "#,
-        )
+        ))
         .map_err(|e| format!("查询收入雇主分布失败: {e}"))?;
     let employer_iter = employer_stmt
         .query_map(params![month_start, month_end], |row| {
@@ -1304,19 +1327,17 @@ pub fn query_salary_income_overview_at_db_path(
 
     let totals = conn
         .query_row(
-            r#"
+            &format!(
+                r#"
+            {deduped_income_cte}
             SELECT
                 COALESCE(SUM(CASE WHEN statement_category = '代发工资' THEN amount_cents ELSE 0 END), 0) AS salary_cents,
                 COALESCE(SUM(CASE WHEN statement_category = '代发住房公积金' THEN amount_cents ELSE 0 END), 0) AS housing_fund_cents,
                 COALESCE(SUM(CASE WHEN statement_category = '代发工资' THEN 1 ELSE 0 END), 0) AS salary_count,
                 COALESCE(SUM(CASE WHEN statement_category = '代发住房公积金' THEN 1 ELSE 0 END), 0) AS housing_fund_count
-            FROM transactions
-            WHERE source_type = 'cmb_bank_pdf'
-              AND direction = 'income'
-              AND month_key >= ?1
-              AND month_key <= ?2
-              AND statement_category IN ('代发工资', '代发住房公积金')
+            FROM deduped_income
             "#,
+            ),
             params![month_start, month_end],
             |row| {
                 Ok((
@@ -1846,6 +1867,78 @@ mod tests {
                 .any(|row| row.as_str() == Some("教育学习")),
             "expected 教育学习 in all_expense_categories"
         );
+
+        let _ = fs::remove_file(&db_path);
+    }
+
+    #[test]
+    fn salary_income_overview_dedupes_income_rows_from_overlapping_statement_files() {
+        let db_path = create_temp_test_db();
+        apply_all_migrations_for_test(&db_path);
+        seed_budget_fire_fixture(&db_path);
+
+        let conn = Connection::open(&db_path).expect("open temp db");
+        conn.execute(
+            r#"
+            INSERT INTO transactions(
+              id, external_ref, occurred_at, posted_at, month_key, amount_cents, direction, description,
+              merchant, merchant_normalized, statement_category, category_id, account_id, source_type, source_file,
+              import_job_id, confidence, needs_review, excluded_in_analysis
+            ) VALUES (
+              'tx_inc_dup_1', 'tx_inc_dup_1', '2026-01-08', '2026-01-08', '2026-01', 1000000, 'income', '工资',
+              '某公司', '某公司', '代发工资', NULL, 'acct_bank_1', 'cmb_bank_pdf', '/tmp/cmb_bank_overlap_01.pdf',
+              NULL, 1.0, 0, 0
+            )
+            "#,
+            [],
+        )
+        .expect("insert duplicate income row");
+
+        conn.execute(
+            r#"
+            UPDATE transactions
+            SET source_file = '/tmp/cmb_bank_overlap_02.pdf'
+            WHERE id = 'tx_inc_1'
+            "#,
+            [],
+        )
+        .expect("mutate original source file to overlapping statement");
+
+        let salary = query_salary_income_overview_at_db_path(
+            &db_path,
+            BudgetYearQueryRequest {
+                year: Some("2026".to_string()),
+            },
+        )
+        .expect("query salary overview");
+
+        assert_eq!(
+            v_i64(&salary, &["summary", "salary_total_cents"]),
+            2_100_000
+        );
+        assert_eq!(v_i64(&salary, &["summary", "salary_tx_count"]), 2);
+        assert_eq!(
+            v_i64(&salary, &["summary", "housing_fund_total_cents"]),
+            200_000
+        );
+        assert_eq!(
+            v_i64(&salary, &["summary", "total_income_cents"]),
+            2_300_000
+        );
+
+        let rows = salary
+            .get("rows")
+            .and_then(Value::as_array)
+            .expect("rows array");
+        let jan = rows
+            .iter()
+            .find(|row| row.get("month_key").and_then(Value::as_str) == Some("2026-01"))
+            .expect("jan row");
+        assert_eq!(
+            jan.get("salary_cents").and_then(Value::as_i64),
+            Some(1_000_000)
+        );
+        assert_eq!(jan.get("salary_tx_count").and_then(Value::as_i64), Some(1));
 
         let _ = fs::remove_file(&db_path);
     }

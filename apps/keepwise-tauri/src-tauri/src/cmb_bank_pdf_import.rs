@@ -1192,21 +1192,17 @@ fn category_id_from_name(name: &str) -> String {
 }
 
 fn transaction_identity_base(row: &ClassifiedPdfRow, header: &PdfHeader) -> String {
-    let source_name = stable_source_name(header);
     let tx = &row.tx;
     [
-        source_name.as_str(),
-        source_name.as_str(),
+        header.account_last4.as_str(),
         &tx.date[0..4],
         &format!("{}", tx.date[5..7].parse::<u32>().unwrap_or(0)),
+        tx.currency.as_str(),
         tx.summary.as_str(),
-        tx.date.as_str(),
         tx.date.as_str(),
         tx.raw_detail.as_str(),
         tx.amount_text.as_str(),
-        header.account_last4.as_str(),
-        "",
-        "",
+        tx.balance_text.as_str(),
     ]
     .join("|")
 }
@@ -1224,6 +1220,88 @@ fn transaction_id(
     let mut hasher = Sha1::new();
     hasher.update(source.as_bytes());
     format!("{:x}", hasher.finalize())
+}
+
+#[derive(Debug, Default)]
+struct ImportRowsOutcome {
+    total_count: i64,
+    imported_count: i64,
+    duplicate_skipped_count: i64,
+    error_count: i64,
+    error_samples: Vec<String>,
+}
+
+fn parsed_row_fingerprint(row: &ClassifiedPdfRow) -> String {
+    let tx = &row.tx;
+    [
+        tx.date.as_str(),
+        tx.currency.as_str(),
+        tx.amount_text.as_str(),
+        tx.balance_text.as_str(),
+        tx.raw_detail.as_str(),
+        tx.summary.as_str(),
+        tx.counterparty.as_str(),
+        row.direction.as_str(),
+    ]
+    .join("|")
+}
+
+fn import_classified_rows(
+    conn: &Connection,
+    header: &PdfHeader,
+    rows: &[&ClassifiedPdfRow],
+    source_type: &str,
+    import_job_id: &str,
+) -> ImportRowsOutcome {
+    let mut outcome = ImportRowsOutcome {
+        total_count: i64::try_from(rows.len()).unwrap_or(i64::MAX),
+        ..ImportRowsOutcome::default()
+    };
+    let mut occurrence_counters: HashMap<String, usize> = HashMap::new();
+    let mut seen_fingerprints = HashSet::<String>::new();
+
+    for row in rows {
+        let fingerprint = parsed_row_fingerprint(row);
+        if !seen_fingerprints.insert(fingerprint) {
+            outcome.duplicate_skipped_count += 1;
+            continue;
+        }
+
+        let identity = transaction_identity_base(row, header);
+        let occurrence = occurrence_counters.get(&identity).copied().unwrap_or(0) + 1;
+        occurrence_counters.insert(identity, occurrence);
+        let tx_id = transaction_id(row, header, source_type, occurrence);
+        let category_id = category_id_from_name(&row.expense_category);
+
+        let step: Result<(), String> = (|| {
+            let tx = conn
+                .unchecked_transaction()
+                .map_err(|e| format!("开始导入事务失败: {e}"))?;
+            upsert_transaction(
+                &tx,
+                row,
+                header,
+                &tx_id,
+                &category_id,
+                source_type,
+                import_job_id,
+            )?;
+            tx.commit().map_err(|e| format!("提交导入事务失败: {e}"))?;
+            Ok(())
+        })();
+
+        match step {
+            Ok(()) => outcome.imported_count += 1,
+            Err(err) => {
+                outcome.error_count += 1;
+                if outcome.error_samples.len() < 20 {
+                    outcome.error_samples.push(err);
+                }
+            }
+        }
+    }
+
+    outcome
 }
 
 fn upsert_transaction(
@@ -1357,45 +1435,7 @@ fn import_at_db_path(
     .map_err(|e| format!("创建导入任务失败: {e}"))?;
 
     let import_rows: Vec<&ClassifiedPdfRow> = rows.iter().filter(|r| r.include_in_import).collect();
-    let total_count = i64::try_from(import_rows.len()).unwrap_or(i64::MAX);
-    let mut imported_count = 0_i64;
-    let mut error_count = 0_i64;
-    let mut error_samples = Vec::<String>::new();
-    let mut occurrence_counters: HashMap<String, usize> = HashMap::new();
-
-    for row in import_rows {
-        let identity = transaction_identity_base(row, &header);
-        let occurrence = occurrence_counters.get(&identity).copied().unwrap_or(0) + 1;
-        occurrence_counters.insert(identity, occurrence);
-        let tx_id = transaction_id(row, &header, source_type, occurrence);
-        let category_id = category_id_from_name(&row.expense_category);
-
-        let step: Result<(), String> = (|| {
-            let tx = conn
-                .unchecked_transaction()
-                .map_err(|e| format!("开始导入事务失败: {e}"))?;
-            upsert_transaction(
-                &tx,
-                row,
-                &header,
-                &tx_id,
-                &category_id,
-                source_type,
-                &job_id,
-            )?;
-            tx.commit().map_err(|e| format!("提交导入事务失败: {e}"))?;
-            Ok(())
-        })();
-        match step {
-            Ok(()) => imported_count += 1,
-            Err(err) => {
-                error_count += 1;
-                if error_samples.len() < 20 {
-                    error_samples.push(err);
-                }
-            }
-        }
-    }
+    let import_outcome = import_classified_rows(&conn, &header, &import_rows, source_type, &job_id);
 
     let finished_at = Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true);
     conn.execute(
@@ -1406,10 +1446,14 @@ fn import_at_db_path(
         "#,
         params![
             finished_at,
-            total_count,
-            imported_count,
-            error_count,
-            if error_samples.is_empty() { None::<String> } else { Some(error_samples.join("\n")) },
+            import_outcome.total_count,
+            import_outcome.imported_count,
+            import_outcome.error_count,
+            if import_outcome.error_samples.is_empty() {
+                None::<String>
+            } else {
+                Some(import_outcome.error_samples.join("\n"))
+            },
             job_id,
         ],
     )
@@ -1420,11 +1464,12 @@ fn import_at_db_path(
         "source_path": pdf_path.to_string_lossy().to_string(),
         "source_type": source_type,
         "review_threshold": review_threshold,
-        "imported_count": imported_count,
-        "import_error_count": error_count,
+        "imported_count": import_outcome.imported_count,
+        "duplicate_skipped_count": import_outcome.duplicate_skipped_count,
+        "import_error_count": import_outcome.error_count,
         "import_job_id": job_id,
         "preview": preview,
-        "error_samples": error_samples,
+        "error_samples": import_outcome.error_samples,
     }))
 }
 
@@ -1636,6 +1681,116 @@ mod tests {
         assert_eq!(account_id, "acct_cmb_debit_1234");
         assert_eq!(source_type, "cmb_bank_pdf");
         assert_eq!(amount_cents, -12_345);
+    }
+
+    #[test]
+    fn pdf_transaction_id_is_stable_across_overlapping_statement_files() {
+        let row = sample_row();
+        let header_a = PdfHeader {
+            account_last4: "1234".to_string(),
+            range_start: "2026-02-20".to_string(),
+            range_end: "2026-03-10".to_string(),
+        };
+        let header_b = PdfHeader {
+            account_last4: "1234".to_string(),
+            range_start: "2026-02-24".to_string(),
+            range_end: "2026-03-24".to_string(),
+        };
+
+        let tx_id_a = transaction_id(&row, &header_a, "cmb_bank_pdf", 1);
+        let tx_id_b = transaction_id(&row, &header_b, "cmb_bank_pdf", 1);
+
+        assert_eq!(tx_id_a, tx_id_b);
+    }
+
+    #[test]
+    fn pdf_import_skips_exact_duplicate_rows_in_same_batch() {
+        let conn = seeded_conn();
+        let header = sample_header();
+        let mut first = sample_row();
+        first.tx.page = 1;
+        let mut duplicate = first.clone();
+        duplicate.tx.page = 2;
+        let import_job_id = Uuid::new_v4().to_string();
+
+        conn.execute(
+            r#"
+            INSERT INTO import_jobs(id, source_type, source_file, status, started_at, total_count, imported_count, error_count)
+            VALUES (?1, 'cmb_bank_pdf', 'sample.pdf', 'success', datetime('now'), 2, 1, 0)
+            "#,
+            params![import_job_id],
+        )
+        .expect("seed import job");
+
+        let rows = vec![&first, &duplicate];
+        let outcome = import_classified_rows(&conn, &header, &rows, "cmb_bank_pdf", &import_job_id);
+
+        assert_eq!(outcome.total_count, 2);
+        assert_eq!(outcome.imported_count, 1);
+        assert_eq!(outcome.duplicate_skipped_count, 1);
+        assert_eq!(outcome.error_count, 0);
+
+        let tx_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM transactions", [], |r| r.get(0))
+            .expect("tx count");
+        assert_eq!(tx_count, 1);
+    }
+
+    #[test]
+    fn pdf_import_upserts_same_transaction_from_overlapping_statement_files() {
+        let conn = seeded_conn();
+        let row = sample_row();
+        let header_a = PdfHeader {
+            account_last4: "1234".to_string(),
+            range_start: "2026-02-20".to_string(),
+            range_end: "2026-03-10".to_string(),
+        };
+        let header_b = PdfHeader {
+            account_last4: "1234".to_string(),
+            range_start: "2026-02-24".to_string(),
+            range_end: "2026-03-24".to_string(),
+        };
+        let import_job_id = Uuid::new_v4().to_string();
+
+        conn.execute(
+            r#"
+            INSERT INTO import_jobs(id, source_type, source_file, status, started_at, total_count, imported_count, error_count)
+            VALUES (?1, 'cmb_bank_pdf', 'sample.pdf', 'success', datetime('now'), 2, 2, 0)
+            "#,
+            params![import_job_id],
+        )
+        .expect("seed import job");
+
+        let tx_id_a = transaction_id(&row, &header_a, "cmb_bank_pdf", 1);
+        let tx_id_b = transaction_id(&row, &header_b, "cmb_bank_pdf", 1);
+        assert_eq!(tx_id_a, tx_id_b);
+
+        let category_id = category_id_from_name(&row.expense_category);
+        upsert_transaction(
+            &conn,
+            &row,
+            &header_a,
+            &tx_id_a,
+            &category_id,
+            "cmb_bank_pdf",
+            &import_job_id,
+        )
+        .expect("first overlapping import");
+        upsert_transaction(
+            &conn,
+            &row,
+            &header_b,
+            &tx_id_b,
+            &category_id,
+            "cmb_bank_pdf",
+            &import_job_id,
+        )
+        .expect("second overlapping import");
+
+        let tx_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM transactions", [], |r| r.get(0))
+            .expect("tx count");
+        assert_eq!(tx_count, 1);
     }
 
     #[test]

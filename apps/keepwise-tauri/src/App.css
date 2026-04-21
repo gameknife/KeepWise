@@ -3532,6 +3532,77 @@ h3 {
   }
 }
 
+.force-desktop-layout .workspace-layout {
+  grid-template-columns: 260px minmax(0, 1fr);
+  height: 100%;
+}
+
+.force-desktop-layout .workspace-layout.sidebar-collapsed {
+  grid-template-columns: 84px minmax(0, 1fr);
+}
+
+.force-desktop-layout .workspace-sidebar {
+  height: 100%;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.force-desktop-layout .tab-nav {
+  grid-template-columns: 1fr;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 0.15rem;
+}
+
+.force-desktop-layout .workspace-content {
+  height: 100%;
+  overflow-y: auto;
+  padding-right: 0.2rem;
+}
+
+.force-desktop-layout .workspace-layout.sidebar-collapsed .workspace-brand-text,
+.force-desktop-layout .workspace-layout.sidebar-collapsed .tab-nav-title {
+  max-width: 0;
+  opacity: 0;
+  transform: translateX(-6px);
+}
+
+.force-desktop-layout .workspace-layout.sidebar-collapsed .sidebar-toggle-btn {
+  width: 1.65rem;
+  height: 1.65rem;
+}
+
+.force-desktop-layout .workspace-layout.sidebar-collapsed .tab-nav-btn {
+  justify-content: center;
+  padding: 0.5rem;
+}
+
+.force-desktop-layout .workspace-layout.sidebar-collapsed .tab-nav-main {
+  grid-template-columns: 1fr;
+  justify-items: center;
+  gap: 0;
+}
+
+.force-desktop-layout .workspace-layout.sidebar-collapsed .workspace-sidebar-head {
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.force-desktop-layout .workspace-layout.sidebar-collapsed .workspace-brand {
+  justify-content: center;
+  gap: 0;
+}
+
+.force-desktop-layout .workspace-layout.sidebar-collapsed .workspace-sidebar-footer {
+  justify-content: center;
+}
+
+.force-desktop-layout .workspace-layout.sidebar-collapsed .sidebar-tool-btn {
+  width: 2.05rem;
+  height: 2.05rem;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .primary-btn {
     transition: none;

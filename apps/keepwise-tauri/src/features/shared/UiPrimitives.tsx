@@ -370,6 +370,7 @@ export function LineAreaChart({
   })();
   const compactYAxisLabel = (value: number) => {
     const raw = formattedValue(value);
+    if (/\*/.test(raw)) return raw;
     if (/%/.test(raw)) return raw;
     const abs = Math.abs(value);
     // Monetary series are passed in cents; when >= 1,000,000 cents (10,000 yuan),

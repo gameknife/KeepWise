@@ -47,8 +47,24 @@ def _load_yaml(path: Path) -> Any:
     try:
         import yaml  # type: ignore
 
+        class ManifestLoader(yaml.SafeLoader):
+            pass
+
+        # Case manifests intentionally include invalid date-like strings to
+        # verify validation behavior. Keep those scalars as plain strings
+        # instead of letting PyYAML coerce them into timestamps.
+        timestamp_tag = "tag:yaml.org,2002:timestamp"
+        ManifestLoader.yaml_implicit_resolvers = {
+            key: [
+                entry
+                for entry in resolvers
+                if not (len(entry) >= 2 and entry[0] == timestamp_tag)
+            ]
+            for key, resolvers in yaml.SafeLoader.yaml_implicit_resolvers.items()
+        }
+
         with path.open("r", encoding="utf-8") as f:
-            return yaml.safe_load(f)
+            return yaml.load(f, Loader=ManifestLoader)
     except ModuleNotFoundError:
         # Ruby is present in this environment and ships YAML in stdlib (psych).
         cmd = [

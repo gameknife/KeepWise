@@ -259,7 +259,10 @@ mod tests {
         )
         .expect("confirm review");
 
-        assert_eq!(payload.get("confirmed").and_then(Value::as_bool), Some(true));
+        assert_eq!(
+            payload.get("confirmed").and_then(Value::as_bool),
+            Some(true)
+        );
         let needs_review: i64 = conn
             .query_row(
                 "SELECT needs_review FROM transactions WHERE id = ?1",
