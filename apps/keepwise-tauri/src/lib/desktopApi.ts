@@ -183,6 +183,7 @@ export type MonthlyBudgetItemDeleteRequest = {
 export type InvestmentReturnPayload = unknown;
 export type InvestmentReturnsPayload = unknown;
 export type InvestmentCurvePayload = unknown;
+export type InvestmentCurveBenchmarksPayload = unknown;
 export type WealthOverviewPayload = unknown;
 export type WealthCurvePayload = unknown;
 export type MonthlyBudgetItemsPayload = unknown;
@@ -617,6 +618,12 @@ export async function queryInvestmentCurve(
   req: InvestmentCurveQueryRequest,
 ): Promise<InvestmentCurvePayload> {
   return invoke<InvestmentCurvePayload>("investment_curve_query", { req });
+}
+
+export async function queryInvestmentCurveBenchmarks(
+  req: InvestmentCurveQueryRequest,
+): Promise<InvestmentCurveBenchmarksPayload> {
+  return invoke<InvestmentCurveBenchmarksPayload>("investment_curve_benchmarks_query", { req });
 }
 
 export async function queryWealthOverview(

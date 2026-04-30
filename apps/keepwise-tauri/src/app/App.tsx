@@ -74,6 +74,7 @@ import {
   queryAssetValuations,
   queryInvestments,
   queryInvestmentReturns,
+  queryInvestmentCurveBenchmarks,
   queryInvestmentCurve,
   queryInvestmentReturn,
   queryMonthlyBudgetItems,
@@ -121,6 +122,7 @@ import {
   type LedgerAdminResetTransactionsResult,
   type LedgerDbImportRepoRuntimeResult,
   type InvestmentCurvePayload,
+  type InvestmentCurveQueryRequest,
   type InvestmentReturnsPayload,
   type LedgerDbMigrateResult,
   type LedgerDbStatus,
@@ -367,6 +369,7 @@ function App() {
   const [invBusy, setInvBusy] = useState(false);
   const [invError, setInvError] = useState("");
   const [invResult, setInvResult] = useState<InvestmentReturnPayload | null>(null);
+  const [invLastQueryKey, setInvLastQueryKey] = useState("");
   const [invQuery, setInvQuery] = useState({
     account_id: "__portfolio__",
     preset: "ytd",
@@ -376,9 +379,12 @@ function App() {
   const [invBatchBusy, setInvBatchBusy] = useState(false);
   const [invBatchError, setInvBatchError] = useState("");
   const [invBatchResult, setInvBatchResult] = useState<InvestmentReturnsPayload | null>(null);
+  const [invBatchLastQueryKey, setInvBatchLastQueryKey] = useState("");
   const [invCurveBusy, setInvCurveBusy] = useState(false);
   const [invCurveError, setInvCurveError] = useState("");
   const [invCurveResult, setInvCurveResult] = useState<InvestmentCurvePayload | null>(null);
+  const [invCurveLastQueryKey, setInvCurveLastQueryKey] = useState("");
+  const invCurveRequestSeqRef = useRef(0);
   const [invCurveQuery, setInvCurveQuery] = useState({
     account_id: "__portfolio__",
     preset: "ytd",
@@ -523,6 +529,7 @@ function App() {
   const [acctCatalogUpsertError, setAcctCatalogUpsertError] = useState("");
   const [acctCatalogUpsertResult, setAcctCatalogUpsertResult] = useState<AccountCatalogUpsertPayload | null>(null);
   const [acctCatalogCreateOpen, setAcctCatalogCreateOpen] = useState(false);
+  const [acctCatalogModalMode, setAcctCatalogModalMode] = useState<"create" | "rename">("create");
   const [acctCatalogUpsertForm, setAcctCatalogUpsertForm] = useState<UpsertAccountCatalogEntryRequest>({
     account_id: "",
     account_name: "",
@@ -1595,7 +1602,24 @@ function App() {
     }
   }
 
+  function normalizeAccountCatalogKind(raw: unknown): UpsertAccountCatalogEntryRequest["account_kind"] {
+    switch (raw) {
+      case "investment":
+      case "cash":
+      case "real_estate":
+      case "bank":
+      case "credit_card":
+      case "wallet":
+      case "liability":
+      case "other":
+        return raw;
+      default:
+        return "other";
+    }
+  }
+
   function resetAccountCatalogCreateForm() {
+    setAcctCatalogModalMode("create");
     setAcctCatalogUpsertForm({
       account_id: "",
       account_name: "",
@@ -1606,6 +1630,19 @@ function App() {
   function openAccountCatalogCreateModal() {
     setAcctCatalogUpsertError("");
     resetAccountCatalogCreateForm();
+    setAcctCatalogCreateOpen(true);
+  }
+
+  function openAccountCatalogRenameModal(accountId: string, accountName: string, accountKind: string) {
+    const normalizedAccountId = accountId.trim();
+    if (!normalizedAccountId) return;
+    setAcctCatalogUpsertError("");
+    setAcctCatalogModalMode("rename");
+    setAcctCatalogUpsertForm({
+      account_id: normalizedAccountId,
+      account_name: accountName,
+      account_kind: normalizeAccountCatalogKind(accountKind),
+    });
     setAcctCatalogCreateOpen(true);
   }
 
@@ -2111,17 +2148,20 @@ function App() {
 
   // 业务查询动作：收益/财富/工作台各模块的主查询入口。
   async function handleInvestmentReturnQuery() {
+    const req = buildInvestmentReturnRequest(invQuery);
+    const queryKey = JSON.stringify(req);
     setInvBusy(true);
     setInvError("");
     try {
       const [payload, quickMetricPayload] = await Promise.all([
-        queryInvestmentReturn(buildInvestmentReturnRequest(invQuery)),
+        queryInvestmentReturn(req),
         queryInvestmentReturn(buildReturnTabQuickMetricRequest(invQuery)),
       ]);
       const ytdAnnualizedRate = readNumber(quickMetricPayload, "metrics.annualized_rate");
       const ytdNetGrowthCents = readNumber(quickMetricPayload, "metrics.net_growth_cents");
       startTransition(() => {
         setInvResult(payload);
+        setInvLastQueryKey(queryKey);
         setReturnTabYtdAnnualizedRate(ytdAnnualizedRate ?? null);
         setReturnTabYtdNetGrowthCents(ytdNetGrowthCents ?? null);
       });
@@ -2134,12 +2174,15 @@ function App() {
   }
 
   async function handleInvestmentReturnsQuery() {
+    const req = buildInvestmentReturnsRequest(invCurveQuery);
+    const queryKey = JSON.stringify(req);
     setInvBatchBusy(true);
     setInvBatchError("");
     try {
-      const payload = await queryInvestmentReturns(buildInvestmentReturnsRequest(invCurveQuery));
+      const payload = await queryInvestmentReturns(req);
       startTransition(() => {
         setInvBatchResult(payload);
+        setInvBatchLastQueryKey(queryKey);
       });
     } catch (err) {
       setInvBatchError(toErrorMessage(err));
@@ -2149,18 +2192,85 @@ function App() {
   }
 
   async function handleInvestmentCurveQuery() {
+    const req = buildInvestmentCurveRequest(invCurveQuery);
+    const queryKey = JSON.stringify(req);
+    const requestSeq = invCurveRequestSeqRef.current + 1;
+    invCurveRequestSeqRef.current = requestSeq;
     setInvCurveBusy(true);
     setInvCurveError("");
     try {
-      const payload = await queryInvestmentCurve(buildInvestmentCurveRequest(invCurveQuery));
+      const payload = await queryInvestmentCurve(req);
+      if (requestSeq !== invCurveRequestSeqRef.current) return;
       startTransition(() => {
         setInvCurveResult(payload);
+        setInvCurveLastQueryKey(queryKey);
       });
+      scheduleInvestmentCurveBenchmarksHydration(req, requestSeq);
     } catch (err) {
+      if (requestSeq !== invCurveRequestSeqRef.current) return;
       const message = toErrorMessage(err);
       setInvCurveError(message);
     } finally {
-      setInvCurveBusy(false);
+      if (requestSeq === invCurveRequestSeqRef.current) {
+        setInvCurveBusy(false);
+      }
+    }
+  }
+
+  function scheduleInvestmentCurveBenchmarksHydration(
+    req: InvestmentCurveQueryRequest,
+    requestSeq: number,
+  ) {
+    const run = () => {
+      void hydrateInvestmentCurveBenchmarks(req, requestSeq);
+    };
+    if (typeof window === "undefined") {
+      setTimeout(run, 0);
+      return;
+    }
+    if (typeof window.requestAnimationFrame === "function") {
+      window.requestAnimationFrame(() => {
+        window.setTimeout(run, 0);
+      });
+      return;
+    }
+    window.setTimeout(run, 0);
+  }
+
+  async function hydrateInvestmentCurveBenchmarks(req: InvestmentCurveQueryRequest, requestSeq: number) {
+    try {
+      const benchmarksPayload = await queryInvestmentCurveBenchmarks(req);
+      if (requestSeq !== invCurveRequestSeqRef.current) return;
+      startTransition(() => {
+        setInvCurveResult((prev: InvestmentCurvePayload | null) => {
+          if (!isRecord(prev)) return prev;
+          return {
+            ...prev,
+            benchmarks: benchmarksPayload,
+          };
+        });
+      });
+    } catch (err) {
+      if (requestSeq !== invCurveRequestSeqRef.current) return;
+      const warningMessage = `指数对比加载失败：${toErrorMessage(err)}`;
+      startTransition(() => {
+        setInvCurveResult((prev: InvestmentCurvePayload | null) => {
+          if (!isRecord(prev)) return prev;
+          return {
+            ...prev,
+            benchmarks: {
+              source: "Yahoo Finance",
+              summary: {
+                requested_count: 0,
+                available_count: 0,
+                warning_count: 1,
+              },
+              curves: [],
+              warnings: [warningMessage],
+            },
+          };
+        });
+      });
     }
   }
 
@@ -2633,6 +2743,12 @@ function App() {
   const quickManualAssetValueWanText = quickManualAssetValueInputYuan !== null && Math.abs(quickManualAssetValueInputYuan) >= 100000
     ? `${(quickManualAssetValueInputYuan / 10000).toFixed(2)} 万`
     : "";
+  const invReturnAutoQueryKey = JSON.stringify(buildInvestmentReturnRequest(invQuery));
+  const invCurveAutoQueryKey = JSON.stringify(buildInvestmentCurveRequest(invCurveQuery));
+  const invBatchAutoQueryKey = JSON.stringify(buildInvestmentReturnsRequest(invCurveQuery));
+  const shouldAutoRefreshInvestmentReturn = invResult === null || invLastQueryKey !== invReturnAutoQueryKey;
+  const shouldAutoRefreshInvestmentCurve = invCurveResult === null || invCurveLastQueryKey !== invCurveAutoQueryKey;
+  const shouldAutoRefreshInvestmentReturns = invBatchResult === null || invBatchLastQueryKey !== invBatchAutoQueryKey;
   const shouldPrefetchReturnTabQuickMetric = Boolean(dbStatus?.ready) && returnTabYtdAnnualizedRate === null && !invBusy;
   const shouldPrefetchWealthOverviewTabQuickMetric = Boolean(dbStatus?.ready) && wealthOverviewResult === null && !wealthOverviewBusy;
   const shouldPrefetchWealthTabQuickMetric = Boolean(dbStatus?.ready) && wealthCurveResult === null && !wealthCurveBusy;
@@ -2717,17 +2833,17 @@ function App() {
   useDebouncedAutoRun(
     handleInvestmentReturnQuery,
     [invQuery.account_id, invQuery.preset, invQuery.from, invQuery.to],
-    { enabled: isReturnAnalysisTab || shouldPrefetchReturnTabQuickMetric, delayMs: 260 },
+    { enabled: (isReturnAnalysisTab && shouldAutoRefreshInvestmentReturn) || shouldPrefetchReturnTabQuickMetric, delayMs: 260 },
   );
   useDebouncedAutoRun(
     handleInvestmentCurveQuery,
     [invCurveQuery.account_id, invCurveQuery.preset, invCurveQuery.from, invCurveQuery.to],
-    { enabled: isReturnAnalysisTab, delayMs: 260 },
+    { enabled: isReturnAnalysisTab && shouldAutoRefreshInvestmentCurve, delayMs: 260 },
   );
   useDebouncedAutoRun(
     handleInvestmentReturnsQuery,
     [invCurveQuery.preset ?? "ytd", invCurveQuery.from ?? "", invCurveQuery.to ?? ""],
-    { enabled: isReturnAnalysisTab, delayMs: 260 },
+    { enabled: isReturnAnalysisTab && shouldAutoRefreshInvestmentReturns, delayMs: 260 },
   );
   useDebouncedAutoRun(
     handleWealthOverviewQuery,
@@ -3130,7 +3246,9 @@ function App() {
         safeNumericInputValue={safeNumericInputValue}
         parseNumericInputWithFallback={parseNumericInputWithFallback}
         openAccountCatalogCreateModal={openAccountCatalogCreateModal}
+        openAccountCatalogRenameModal={openAccountCatalogRenameModal}
         acctCatalogUpsertBusy={acctCatalogUpsertBusy}
+        acctCatalogModalMode={acctCatalogModalMode}
         AutoRefreshHint={AutoRefreshHint}
         acctCatalogBusy={acctCatalogBusy}
         acctCatalogError={acctCatalogError}

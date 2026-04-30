@@ -213,10 +213,13 @@ export function buildAccountCatalogQueryRequest(acctCatalogQuery: QueryAccountCa
 export function buildAccountCatalogUpsertRequest(
   acctCatalogUpsertForm: UpsertAccountCatalogEntryRequest,
 ): UpsertAccountCatalogEntryRequest {
-  return {
+  const req: UpsertAccountCatalogEntryRequest = {
     account_name: `${acctCatalogUpsertForm.account_name ?? ""}`.trim(),
     account_kind: acctCatalogUpsertForm.account_kind,
   };
+  const accountId = `${acctCatalogUpsertForm.account_id ?? ""}`.trim();
+  if (accountId) req.account_id = accountId;
+  return req;
 }
 
 export function buildAdminResetRequest(adminResetConfirmText: string): { confirm_text?: string } {

@@ -1,16 +1,45 @@
 use chrono::{Datelike, Duration, NaiveDate};
+use reqwest::blocking::Client;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
+use std::time::Duration as StdDuration;
 use tauri::AppHandle;
+use url::Url;
 
 use crate::ledger_db::resolve_ledger_db_path;
 
 const PORTFOLIO_ACCOUNT_ID: &str = "__portfolio__";
 const PORTFOLIO_ACCOUNT_NAME: &str = "全部投资账户（组合）";
 const SUPPORTED_PRESETS: &[&str] = &["ytd", "1y", "3y", "since_inception", "custom"];
+const BENCHMARK_SOURCE_NAME: &str = "Yahoo Finance";
+
+#[derive(Debug, Clone, Copy)]
+struct BenchmarkSpec {
+    key: &'static str,
+    label: &'static str,
+    symbol: &'static str,
+}
+
+const BENCHMARK_SPECS: &[BenchmarkSpec] = &[
+    BenchmarkSpec {
+        key: "sse",
+        label: "上证指数",
+        symbol: "000001.SS",
+    },
+    BenchmarkSpec {
+        key: "hsi",
+        label: "恒生指数",
+        symbol: "^HSI",
+    },
+    BenchmarkSpec {
+        key: "sp500",
+        label: "标普500",
+        symbol: "^GSPC",
+    },
+];
 
 #[derive(Debug, Deserialize)]
 pub struct InvestmentReturnQueryRequest {
@@ -124,6 +153,12 @@ struct PortfolioHistoryRow {
     flow_cents: i64,
 }
 
+#[derive(Debug, Clone)]
+struct BenchmarkHistoryRow {
+    market_date: NaiveDate,
+    close: f64,
+}
+
 fn parse_iso_date(raw: &str, field_name: &str) -> Result<NaiveDate, String> {
     let text = raw.trim();
     if text.is_empty() {
@@ -140,6 +175,327 @@ fn cents_to_yuan_text(cents: i64) -> String {
 fn round_to(value: f64, digits: i32) -> f64 {
     let factor = 10_f64.powi(digits);
     (value * factor).round() / factor
+}
+
+fn build_market_data_client() -> Result<Client, String> {
+    Client::builder()
+        .timeout(StdDuration::from_secs(8))
+        .user_agent("KeepWise Desktop/0.1.0")
+        .build()
+        .map_err(|e| format!("创建基准指数请求客户端失败: {e}"))
+}
+
+fn build_yahoo_chart_url(symbol: &str, from_date: NaiveDate, to_date: NaiveDate) -> Result<Url, String> {
+    let from_ts = from_date
+        .and_hms_opt(0, 0, 0)
+        .ok_or("无效 benchmark 起始时间")?
+        .and_utc()
+        .timestamp();
+    let to_ts = (to_date + Duration::days(1))
+        .and_hms_opt(0, 0, 0)
+        .ok_or("无效 benchmark 结束时间")?
+        .and_utc()
+        .timestamp();
+    let mut url = Url::parse("https://query1.finance.yahoo.com")
+        .map_err(|e| format!("构造 benchmark URL 失败: {e}"))?;
+    {
+        let mut segments = url
+            .path_segments_mut()
+            .map_err(|_| "构造 benchmark URL 失败".to_string())?;
+        segments.extend(["v8", "finance", "chart", symbol]);
+    }
+    url.query_pairs_mut()
+        .append_pair("interval", "1d")
+        .append_pair("includeAdjustedClose", "true")
+        .append_pair("period1", &from_ts.to_string())
+        .append_pair("period2", &to_ts.to_string());
+    Ok(url)
+}
+
+fn timestamp_to_market_date(timestamp: i64, gmtoffset: i64) -> Result<NaiveDate, String> {
+    let utc_dt = chrono::DateTime::<chrono::Utc>::from_timestamp(timestamp, 0)
+        .ok_or_else(|| format!("无效行情时间戳: {timestamp}"))?;
+    Ok((utc_dt + Duration::seconds(gmtoffset)).date_naive())
+}
+
+fn parse_yahoo_chart_history(payload: &Value) -> Result<Vec<BenchmarkHistoryRow>, String> {
+    if let Some(chart_error) = payload.get("chart").and_then(|chart| chart.get("error")) {
+        if !chart_error.is_null() {
+            let code = chart_error
+                .get("code")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown");
+            let description = chart_error
+                .get("description")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown");
+            return Err(format!("{code}: {description}"));
+        }
+    }
+
+    let result = payload
+        .get("chart")
+        .and_then(|chart| chart.get("result"))
+        .and_then(Value::as_array)
+        .and_then(|items| items.first())
+        .ok_or("Yahoo 行情返回为空")?;
+
+    let gmtoffset = result
+        .get("meta")
+        .and_then(|meta| meta.get("gmtoffset"))
+        .and_then(Value::as_i64)
+        .unwrap_or(0);
+    let timestamps = result
+        .get("timestamp")
+        .and_then(Value::as_array)
+        .ok_or("Yahoo 行情缺少 timestamp")?;
+    let price_values = result
+        .get("indicators")
+        .and_then(|indicators| indicators.get("adjclose"))
+        .and_then(Value::as_array)
+        .and_then(|items| items.first())
+        .and_then(|first| first.get("adjclose"))
+        .and_then(Value::as_array)
+        .or_else(|| {
+            result
+                .get("indicators")
+                .and_then(|indicators| indicators.get("quote"))
+                .and_then(Value::as_array)
+                .and_then(|items| items.first())
+                .and_then(|first| first.get("close"))
+                .and_then(Value::as_array)
+        })
+        .ok_or("Yahoo 行情缺少 close")?;
+
+    let mut by_date = BTreeMap::<NaiveDate, f64>::new();
+    for idx in 0..timestamps.len().min(price_values.len()) {
+        let Some(timestamp) = timestamps[idx].as_i64() else {
+            continue;
+        };
+        let Some(close) = price_values[idx].as_f64() else {
+            continue;
+        };
+        if !close.is_finite() || close <= 0.0 {
+            continue;
+        }
+        let market_date = timestamp_to_market_date(timestamp, gmtoffset)?;
+        by_date.insert(market_date, close);
+    }
+    if by_date.is_empty() {
+        return Err("Yahoo 行情没有可用收盘价".to_string());
+    }
+
+    Ok(by_date
+        .into_iter()
+        .map(|(market_date, close)| BenchmarkHistoryRow { market_date, close })
+        .collect())
+}
+
+fn fetch_benchmark_history(
+    client: &Client,
+    symbol: &str,
+    from_date: NaiveDate,
+    to_date: NaiveDate,
+) -> Result<Vec<BenchmarkHistoryRow>, String> {
+    let url = build_yahoo_chart_url(symbol, from_date, to_date)?;
+    let response = client
+        .get(url)
+        .send()
+        .map_err(|e| format!("请求行情失败: {e}"))?
+        .error_for_status()
+        .map_err(|e| format!("请求行情失败: {e}"))?;
+    let body = response.text().map_err(|e| format!("读取行情响应失败: {e}"))?;
+    let payload: Value =
+        serde_json::from_str(&body).map_err(|e| format!("解析行情响应失败: {e}"))?;
+    parse_yahoo_chart_history(&payload)
+}
+
+fn build_benchmark_curve_rows(
+    curve_dates: &[NaiveDate],
+    history: &[BenchmarkHistoryRow],
+    effective_from: NaiveDate,
+) -> Result<(String, f64, Vec<Value>), String> {
+    if curve_dates.is_empty() {
+        return Ok((String::new(), 0.0, Vec::new()));
+    }
+    if history.is_empty() {
+        return Err("无可用指数历史数据".to_string());
+    }
+
+    let baseline_idx = history
+        .iter()
+        .rposition(|row| row.market_date <= effective_from)
+        .or_else(|| history.iter().position(|row| row.market_date >= effective_from))
+        .ok_or("未找到可用指数基准日")?;
+    let baseline = &history[baseline_idx];
+    if !baseline.close.is_finite() || baseline.close <= 0.0 {
+        return Err("指数基准收盘价无效".to_string());
+    }
+
+    let mut rows = Vec::<Value>::new();
+    let mut history_idx = baseline_idx;
+    for curve_date in curve_dates {
+        while history_idx + 1 < history.len() && history[history_idx + 1].market_date <= *curve_date
+        {
+            history_idx += 1;
+        }
+        let market_row = &history[history_idx];
+        if market_row.market_date > *curve_date {
+            continue;
+        }
+        let cumulative_return_rate = round_to(market_row.close / baseline.close - 1.0, 8);
+        rows.push(json!({
+            "snapshot_date": curve_date.format("%Y-%m-%d").to_string(),
+            "effective_market_date": market_row.market_date.format("%Y-%m-%d").to_string(),
+            "close": round_to(market_row.close, 4),
+            "cumulative_return_rate": cumulative_return_rate,
+            "cumulative_return_pct": round_to(cumulative_return_rate * 100.0, 4),
+            "cumulative_return_pct_text": format!("{:.2}%", cumulative_return_rate * 100.0),
+        }));
+    }
+    if rows.is_empty() {
+        return Err("所选区间内无可对齐的指数交易日".to_string());
+    }
+
+    Ok((
+        baseline.market_date.format("%Y-%m-%d").to_string(),
+        round_to(baseline.close, 4),
+        rows,
+    ))
+}
+
+fn build_benchmark_comparison_payload(
+    curve_dates: &[NaiveDate],
+    effective_from: NaiveDate,
+    effective_to: NaiveDate,
+) -> Value {
+    if curve_dates.is_empty() {
+        return json!({
+            "source": BENCHMARK_SOURCE_NAME,
+            "summary": {
+                "requested_count": BENCHMARK_SPECS.len(),
+                "available_count": 0,
+                "warning_count": 0,
+            },
+            "curves": [],
+            "warnings": [],
+        });
+    }
+
+    let client = match build_market_data_client() {
+        Ok(client) => client,
+        Err(err) => {
+            let curves = BENCHMARK_SPECS
+                .iter()
+                .map(|spec| {
+                    json!({
+                        "key": spec.key,
+                        "label": spec.label,
+                        "symbol": spec.symbol,
+                        "rows": [],
+                        "error": err,
+                    })
+                })
+                .collect::<Vec<_>>();
+            let warnings = BENCHMARK_SPECS
+                .iter()
+                .map(|spec| format!("{} 对比曲线不可用：{}", spec.label, err))
+                .collect::<Vec<_>>();
+            return json!({
+                "source": BENCHMARK_SOURCE_NAME,
+                "summary": {
+                    "requested_count": BENCHMARK_SPECS.len(),
+                    "available_count": 0,
+                    "warning_count": warnings.len(),
+                },
+                "curves": curves,
+                "warnings": warnings,
+            });
+        }
+    };
+
+    let buffered_from = effective_from - Duration::days(10);
+    let buffered_to = effective_to + Duration::days(3);
+    let mut available_count = 0usize;
+    let mut warnings = Vec::<String>::new();
+    let mut curves = Vec::<Value>::new();
+
+    for spec in BENCHMARK_SPECS {
+        match fetch_benchmark_history(&client, spec.symbol, buffered_from, buffered_to)
+            .and_then(|history| build_benchmark_curve_rows(curve_dates, &history, effective_from))
+        {
+            Ok((baseline_date, baseline_close, rows)) => {
+                available_count += 1;
+                let end_return_rate = rows
+                    .last()
+                    .and_then(|row| row.get("cumulative_return_rate"))
+                    .and_then(Value::as_f64);
+                curves.push(json!({
+                    "key": spec.key,
+                    "label": spec.label,
+                    "symbol": spec.symbol,
+                    "baseline_date": baseline_date,
+                    "baseline_close": baseline_close,
+                    "end_return_rate": end_return_rate,
+                    "end_return_pct_text": end_return_rate.map(|v| format!("{:.2}%", v * 100.0)),
+                    "rows": rows,
+                    "error": Value::Null,
+                }));
+            }
+            Err(err) => {
+                warnings.push(format!("{} 对比曲线不可用：{}", spec.label, err));
+                curves.push(json!({
+                    "key": spec.key,
+                    "label": spec.label,
+                    "symbol": spec.symbol,
+                    "rows": [],
+                    "error": err,
+                }));
+            }
+        }
+    }
+
+    json!({
+        "source": BENCHMARK_SOURCE_NAME,
+        "summary": {
+            "requested_count": BENCHMARK_SPECS.len(),
+            "available_count": available_count,
+            "warning_count": warnings.len(),
+        },
+        "curves": curves,
+        "warnings": warnings,
+    })
+}
+
+fn build_benchmark_payload_from_curve_payload(curve_payload: &Value) -> Result<Value, String> {
+    let effective_from = curve_payload
+        .get("range")
+        .and_then(|range| range.get("effective_from"))
+        .and_then(Value::as_str)
+        .ok_or("投资曲线缺少 effective_from")?;
+    let effective_to = curve_payload
+        .get("range")
+        .and_then(|range| range.get("effective_to"))
+        .and_then(Value::as_str)
+        .ok_or("投资曲线缺少 effective_to")?;
+    let curve_rows = curve_payload
+        .get("rows")
+        .and_then(Value::as_array)
+        .ok_or("投资曲线缺少 rows")?;
+
+    let mut curve_dates = Vec::<NaiveDate>::new();
+    for row in curve_rows {
+        let Some(snapshot_date) = row.get("snapshot_date").and_then(Value::as_str) else {
+            continue;
+        };
+        curve_dates.push(parse_iso_date(snapshot_date, "snapshot_date")?);
+    }
+
+    Ok(build_benchmark_comparison_payload(
+        &curve_dates,
+        parse_iso_date(effective_from, "effective_from")?,
+        parse_iso_date(effective_to, "effective_to")?,
+    ))
 }
 
 fn parse_preset(raw: Option<&str>) -> Result<String, String> {
@@ -1331,6 +1687,14 @@ pub fn investment_curve_query_at_db_path(
     }
 }
 
+pub fn investment_curve_benchmarks_query_at_db_path(
+    db_path: &Path,
+    req: InvestmentCurveQueryRequest,
+) -> Result<Value, String> {
+    let curve_payload = investment_curve_query_at_db_path(db_path, req)?;
+    build_benchmark_payload_from_curve_payload(&curve_payload)
+}
+
 pub fn investment_returns_query_at_db_path(
     db_path: &Path,
     req: InvestmentReturnsQueryRequest,
@@ -1552,6 +1916,22 @@ pub fn investment_curve_query(
 }
 
 #[tauri::command]
+pub async fn investment_curve_benchmarks_query(
+    app: AppHandle,
+    req: InvestmentCurveQueryRequest,
+) -> Result<Value, String> {
+    let db_path = resolve_ledger_db_path(&app)?;
+    let join_result = tauri::async_runtime::spawn_blocking(move || {
+        investment_curve_benchmarks_query_at_db_path(&db_path, req)
+    })
+    .await;
+    match join_result {
+        Ok(result) => result,
+        Err(err) => Err(format!("加载指数对比失败: {err}")),
+    }
+}
+
+#[tauri::command]
 pub fn investment_returns_query(
     app: AppHandle,
     req: InvestmentReturnsQueryRequest,
@@ -1717,5 +2097,96 @@ mod tests {
         );
 
         let _ = fs::remove_file(&db_path);
+    }
+
+    #[test]
+    fn parse_yahoo_chart_history_reads_adjusted_close_dates() {
+        let market_ts = NaiveDate::from_ymd_opt(2026, 1, 2)
+            .expect("date")
+            .and_hms_opt(8, 0, 0)
+            .expect("time")
+            .and_utc()
+            .timestamp();
+        let payload = json!({
+            "chart": {
+                "result": [{
+                    "meta": {
+                        "gmtoffset": 28800
+                    },
+                    "timestamp": [market_ts],
+                    "indicators": {
+                        "adjclose": [{
+                            "adjclose": [3210.55]
+                        }]
+                    }
+                }],
+                "error": null
+            }
+        });
+
+        let rows = parse_yahoo_chart_history(&payload).expect("parse yahoo history");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(
+            rows[0].market_date,
+            NaiveDate::from_ymd_opt(2026, 1, 2).expect("expected date")
+        );
+        approx_eq(rows[0].close, 3210.55, 1e-8);
+    }
+
+    #[test]
+    fn build_benchmark_curve_rows_aligns_to_latest_available_market_close() {
+        let history = vec![
+            BenchmarkHistoryRow {
+                market_date: NaiveDate::from_ymd_opt(2026, 1, 2).expect("date"),
+                close: 100.0,
+            },
+            BenchmarkHistoryRow {
+                market_date: NaiveDate::from_ymd_opt(2026, 1, 5).expect("date"),
+                close: 110.0,
+            },
+        ];
+        let curve_dates = vec![
+            NaiveDate::from_ymd_opt(2026, 1, 4).expect("date"),
+            NaiveDate::from_ymd_opt(2026, 1, 6).expect("date"),
+        ];
+
+        let (baseline_date, baseline_close, rows) = build_benchmark_curve_rows(
+            &curve_dates,
+            &history,
+            NaiveDate::from_ymd_opt(2026, 1, 4).expect("date"),
+        )
+        .expect("build benchmark rows");
+
+        assert_eq!(baseline_date, "2026-01-02");
+        approx_eq(baseline_close, 100.0, 1e-8);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(
+            rows[0]
+                .get("effective_market_date")
+                .and_then(Value::as_str),
+            Some("2026-01-02")
+        );
+        approx_eq(
+            rows[0]
+                .get("cumulative_return_rate")
+                .and_then(Value::as_f64)
+                .expect("first rate"),
+            0.0,
+            1e-8,
+        );
+        assert_eq!(
+            rows[1]
+                .get("effective_market_date")
+                .and_then(Value::as_str),
+            Some("2026-01-05")
+        );
+        approx_eq(
+            rows[1]
+                .get("cumulative_return_rate")
+                .and_then(Value::as_f64)
+                .expect("second rate"),
+            0.10,
+            1e-8,
+        );
     }
 }

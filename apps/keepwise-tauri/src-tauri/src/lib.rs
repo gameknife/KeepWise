@@ -18,9 +18,9 @@ pub mod wealth_analytics;
 mod yzxy_import;
 
 pub use investment_analytics::{
-    investment_curve_query_at_db_path, investment_return_query_at_db_path,
-    investment_returns_query_at_db_path, InvestmentCurveQueryRequest, InvestmentReturnQueryRequest,
-    InvestmentReturnsQueryRequest,
+    investment_curve_benchmarks_query_at_db_path, investment_curve_query_at_db_path,
+    investment_return_query_at_db_path, investment_returns_query_at_db_path,
+    InvestmentCurveQueryRequest, InvestmentReturnQueryRequest, InvestmentReturnsQueryRequest,
 };
 pub use wealth_analytics::{
     wealth_curve_query_at_db_path, wealth_overview_query_at_db_path, WealthCurveQueryRequest,
@@ -45,6 +45,7 @@ pub fn run() {
             investment_analytics::investment_return_query,
             investment_analytics::investment_returns_query,
             investment_analytics::investment_curve_query,
+            investment_analytics::investment_curve_benchmarks_query,
             wealth_analytics::wealth_overview_query,
             wealth_analytics::wealth_curve_query,
             budget_fire_analytics::query_monthly_budget_items,

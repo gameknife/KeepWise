@@ -476,3 +476,113 @@ pub fn delete_account_catalog_entry(
     let db_path = resolve_ledger_db_path(&app)?;
     delete_account_catalog_entry_at_db_path(&db_path, req)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{upsert_account_catalog_entry_at_db_path, UpsertAccountCatalogEntryRequest};
+    use rusqlite::Connection;
+    use serde_json::Value;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use uuid::Uuid;
+
+    fn repo_root() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("src-tauri parent")
+            .parent()
+            .expect("app root parent")
+            .parent()
+            .expect("repo root")
+            .to_path_buf()
+    }
+
+    fn create_temp_test_db() -> PathBuf {
+        let path = std::env::temp_dir().join(format!("kw_account_catalog_{}.sqlite", Uuid::new_v4()));
+        if path.exists() {
+            let _ = fs::remove_file(&path);
+        }
+        path
+    }
+
+    fn apply_all_migrations_for_test(db_path: &Path) {
+        let conn = Connection::open(db_path).expect("open temp db");
+        let mut entries = fs::read_dir(repo_root().join("db/migrations"))
+            .expect("read migrations")
+            .map(|entry| entry.expect("migration dir entry").path())
+            .collect::<Vec<_>>();
+        entries.sort();
+        for path in entries {
+            let sql = fs::read_to_string(&path).expect("read migration sql");
+            conn.execute_batch(&sql)
+                .unwrap_or_else(|e| panic!("apply migration {} failed: {e}", path.display()));
+        }
+    }
+
+    #[test]
+    fn upsert_existing_account_updates_display_name_and_asset_valuation_name() {
+        let db_path = create_temp_test_db();
+        apply_all_migrations_for_test(&db_path);
+        let conn = Connection::open(&db_path).expect("open db");
+
+        conn.execute(
+            r#"
+            INSERT INTO accounts (id, name, account_type, currency, initial_balance_cents)
+            VALUES ('acct_bank_test', '旧账户名', 'bank', 'CNY', 0)
+            "#,
+            [],
+        )
+        .expect("insert account");
+
+        conn.execute(
+            r#"
+            INSERT INTO account_valuations (
+                id, account_id, account_name, asset_class, snapshot_date, value_cents, source_type
+            )
+            VALUES (
+                'asset_bank_test_1', 'acct_bank_test', '旧账户名', 'cash', '2026-04-01', 123456, 'manual'
+            )
+            "#,
+            [],
+        )
+        .expect("insert account valuation");
+
+        let payload = upsert_account_catalog_entry_at_db_path(
+            &db_path,
+            UpsertAccountCatalogEntryRequest {
+                account_id: Some("acct_bank_test".to_string()),
+                account_name: Some("新账户名".to_string()),
+                account_kind: Some("bank".to_string()),
+            },
+        )
+        .expect("rename account");
+
+        assert_eq!(payload.get("created").and_then(Value::as_bool), Some(false));
+        assert_eq!(payload.get("updated").and_then(Value::as_bool), Some(true));
+        assert_eq!(
+            payload
+                .get("row")
+                .and_then(|row| row.get("account_name"))
+                .and_then(Value::as_str),
+            Some("新账户名")
+        );
+
+        let updated_account_name: String = conn
+            .query_row(
+                "SELECT name FROM accounts WHERE id = ?1",
+                ["acct_bank_test"],
+                |row| row.get(0),
+            )
+            .expect("query account name");
+        assert_eq!(updated_account_name, "新账户名");
+
+        let updated_asset_name: String = conn
+            .query_row(
+                "SELECT account_name FROM account_valuations WHERE account_id = ?1",
+                ["acct_bank_test"],
+                |row| row.get(0),
+            )
+            .expect("query account valuation name");
+        assert_eq!(updated_asset_name, "新账户名");
+    }
+}

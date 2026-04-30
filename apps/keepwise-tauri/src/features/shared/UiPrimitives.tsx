@@ -51,10 +51,18 @@ export type PreviewStatProps = {
 
 export type LineAreaChartProps = {
   points: Array<{ label: string; value: number }>;
+  series?: Array<{
+    id: string;
+    label: string;
+    points: Array<{ label: string; value: number }>;
+    color?: string;
+    dashed?: boolean;
+  }>;
   color?: string;
   xLabelFormatter?: (label: string) => string;
   valueFormatter?: (value: number) => string;
   tooltipFormatter?: (point: { label: string; value: number }) => string;
+  multiTooltipFormatter?: (item: { label: string; seriesLabel: string; value: number }) => string;
   height?: number;
   preferZeroBaseline?: boolean;
   maxXTicks?: number;
@@ -329,10 +337,12 @@ export function BasePreviewStat({
 
 export function LineAreaChart({
   points,
+  series,
   color = "#7cc3ff",
   xLabelFormatter,
   valueFormatter,
   tooltipFormatter,
+  multiTooltipFormatter,
   height = 240,
   preferZeroBaseline = false,
   maxXTicks = 8,
@@ -356,10 +366,33 @@ export function LineAreaChart({
     return () => obs.disconnect();
   }, []);
 
-  const clean = points.filter((p) => Number.isFinite(p.value));
-  if (clean.length === 0) {
+  const normalizedSeries = (series && series.length > 0
+    ? series.map((item, idx) => ({
+        id: item.id || `series-${idx}`,
+        label: item.label || `系列${idx + 1}`,
+        color: item.color ?? (idx === 0 ? color : "#9fb6ff"),
+        dashed: item.dashed ?? false,
+        points: item.points.filter((point) => Number.isFinite(point.value)),
+      }))
+    : [
+        {
+          id: "primary",
+          label: "primary",
+          color,
+          dashed: false,
+          points: points.filter((point) => Number.isFinite(point.value)),
+        },
+      ]).filter((item) => item.points.length > 0);
+  const isMultiSeries = normalizedSeries.length > 1;
+  const clean = normalizedSeries[0]?.points ?? [];
+  if (clean.length === 0 || normalizedSeries.length === 0) {
     return <div ref={wrapRef} className="line-area-chart-empty">暂无趋势数据</div>;
   }
+  const seriesValueMaps = normalizedSeries.map((item) => ({
+    ...item,
+    valueMap: new Map(item.points.map((point) => [point.label, point.value])),
+  }));
+  const allValues = seriesValueMaps.flatMap((item) => item.points.map((point) => point.value));
 
   const width = measuredWidth;
   const formattedValue = (value: number) =>
@@ -386,8 +419,8 @@ export function LineAreaChart({
   const yTickCount = 4;
   const innerH = effectiveHeight - baseMargin.top - baseMargin.bottom;
 
-  const minRaw = Math.min(...clean.map((p) => p.value));
-  const maxRaw = Math.max(...clean.map((p) => p.value));
+  const minRaw = Math.min(...allValues);
+  const maxRaw = Math.max(...allValues);
   let yMin = preferZeroBaseline ? Math.min(0, minRaw) : minRaw;
   let yMax = preferZeroBaseline ? Math.max(0, maxRaw) : maxRaw;
   if (yMin === yMax) {
@@ -436,9 +469,21 @@ export function LineAreaChart({
     y: margin.top + innerH * tick.ratio,
   }));
 
-  const linePath = clean
-    .map((p, idx) => `${idx === 0 ? "M" : "L"} ${toX(idx).toFixed(2)} ${toY(p.value).toFixed(2)}`)
-    .join(" ");
+  const buildSeriesPath = (valueMap: Map<string, number>) => {
+    let started = false;
+    const commands: string[] = [];
+    clean.forEach((point, idx) => {
+      const value = valueMap.get(point.label);
+      if (typeof value !== "number" || !Number.isFinite(value)) {
+        started = false;
+        return;
+      }
+      commands.push(`${started ? "L" : "M"} ${toX(idx).toFixed(2)} ${toY(value).toFixed(2)}`);
+      started = true;
+    });
+    return commands.join(" ");
+  };
+  const primaryLinePath = buildSeriesPath(seriesValueMaps[0].valueMap);
   const areaPath =
     clean.length > 0
       ? [
@@ -461,7 +506,31 @@ export function LineAreaChart({
 
   const active = hoverIndex != null ? clean[hoverIndex] : null;
   const activeX = hoverIndex != null ? toX(hoverIndex) : null;
-  const activeY = hoverIndex != null && active ? toY(active.value) : null;
+  const activePrimaryValue =
+    hoverIndex != null && active
+      ? seriesValueMaps[0].valueMap.get(active.label) ?? active.value
+      : null;
+  const activeY =
+    hoverIndex != null && active && typeof activePrimaryValue === "number"
+      ? toY(activePrimaryValue)
+      : null;
+  const tooltipAlignClass =
+    activeX == null ? "line-area-tooltip-center" : activeX / width <= 0.22 ? "line-area-tooltip-left" : activeX / width >= 0.78 ? "line-area-tooltip-right" : "line-area-tooltip-center";
+  const activeSeries = active
+    ? seriesValueMaps
+        .map((item) => {
+          const value = item.valueMap.get(active.label);
+          if (typeof value !== "number" || !Number.isFinite(value)) return null;
+          return {
+            id: item.id,
+            label: item.label,
+            color: item.color,
+            dashed: item.dashed,
+            value,
+          };
+        })
+        .filter((item): item is { id: string; label: string; color: string; dashed: boolean; value: number } => item !== null)
+    : [];
 
   return (
     <div ref={wrapRef} className="line-area-chart-wrap" style={{ height: `${effectiveHeight}px` }}>
@@ -519,7 +588,23 @@ export function LineAreaChart({
         ))}
 
         {areaPath ? <path d={areaPath} fill={`url(#${gradientId})`} stroke="none" /> : null}
-        {linePath ? <path d={linePath} fill="none" stroke={color} strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" /> : null}
+        {seriesValueMaps.map((item, idx) => {
+          const path = idx === 0 ? primaryLinePath : buildSeriesPath(item.valueMap);
+          if (!path) return null;
+          return (
+            <path
+              key={item.id}
+              d={path}
+              fill="none"
+              stroke={item.color}
+              strokeWidth={idx === 0 ? 2.25 : 2}
+              strokeOpacity={idx === 0 ? 1 : 0.44}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeDasharray={item.dashed ? "6 4" : undefined}
+            />
+          );
+        })}
 
         {active && activeX != null && activeY != null ? (
           <g>
@@ -529,18 +614,18 @@ export function LineAreaChart({
               y1={margin.top}
               y2={margin.top + innerH}
               className="line-area-crosshair"
-              style={{ stroke: color, strokeOpacity: 0.36 }}
-            />
-            <line
+               style={{ stroke: seriesValueMaps[0].color, strokeOpacity: 0.36 }}
+             />
+             <line
               x1={margin.left}
               x2={margin.left + innerW}
               y1={activeY}
               y2={activeY}
               className="line-area-crosshair horizontal"
-              style={{ stroke: color, strokeOpacity: 0.22 }}
-            />
-          </g>
-        ) : null}
+               style={{ stroke: seriesValueMaps[0].color, strokeOpacity: 0.22 }}
+             />
+           </g>
+         ) : null}
 
         <rect
           x={margin.left}
@@ -554,16 +639,41 @@ export function LineAreaChart({
 
       {active && activeX != null && activeY != null ? (
         <div
-          className="line-area-tooltip"
+          className={`line-area-tooltip ${tooltipAlignClass}`}
           style={{
-            left: `${Math.max(7, Math.min(93, (activeX / width) * 100))}%`,
+            left: `${Math.max(10, Math.min(90, (activeX / width) * 100))}%`,
             top: `${(activeY / effectiveHeight) * 100}%`,
           }}
         >
           <div className="line-area-tooltip-title">{xLabelFormatter ? xLabelFormatter(active.label) : active.label}</div>
-          <div className="line-area-tooltip-value">
-            {tooltipFormatter ? tooltipFormatter(active) : formattedValue(active.value)}
-          </div>
+          {isMultiSeries ? (
+            <div className="line-area-tooltip-list">
+              {activeSeries.map((item) => (
+                <div key={item.id} className="line-area-tooltip-row">
+                  <div className="line-area-tooltip-label">
+                    <span
+                      className={`line-area-tooltip-swatch${item.dashed ? " is-dashed" : ""}`}
+                      style={item.dashed ? { borderTopColor: item.color } : { backgroundColor: item.color }}
+                    />
+                    <span className="line-area-tooltip-series-label">{item.label}</span>
+                  </div>
+                  <div className="line-area-tooltip-series-value">
+                    {multiTooltipFormatter
+                      ? multiTooltipFormatter({
+                          label: active.label,
+                          seriesLabel: item.label,
+                          value: item.value,
+                        })
+                      : formattedValue(item.value)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="line-area-tooltip-value">
+              {tooltipFormatter ? tooltipFormatter(active) : formattedValue(active.value)}
+            </div>
+          )}
         </div>
       ) : null}
     </div>

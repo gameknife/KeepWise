@@ -513,6 +513,7 @@ export function AssetValuationsPreview({
 
 export function AccountCatalogPreview({
   data,
+  onEditRow,
   onDeleteRow,
   deleteBusy = false,
   deletingAccountId = "",
@@ -522,6 +523,7 @@ export function AccountCatalogPreview({
   compareSortValues,
 }: {
   data: unknown;
+  onEditRow?: (accountId: string, accountName: string, accountKind: string) => void;
   onDeleteRow?: (accountId: string, accountName: string) => void;
   deleteBusy?: boolean;
   deletingAccountId?: string;
@@ -594,7 +596,7 @@ export function AccountCatalogPreview({
                 <th className="num"><SortableHeaderButton label="投资" sortKey="investment_record_count" activeSortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} /></th>
                 <th className="num"><SortableHeaderButton label="资产" sortKey="asset_valuation_count" activeSortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} /></th>
                 <th><SortableHeaderButton label="更新时间" sortKey="updated_at" activeSortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} /></th>
-                {onDeleteRow ? <th>操作</th> : null}
+                {onEditRow || onDeleteRow ? <th>操作</th> : null}
               </tr>
             </thead>
             <tbody>
@@ -620,17 +622,32 @@ export function AccountCatalogPreview({
                     <td className="num">{inv}</td>
                     <td className="num">{asset}</td>
                     <td>{updated}</td>
-                    {onDeleteRow ? (
+                    {onEditRow || onDeleteRow ? (
                       <td>
-                        <button
-                          type="button"
-                          className="secondary-btn table-inline-btn"
-                          onClick={() => onDeleteRow(accountId, name)}
-                          disabled={deleteBusy || !accountId}
-                          title={accountId ? `删除账户：${accountId}` : "缺少账户 ID，无法删除"}
-                        >
-                          {deleteBusy && deletingAccountId === accountId ? "删除中..." : "删除"}
-                        </button>
+                        <div className="table-actions-inline">
+                          {onEditRow ? (
+                            <button
+                              type="button"
+                              className="secondary-btn table-inline-btn"
+                              onClick={() => onEditRow(accountId, name, kindVal)}
+                              disabled={!accountId || deleteBusy}
+                              title={accountId ? `修改账户名称：${accountId}` : "缺少账户 ID，无法修改"}
+                            >
+                              改名
+                            </button>
+                          ) : null}
+                          {onDeleteRow ? (
+                            <button
+                              type="button"
+                              className="secondary-btn table-inline-btn"
+                              onClick={() => onDeleteRow(accountId, name)}
+                              disabled={deleteBusy || !accountId}
+                              title={accountId ? `删除账户：${accountId}` : "缺少账户 ID，无法删除"}
+                            >
+                              {deleteBusy && deletingAccountId === accountId ? "删除中..." : "删除"}
+                            </button>
+                          ) : null}
+                        </div>
                       </td>
                     ) : null}
                   </tr>

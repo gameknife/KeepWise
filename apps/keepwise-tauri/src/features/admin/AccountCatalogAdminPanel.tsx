@@ -9,7 +9,9 @@ export function AccountCatalogAdminPanel(props: any) {
     safeNumericInputValue,
     parseNumericInputWithFallback,
     openAccountCatalogCreateModal,
+    openAccountCatalogRenameModal,
     acctCatalogUpsertBusy,
+    acctCatalogModalMode,
     AutoRefreshHint,
     acctCatalogBusy,
     acctCatalogError,
@@ -34,12 +36,13 @@ export function AccountCatalogAdminPanel(props: any) {
     acctCatalogUpsertError,
     handleAccountCatalogUpsert,
   } = props;
+  const isRenameMode = acctCatalogModalMode === "rename";
 
   return isTab("admin") ? (
     <section className="card panel">
       <div className="panel-header">
         <h2>账户目录维护</h2>
-        <p>独立账户目录管理模块：默认展示列表，支持筛选、行内删除和新建账户（自动生成账户 ID）。</p>
+        <p>独立账户目录管理模块：默认展示列表，支持筛选、修改显示名称、行内删除和新建账户（自动生成账户 ID）。</p>
       </div>
 
       <div className="query-form-grid query-form-grid-compact" onKeyDown={makeEnterToQueryHandler(handleAccountCatalogQuery)}>
@@ -117,6 +120,9 @@ export function AccountCatalogAdminPanel(props: any) {
 
       <AccountCatalogPreview
         data={acctCatalogResult}
+        onEditRow={(accountId, accountName, accountKind) => {
+          openAccountCatalogRenameModal(accountId, accountName, accountKind);
+        }}
         deleteBusy={acctCatalogDeleteBusy}
         deletingAccountId={acctCatalogDeletingRowId}
         PreviewStat={PreviewStat}
@@ -145,7 +151,7 @@ export function AccountCatalogAdminPanel(props: any) {
             <div className="kw-modal-head">
               <div>
                 <p className="eyebrow">账户目录维护</p>
-                <h3 id="acct-catalog-create-modal-title">新建账户</h3>
+                <h3 id="acct-catalog-create-modal-title">{isRenameMode ? "修改账户显示名称" : "新建账户"}</h3>
               </div>
               <button type="button" className="secondary-btn table-inline-btn" onClick={closeAccountCatalogCreateModal} disabled={acctCatalogUpsertBusy}>
                 关闭
@@ -153,29 +159,36 @@ export function AccountCatalogAdminPanel(props: any) {
             </div>
 
             <div className="query-form-grid query-form-grid-compact">
+              {isRenameMode ? (
+                <label className="field">
+                  <span>账户 ID</span>
+                  <input value={`${acctCatalogUpsertForm.account_id ?? ""}`} readOnly />
+                </label>
+              ) : null}
               <label className="field">
-                <span>账户名称</span>
+                <span>账户显示名称</span>
                 <input
                   autoFocus
                   value={`${acctCatalogUpsertForm.account_name ?? ""}`}
                   onChange={(e) =>
                     setAcctCatalogUpsertForm((s) => ({
                       ...s,
-                      account_id: "",
+                      account_id: isRenameMode ? s.account_id : "",
                       account_name: e.target.value,
                     }))
                   }
-                  placeholder="账户名称"
+                  placeholder="账户显示名称"
                 />
               </label>
               <label className="field">
                 <span>账户种类</span>
                 <select
                   value={acctCatalogUpsertForm.account_kind ?? "cash"}
+                  disabled={isRenameMode}
                   onChange={(e) =>
                     setAcctCatalogUpsertForm((s) => ({
                       ...s,
-                      account_id: "",
+                      account_id: isRenameMode ? s.account_id : "",
                       account_kind: e.target.value as any,
                     }))
                   }
@@ -192,7 +205,11 @@ export function AccountCatalogAdminPanel(props: any) {
               </label>
             </div>
 
-            <p className="inline-hint">保存后将自动生成账户 ID，并刷新账户目录与账户元数据查询。</p>
+            <p className="inline-hint">
+              {isRenameMode
+                ? "保存后会同步更新账户目录、资产估值记录中的账户名称，并刷新相关下拉选项。"
+                : "保存后将自动生成账户 ID，并刷新账户目录与账户元数据查询。"}
+            </p>
 
             {acctCatalogUpsertError ? (
               <div className="inline-error" role="alert">
@@ -207,7 +224,7 @@ export function AccountCatalogAdminPanel(props: any) {
                 onClick={() => void handleAccountCatalogUpsert()}
                 disabled={acctCatalogUpsertBusy || !`${acctCatalogUpsertForm.account_name ?? ""}`.trim()}
               >
-                {acctCatalogUpsertBusy ? "保存中..." : "保存新账户"}
+                {acctCatalogUpsertBusy ? "保存中..." : isRenameMode ? "保存名称" : "保存新账户"}
               </button>
               <button type="button" className="secondary-btn" onClick={closeAccountCatalogCreateModal} disabled={acctCatalogUpsertBusy}>
                 取消
