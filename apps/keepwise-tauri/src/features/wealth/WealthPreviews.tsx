@@ -15,6 +15,24 @@ type WealthVisibility = {
   liability: boolean;
 };
 
+type WealthAccountListView = "investable" | "all";
+
+const WEALTH_ACCOUNT_TYPE_META: Record<string, { label: string; order: number }> = {
+  investment: { label: "投资", order: 1 },
+  cash: { label: "现金", order: 2 },
+  real_estate: { label: "不动产", order: 3 },
+  liability: { label: "负债", order: 4 },
+};
+
+function formatAccountShare(value: number): string {
+  if (!Number.isFinite(value)) return "-";
+  const abs = Math.abs(value);
+  if (abs >= 10) return `${value.toFixed(1)}%`;
+  if (abs >= 1) return `${value.toFixed(2)}%`;
+  if (abs > 0) return `${value.toFixed(3)}%`;
+  return "0.00%";
+}
+
 function WealthStackedTrendChart({
   rows,
   visibility,
@@ -647,6 +665,7 @@ export function WealthOverviewPreview({
   isAmountPrivacyMasked: () => boolean;
   isMobileMode?: boolean;
 }) {
+  const [accountListView, setAccountListView] = useState<WealthAccountListView>("investable");
   if (!isRecord(data)) return null;
   const rows = readArray(data, "rows").filter(isRecord);
   const wealthTotal = readNumber(data, "summary.wealth_total_cents");
@@ -654,6 +673,37 @@ export function WealthOverviewPreview({
   const liabilityTotal = readNumber(data, "summary.liability_total_cents");
   const asOf = readString(data, "as_of") ?? "-";
   const requestedAsOf = readString(data, "requested_as_of") ?? "-";
+  const accountRows = rows
+    .map((row) => {
+      const assetClass = readString(row, "asset_class") ?? "";
+      const accountName = readString(row, "account_name") ?? readString(row, "account_id") ?? "-";
+      const accountId = readString(row, "account_id") ?? "";
+      const snapshotDate = readString(row, "snapshot_date") ?? "-";
+      const rawValue = readNumber(row, "value_cents") ?? 0;
+      const meta = WEALTH_ACCOUNT_TYPE_META[assetClass] ?? { label: assetClass || "其他", order: 99 };
+      const signedValue = assetClass === "liability" ? -Math.abs(rawValue) : rawValue;
+      return {
+        assetClass,
+        accountName,
+        accountId,
+        snapshotDate,
+        rawValue,
+        signedValue,
+        typeLabel: meta.label,
+        typeOrder: meta.order,
+      };
+    })
+    .filter((row) => row.rawValue !== 0)
+    .sort((a, b) => {
+      if (a.typeOrder !== b.typeOrder) return a.typeOrder - b.typeOrder;
+      const valueDiff = Math.abs(b.rawValue) - Math.abs(a.rawValue);
+      if (valueDiff !== 0) return valueDiff;
+      return a.accountName.localeCompare(b.accountName, "zh-Hans-CN");
+    });
+  const displayedAccountRows = accountRows.filter((row) =>
+    accountListView === "investable" ? row.assetClass === "investment" || row.assetClass === "cash" : true,
+  );
+  const accountShareDenominator = displayedAccountRows.reduce((acc, row) => acc + Math.abs(row.signedValue), 0);
 
   return (
     <div className="wealth-section-block">
@@ -672,7 +722,62 @@ export function WealthOverviewPreview({
         <PreviewStat label="负债（元）" value={formatCentsShort(liabilityTotal)} />
       </div>
       <WealthSankeyDiagram overviewData={data} visibility={visibility} isAmountPrivacyMasked={isAmountPrivacyMasked} isMobileMode={isMobileMode} />
-      {rows.length === 0 ? <p className="preview-note">当前筛选条件下暂无可展示的财富条目。</p> : null}
+      {accountRows.length > 0 ? (
+        <div className="subcard preview-card">
+          <div className="preview-header">
+            <div>
+              <h3>账户明细</h3>
+              <div className="preview-subtle">按账户类型排序 · 占比按当前视图计算</div>
+            </div>
+            <div className="wealth-asset-chip-group" role="group" aria-label="账户明细视图">
+              <button
+                type="button"
+                className={`consumption-chip ${accountListView === "investable" ? "active" : ""}`}
+                onClick={() => setAccountListView("investable")}
+              >
+                可投资产
+              </button>
+              <button
+                type="button"
+                className={`consumption-chip ${accountListView === "all" ? "active" : ""}`}
+                onClick={() => setAccountListView("all")}
+              >
+                所有资产
+              </button>
+            </div>
+          </div>
+          {displayedAccountRows.length > 0 ? (
+            <div className="preview-table-wrap">
+              <table className="preview-table">
+                <thead>
+                  <tr>
+                    <th>账户</th>
+                    <th>类型</th>
+                    <th className="num">实际金额</th>
+                    <th className="num">占比</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {displayedAccountRows.map((row) => {
+                    const share = accountShareDenominator > 0 ? (Math.abs(row.signedValue) / accountShareDenominator) * 100 : 0;
+                    return (
+                      <tr key={`${row.assetClass}:${row.accountId}:${row.snapshotDate}`}>
+                        <td className="truncate-cell" title={row.accountName}>{row.accountName}</td>
+                        <td>{row.typeLabel}</td>
+                        <td className="num">{formatCentsShort(row.signedValue)}</td>
+                        <td className="num">{formatAccountShare(share)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="preview-note">当前视图下暂无有金额账户。</p>
+          )}
+        </div>
+      ) : null}
+      {accountRows.length === 0 ? <p className="preview-note">当前筛选条件下暂无有金额账户。</p> : null}
     </div>
   );
 }
