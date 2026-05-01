@@ -5,6 +5,7 @@ export function ReturnAnalysisSection(props: any) {
     makeEnterToQueryHandler,
     handleInvestmentReturnQuery,
     handleInvestmentCurveQuery,
+    handleRetryInvestmentCurveBenchmarks,
     handleInvestmentReturnsQuery,
     AccountIdSelect,
     invCurveQuery,
@@ -18,6 +19,7 @@ export function ReturnAnalysisSection(props: any) {
     invBatchBusy,
     invError,
     invCurveError,
+    invCurveBenchmarksBusy,
     invBatchError,
     InvestmentCurvePreview,
     invCurveResult,
@@ -123,6 +125,8 @@ export function ReturnAnalysisSection(props: any) {
         <InvestmentCurvePreview
           data={invCurveResult}
           returnData={invResult}
+          onRetryBenchmarks={handleRetryInvestmentCurveBenchmarks}
+          benchmarkRetryBusy={invCurveBenchmarksBusy}
           formatCentsShort={formatCentsShort}
           formatRatePct={formatRatePct}
           signedMetricTone={signedMetricTone}

@@ -159,6 +159,17 @@ struct BenchmarkHistoryRow {
     close: f64,
 }
 
+#[derive(Debug, Clone)]
+struct CurveAnchorRow {
+    snapshot_date: NaiveDate,
+    effective_snapshot_date: NaiveDate,
+    total_assets_cents: i64,
+    transfer_amount_cents: i64,
+    cumulative_net_growth_cents: i64,
+    cumulative_return_rate: Option<f64>,
+    is_observed: bool,
+}
+
 fn parse_iso_date(raw: &str, field_name: &str) -> Result<NaiveDate, String> {
     let text = raw.trim();
     if text.is_empty() {
@@ -185,7 +196,11 @@ fn build_market_data_client() -> Result<Client, String> {
         .map_err(|e| format!("创建基准指数请求客户端失败: {e}"))
 }
 
-fn build_yahoo_chart_url(symbol: &str, from_date: NaiveDate, to_date: NaiveDate) -> Result<Url, String> {
+fn build_yahoo_chart_url(
+    symbol: &str,
+    from_date: NaiveDate,
+    to_date: NaiveDate,
+) -> Result<Url, String> {
     let from_ts = from_date
         .and_hms_opt(0, 0, 0)
         .ok_or("无效 benchmark 起始时间")?
@@ -304,7 +319,9 @@ fn fetch_benchmark_history(
         .map_err(|e| format!("请求行情失败: {e}"))?
         .error_for_status()
         .map_err(|e| format!("请求行情失败: {e}"))?;
-    let body = response.text().map_err(|e| format!("读取行情响应失败: {e}"))?;
+    let body = response
+        .text()
+        .map_err(|e| format!("读取行情响应失败: {e}"))?;
     let payload: Value =
         serde_json::from_str(&body).map_err(|e| format!("解析行情响应失败: {e}"))?;
     parse_yahoo_chart_history(&payload)
@@ -325,7 +342,11 @@ fn build_benchmark_curve_rows(
     let baseline_idx = history
         .iter()
         .rposition(|row| row.market_date <= effective_from)
-        .or_else(|| history.iter().position(|row| row.market_date >= effective_from))
+        .or_else(|| {
+            history
+                .iter()
+                .position(|row| row.market_date >= effective_from)
+        })
         .ok_or("未找到可用指数基准日")?;
     let baseline = &history[baseline_idx];
     if !baseline.close.is_finite() || baseline.close <= 0.0 {
@@ -932,6 +953,106 @@ fn build_portfolio_asof_totals(
     totals
 }
 
+fn interpolate_i64(start: i64, end: i64, ratio: f64) -> i64 {
+    round_to(start as f64 + (end - start) as f64 * ratio, 0) as i64
+}
+
+fn interpolate_opt_f64(start: Option<f64>, end: Option<f64>, ratio: f64) -> Option<f64> {
+    match (start, end) {
+        (Some(a), Some(b)) => Some(round_to(a + (b - a) * ratio, 8)),
+        (Some(a), None) => Some(round_to(a, 8)),
+        (None, Some(b)) => Some(round_to(b, 8)),
+        (None, None) => None,
+    }
+}
+
+fn curve_row_to_json(
+    row: &CurveAnchorRow,
+    is_interpolated: bool,
+    anchor_from_date: NaiveDate,
+    anchor_to_date: NaiveDate,
+) -> Value {
+    let row_is_interpolated = is_interpolated || !row.is_observed;
+    json!({
+        "snapshot_date": row.snapshot_date.format("%Y-%m-%d").to_string(),
+        "effective_snapshot_date": row.effective_snapshot_date.format("%Y-%m-%d").to_string(),
+        "total_assets_cents": row.total_assets_cents,
+        "total_assets_yuan": cents_to_yuan_text(row.total_assets_cents),
+        "transfer_amount_cents": row.transfer_amount_cents,
+        "transfer_amount_yuan": cents_to_yuan_text(row.transfer_amount_cents),
+        "cumulative_net_growth_cents": row.cumulative_net_growth_cents,
+        "cumulative_net_growth_yuan": cents_to_yuan_text(row.cumulative_net_growth_cents),
+        "cumulative_return_rate": row.cumulative_return_rate,
+        "cumulative_return_pct": row
+            .cumulative_return_rate
+            .map(|value| round_to(value * 100.0, 4)),
+        "cumulative_return_pct_text": row
+            .cumulative_return_rate
+            .map(|value| format!("{:.2}%", value * 100.0)),
+        "is_interpolated": row_is_interpolated,
+        "anchor_from_snapshot_date": anchor_from_date.format("%Y-%m-%d").to_string(),
+        "anchor_to_snapshot_date": anchor_to_date.format("%Y-%m-%d").to_string(),
+    })
+}
+
+fn interpolate_curve_rows_daily(anchors: &[CurveAnchorRow]) -> Vec<Value> {
+    if anchors.is_empty() {
+        return Vec::new();
+    }
+
+    let mut rows = Vec::<Value>::new();
+    for (index, anchor) in anchors.iter().enumerate() {
+        rows.push(curve_row_to_json(
+            anchor,
+            false,
+            anchor.snapshot_date,
+            anchor.snapshot_date,
+        ));
+
+        let Some(next_anchor) = anchors.get(index + 1) else {
+            continue;
+        };
+        let gap_days = (next_anchor.snapshot_date - anchor.snapshot_date).num_days();
+        if gap_days <= 1 {
+            continue;
+        }
+
+        for day_offset in 1..gap_days {
+            let snapshot_date = anchor.snapshot_date + Duration::days(day_offset);
+            let ratio = day_offset as f64 / gap_days as f64;
+            let interpolated_row = CurveAnchorRow {
+                snapshot_date,
+                effective_snapshot_date: snapshot_date,
+                total_assets_cents: interpolate_i64(
+                    anchor.total_assets_cents,
+                    next_anchor.total_assets_cents,
+                    ratio,
+                ),
+                transfer_amount_cents: 0,
+                cumulative_net_growth_cents: interpolate_i64(
+                    anchor.cumulative_net_growth_cents,
+                    next_anchor.cumulative_net_growth_cents,
+                    ratio,
+                ),
+                cumulative_return_rate: interpolate_opt_f64(
+                    anchor.cumulative_return_rate,
+                    next_anchor.cumulative_return_rate,
+                    ratio,
+                ),
+                is_observed: false,
+            };
+            rows.push(curve_row_to_json(
+                &interpolated_row,
+                true,
+                anchor.snapshot_date,
+                next_anchor.snapshot_date,
+            ));
+        }
+    }
+
+    rows
+}
+
 fn build_single_account_investment_return_payload(
     conn: &Connection,
     account_id: &str,
@@ -1269,7 +1390,7 @@ fn build_single_account_investment_curve_payload(
         transfer_by_date.insert(d, cents);
     }
 
-    let mut rows = Vec::<Value>::new();
+    let mut anchors = Vec::<CurveAnchorRow>::new();
     for point_date in &candidate_dates {
         let point_date_text = point_date.format("%Y-%m-%d").to_string();
         let point_end_row = select_end_snapshot(conn, account_id, begin_date, *point_date)?;
@@ -1292,20 +1413,17 @@ fn build_single_account_investment_curve_payload(
         let cumulative_net_growth_cents = point_calc.profit_cents;
         let transfer_amount_cents = *transfer_by_date.get(&point_date_text).unwrap_or(&0);
 
-        rows.push(json!({
-            "snapshot_date": point_date_text,
-            "effective_snapshot_date": point_end_date.format("%Y-%m-%d").to_string(),
-            "total_assets_cents": point_end_assets,
-            "total_assets_yuan": cents_to_yuan_text(point_end_assets),
-            "transfer_amount_cents": transfer_amount_cents,
-            "transfer_amount_yuan": cents_to_yuan_text(transfer_amount_cents),
-            "cumulative_net_growth_cents": cumulative_net_growth_cents,
-            "cumulative_net_growth_yuan": cents_to_yuan_text(cumulative_net_growth_cents),
-            "cumulative_return_rate": cumulative_return,
-            "cumulative_return_pct": cumulative_return.map(|v| round_to(v * 100.0, 4)),
-            "cumulative_return_pct_text": cumulative_return.map(|v| format!("{:.2}%", v * 100.0)),
-        }));
+        anchors.push(CurveAnchorRow {
+            snapshot_date: *point_date,
+            effective_snapshot_date: point_end_date,
+            total_assets_cents: point_end_assets,
+            transfer_amount_cents,
+            cumulative_net_growth_cents,
+            cumulative_return_rate: cumulative_return,
+            is_observed: true,
+        });
     }
+    let rows = interpolate_curve_rows_daily(&anchors);
 
     let requested_to = if to_raw.trim().is_empty() {
         bounds.latest.format("%Y-%m-%d").to_string()
@@ -1433,11 +1551,14 @@ fn build_portfolio_investment_curve_payload(
         )
         .map_err(|e| format!("查询组合曲线日期点失败: {e}"))?;
     let mut dates = Vec::<NaiveDate>::new();
+    let mut observed_dates = HashMap::<String, bool>::new();
     for row in date_iter {
-        dates.push(parse_db_date(
+        let point_date = parse_db_date(
             row.map_err(|e| format!("读取组合曲线日期点失败: {e}"))?,
             "snapshot_date",
-        )?);
+        )?;
+        observed_dates.insert(point_date.format("%Y-%m-%d").to_string(), true);
+        dates.push(point_date);
     }
     dates.push(window.effective_from);
     dates.push(window.effective_to);
@@ -1519,7 +1640,7 @@ fn build_portfolio_investment_curve_payload(
         transfer_by_date.insert(d, amount);
     }
 
-    let mut rows = Vec::<Value>::new();
+    let mut anchors = Vec::<CurveAnchorRow>::new();
     for point_date in &dates {
         let point_date_text = point_date.format("%Y-%m-%d").to_string();
         if point_date_text < window.effective_from.format("%Y-%m-%d").to_string() {
@@ -1550,20 +1671,17 @@ fn build_portfolio_investment_curve_payload(
         let cumulative_net_growth_cents = point_calc.profit_cents;
         let transfer_amount_cents = *transfer_by_date.get(&point_date_text).unwrap_or(&0);
 
-        rows.push(json!({
-            "snapshot_date": point_date_text,
-            "effective_snapshot_date": point_date.format("%Y-%m-%d").to_string(),
-            "total_assets_cents": point_assets,
-            "total_assets_yuan": cents_to_yuan_text(point_assets),
-            "transfer_amount_cents": transfer_amount_cents,
-            "transfer_amount_yuan": cents_to_yuan_text(transfer_amount_cents),
-            "cumulative_net_growth_cents": cumulative_net_growth_cents,
-            "cumulative_net_growth_yuan": cents_to_yuan_text(cumulative_net_growth_cents),
-            "cumulative_return_rate": cumulative_return,
-            "cumulative_return_pct": cumulative_return.map(|v| round_to(v * 100.0, 4)),
-            "cumulative_return_pct_text": cumulative_return.map(|v| format!("{:.2}%", v * 100.0)),
-        }));
+        anchors.push(CurveAnchorRow {
+            snapshot_date: *point_date,
+            effective_snapshot_date: *point_date,
+            total_assets_cents: point_assets,
+            transfer_amount_cents,
+            cumulative_net_growth_cents,
+            cumulative_return_rate: cumulative_return,
+            is_observed: observed_dates.contains_key(&point_date_text),
+        });
     }
+    let rows = interpolate_curve_rows_daily(&anchors);
 
     let requested_to = if to_raw.trim().is_empty() {
         bounds.latest.format("%Y-%m-%d").to_string()
@@ -2001,6 +2119,24 @@ mod tests {
         .expect("seed investment fixture");
     }
 
+    fn seed_daily_curve_fixture(db_path: &Path) {
+        let conn = Connection::open(db_path).expect("open db");
+        conn.execute_batch(
+            r#"
+            INSERT INTO accounts(id, name, account_type) VALUES
+              ('acct_curve_alpha', '日频Alpha', 'investment'),
+              ('acct_curve_beta', '日频Beta', 'investment');
+
+            INSERT INTO investment_records(id, account_id, snapshot_date, total_assets_cents, transfer_amount_cents, source_type) VALUES
+              ('curve_alpha_1', 'acct_curve_alpha', '2026-01-01', 1000000, 0, 'manual'),
+              ('curve_alpha_2', 'acct_curve_alpha', '2026-01-03', 1200000, 0, 'manual'),
+              ('curve_beta_1', 'acct_curve_beta', '2026-01-01', 2000000, 0, 'manual'),
+              ('curve_beta_2', 'acct_curve_beta', '2026-01-03', 2600000, 0, 'manual');
+            "#,
+        )
+        .expect("seed daily curve fixture");
+    }
+
     fn approx_eq(a: f64, b: f64, eps: f64) {
         assert!(
             (a - b).abs() <= eps,
@@ -2100,6 +2236,98 @@ mod tests {
     }
 
     #[test]
+    fn single_account_curve_query_expands_to_calendar_days_with_interpolated_rows() {
+        let db_path = create_temp_test_db();
+        apply_all_migrations_for_test(&db_path);
+        seed_daily_curve_fixture(&db_path);
+
+        let payload = investment_curve_query_at_db_path(
+            &db_path,
+            InvestmentCurveQueryRequest {
+                account_id: "acct_curve_alpha".to_string(),
+                preset: Some("custom".to_string()),
+                from_date: Some("2026-01-01".to_string()),
+                to_date: Some("2026-01-03".to_string()),
+            },
+        )
+        .expect("query single account daily curve");
+
+        let rows = payload
+            .get("rows")
+            .and_then(Value::as_array)
+            .expect("rows array");
+        assert_eq!(rows.len(), 3);
+        assert_eq!(
+            rows[1].get("snapshot_date").and_then(Value::as_str),
+            Some("2026-01-02")
+        );
+        assert_eq!(
+            rows[1].get("is_interpolated").and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            rows[1].get("total_assets_cents").and_then(Value::as_i64),
+            Some(1100000)
+        );
+        approx_eq(
+            rows[1]
+                .get("cumulative_return_rate")
+                .and_then(Value::as_f64)
+                .expect("interpolated return"),
+            0.10,
+            1e-8,
+        );
+
+        let _ = fs::remove_file(&db_path);
+    }
+
+    #[test]
+    fn portfolio_curve_query_expands_to_calendar_days_with_interpolated_rows() {
+        let db_path = create_temp_test_db();
+        apply_all_migrations_for_test(&db_path);
+        seed_daily_curve_fixture(&db_path);
+
+        let payload = investment_curve_query_at_db_path(
+            &db_path,
+            InvestmentCurveQueryRequest {
+                account_id: PORTFOLIO_ACCOUNT_ID.to_string(),
+                preset: Some("custom".to_string()),
+                from_date: Some("2026-01-01".to_string()),
+                to_date: Some("2026-01-03".to_string()),
+            },
+        )
+        .expect("query portfolio daily curve");
+
+        let rows = payload
+            .get("rows")
+            .and_then(Value::as_array)
+            .expect("rows array");
+        assert_eq!(rows.len(), 3);
+        assert_eq!(
+            rows[1].get("snapshot_date").and_then(Value::as_str),
+            Some("2026-01-02")
+        );
+        assert_eq!(
+            rows[1].get("is_interpolated").and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            rows[1].get("total_assets_cents").and_then(Value::as_i64),
+            Some(3400000)
+        );
+        approx_eq(
+            rows[2]
+                .get("cumulative_return_rate")
+                .and_then(Value::as_f64)
+                .expect("portfolio end return"),
+            0.26666667,
+            1e-8,
+        );
+
+        let _ = fs::remove_file(&db_path);
+    }
+
+    #[test]
     fn parse_yahoo_chart_history_reads_adjusted_close_dates() {
         let market_ts = NaiveDate::from_ymd_opt(2026, 1, 2)
             .expect("date")
@@ -2161,9 +2389,7 @@ mod tests {
         approx_eq(baseline_close, 100.0, 1e-8);
         assert_eq!(rows.len(), 2);
         assert_eq!(
-            rows[0]
-                .get("effective_market_date")
-                .and_then(Value::as_str),
+            rows[0].get("effective_market_date").and_then(Value::as_str),
             Some("2026-01-02")
         );
         approx_eq(
@@ -2175,9 +2401,7 @@ mod tests {
             1e-8,
         );
         assert_eq!(
-            rows[1]
-                .get("effective_market_date")
-                .and_then(Value::as_str),
+            rows[1].get("effective_market_date").and_then(Value::as_str),
             Some("2026-01-05")
         );
         approx_eq(

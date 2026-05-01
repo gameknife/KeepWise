@@ -1,5 +1,5 @@
 import { useEffect, useState, type ComponentType } from "react";
-import { isRecord, readArray, readNumber, readString } from "../../utils/value";
+import { isRecord, readArray, readBool, readNumber, readString } from "../../utils/value";
 
 type PreviewStatProps = {
   label: string;
@@ -24,11 +24,14 @@ type LineAreaChartProps = {
   height?: number;
   preferZeroBaseline?: boolean;
   maxXTicks?: number;
+  smooth?: boolean;
 };
 
 export function InvestmentCurvePreview({
   data,
   returnData,
+  onRetryBenchmarks,
+  benchmarkRetryBusy = false,
   formatCentsShort,
   formatRatePct,
   signedMetricTone,
@@ -37,6 +40,8 @@ export function InvestmentCurvePreview({
 }: {
   data: unknown;
   returnData?: unknown;
+  onRetryBenchmarks?: () => void;
+  benchmarkRetryBusy?: boolean;
   formatCentsShort: (cents?: number) => string;
   formatRatePct: (rate?: number) => string;
   signedMetricTone: (value?: number) => "default" | "good" | "warn";
@@ -80,6 +85,9 @@ export function InvestmentCurvePreview({
   const benchmarkWarnings = readArray(payload, "benchmarks.warnings")
     .map((item) => (typeof item === "string" ? item : ""))
     .filter((item) => item);
+  const benchmarkLoadFailed = readBool(payload, "benchmarks.load_failed") === true;
+  const hasBenchmarkWarning = benchmarkWarnings.length > 0;
+  const benchmarkFailureNote = hasBenchmarkWarning ? "拉取对比指标失败" : "";
   const intervalReturnToneClass = signedMetricTone(intervalReturnRate);
   const assetPoints = rows
     .map((r) => {
@@ -147,7 +155,7 @@ export function InvestmentCurvePreview({
           label,
           points,
           color: benchmarkColorMap[key] ?? "#9fb6ff",
-          dashed: true,
+          dashed: false,
         };
       })
       .filter(
@@ -160,7 +168,6 @@ export function InvestmentCurvePreview({
   const visibleReturnComparisonSeries = returnComparisonSeries.filter(
     (series) => series.id === "account" || visibleBenchmarkIds.includes(series.id),
   );
-  const activeBenchmarkCount = visibleReturnComparisonSeries.filter((series) => series.id !== "account").length;
   const toggleBenchmarkVisibility = (seriesId: string) => {
     setVisibleBenchmarkIds((prev) =>
       prev.includes(seriesId) ? prev.filter((id) => id !== seriesId) : [...prev, seriesId],
@@ -243,6 +250,7 @@ export function InvestmentCurvePreview({
             height={250}
             preferZeroBaseline
             maxXTicks={8}
+            smooth
             xLabelFormatter={(label) => (label.length >= 10 ? label.slice(5) : label)}
             valueFormatter={activeCurve.valueFormatter}
             tooltipFormatter={activeCurve.tooltipFormatter}
@@ -285,12 +293,20 @@ export function InvestmentCurvePreview({
                   );
                 })}
               </div>
-              <div className="preview-subtle">
-                指数对比基于同区间公开日线收盘价归一化，数据源：Yahoo Finance。当前显示 {activeBenchmarkCount} /{" "}
-                {Math.max(0, returnComparisonSeries.length - 1)} 条对照曲线。
-              </div>
-              {benchmarkWarnings.length > 0 ? (
-                <div className="preview-note return-comparison-note">{benchmarkWarnings.join("；")}</div>
+              {hasBenchmarkWarning ? (
+                <div className="return-comparison-note-row">
+                  <div className="preview-note return-comparison-note">{benchmarkFailureNote}</div>
+                  {(benchmarkLoadFailed || hasBenchmarkWarning) && onRetryBenchmarks ? (
+                    <button
+                      type="button"
+                      className="secondary-btn table-inline-btn return-comparison-retry-btn"
+                      onClick={onRetryBenchmarks}
+                      disabled={benchmarkRetryBusy}
+                    >
+                      {benchmarkRetryBusy ? "重试中..." : "重试"}
+                    </button>
+                  ) : null}
+                </div>
               ) : null}
             </>
           ) : null}

@@ -294,6 +294,31 @@ h3 {
   max-height: min(86vh, 820px);
 }
 
+.mobile-shell .settings-modal-card {
+  height: min(86vh, 760px);
+}
+
+.mobile-shell .settings-shell {
+  grid-template-columns: 1fr;
+}
+
+.mobile-shell .settings-nav {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.mobile-shell .settings-nav-item {
+  min-width: 0;
+  padding: 0.58rem 0.55rem;
+  justify-items: center;
+  align-content: center;
+  text-align: center;
+}
+
+.mobile-shell .settings-nav-item-subtitle {
+  display: none;
+}
+
 /* iOS/WKWebView avoids auto-zoom on form focus when input font-size >= 16px. */
 .mobile-shell .field input,
 .mobile-shell .field select,
@@ -1475,6 +1500,22 @@ h3 {
   margin-top: 0.55rem;
 }
 
+.return-comparison-note-row {
+  margin-top: 0.55rem;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.return-comparison-note-row .return-comparison-note {
+  margin-top: 0;
+}
+
+.return-comparison-retry-btn {
+  flex: 0 0 auto;
+}
+
 .sparkline {
   display: block;
   width: 100%;
@@ -1962,7 +2003,20 @@ h3 {
   }
 
   .settings-nav {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.45rem;
+  }
+
+  .settings-nav-item {
+    min-width: 0;
+    padding: 0.58rem 0.55rem;
+    justify-items: center;
+    align-content: center;
+    text-align: center;
+  }
+
+  .settings-nav-item-subtitle {
+    display: none;
   }
 }
 
@@ -2912,6 +2966,7 @@ h3 {
 
 .settings-modal-card {
   width: min(880px, calc(100vw - 2rem));
+  height: min(82vh, 760px);
 }
 
 .settings-group {
@@ -2952,12 +3007,9 @@ h3 {
 }
 
 .settings-nav {
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(255, 255, 255, 0.02);
-  border-radius: 14px;
-  padding: 0.45rem;
   display: grid;
   gap: 0.35rem;
+  align-content: start;
 }
 
 .settings-nav-item {

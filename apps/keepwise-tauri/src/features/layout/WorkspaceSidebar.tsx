@@ -21,6 +21,7 @@ export function WorkspaceSidebar(props: any) {
     wealthTabMonthlyGrowthText,
     wealthTabNetAssetText,
     fireTabFreedomText,
+    fireTabInvestableText,
     incomeTabMonthlyText,
     incomeTabYearTotalLabel,
     incomeTabYearTotalText,
@@ -32,6 +33,7 @@ export function WorkspaceSidebar(props: any) {
     wealthTabMonthlyGrowthTone,
     wealthTabNetAssetTone,
     fireTabFreedomTone,
+    fireTabInvestableTone,
     incomeTabMonthlyTone,
     incomeTabYearTotalTone,
     consumptionTabMonthlyTone,
@@ -97,13 +99,16 @@ export function WorkspaceSidebar(props: any) {
                         { label: returnTabQuickMetricLabel, value: returnTabAnnualizedText, tone: returnTabAnnualizedTone },
                         { label: `${new Date().getFullYear()}年净增`, value: returnTabNetGrowthText, tone: returnTabNetGrowthTone },
                       ]
-                    : isWealthTabButton
-                      ? [
-                          { label: wealthTabMonthlyGrowthLabel, value: wealthTabMonthlyGrowthText, tone: wealthTabMonthlyGrowthTone },
-                          { label: "净资产", value: wealthTabNetAssetText, tone: wealthTabNetAssetTone },
-                        ]
+                      : isWealthTabButton
+                        ? [
+                            { label: wealthTabMonthlyGrowthLabel, value: wealthTabMonthlyGrowthText, tone: wealthTabMonthlyGrowthTone },
+                            { label: "净资产", value: wealthTabNetAssetText, tone: wealthTabNetAssetTone },
+                          ]
                       : isFireTabButton
-                        ? [{ label: "自由度", value: fireTabFreedomText, tone: fireTabFreedomTone }]
+                        ? [
+                            { label: "自由度", value: fireTabFreedomText, tone: fireTabFreedomTone },
+                            { label: "可投金额", value: fireTabInvestableText, tone: fireTabInvestableTone },
+                          ]
                         : isIncomeTabButton
                           ? [
                               { label: incomeTabMonthlyLabel, value: incomeTabMonthlyText, tone: incomeTabMonthlyTone },

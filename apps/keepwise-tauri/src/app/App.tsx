@@ -383,8 +383,10 @@ function App() {
   const [invCurveBusy, setInvCurveBusy] = useState(false);
   const [invCurveError, setInvCurveError] = useState("");
   const [invCurveResult, setInvCurveResult] = useState<InvestmentCurvePayload | null>(null);
+  const [invCurveBenchmarksBusy, setInvCurveBenchmarksBusy] = useState(false);
   const [invCurveLastQueryKey, setInvCurveLastQueryKey] = useState("");
   const invCurveRequestSeqRef = useRef(0);
+  const invCurveRequestRef = useRef<InvestmentCurveQueryRequest | null>(null);
   const [invCurveQuery, setInvCurveQuery] = useState({
     account_id: "__portfolio__",
     preset: "ytd",
@@ -2196,6 +2198,7 @@ function App() {
     const queryKey = JSON.stringify(req);
     const requestSeq = invCurveRequestSeqRef.current + 1;
     invCurveRequestSeqRef.current = requestSeq;
+    invCurveRequestRef.current = req;
     setInvCurveBusy(true);
     setInvCurveError("");
     try {
@@ -2238,6 +2241,8 @@ function App() {
   }
 
   async function hydrateInvestmentCurveBenchmarks(req: InvestmentCurveQueryRequest, requestSeq: number) {
+    if (requestSeq !== invCurveRequestSeqRef.current) return;
+    setInvCurveBenchmarksBusy(true);
     try {
       const benchmarksPayload = await queryInvestmentCurveBenchmarks(req);
       if (requestSeq !== invCurveRequestSeqRef.current) return;
@@ -2252,7 +2257,8 @@ function App() {
       });
     } catch (err) {
       if (requestSeq !== invCurveRequestSeqRef.current) return;
-      const warningMessage = `指数对比加载失败：${toErrorMessage(err)}`;
+      void err;
+      const warningMessage = "拉取对比指标失败";
       startTransition(() => {
         setInvCurveResult((prev: InvestmentCurvePayload | null) => {
           if (!isRecord(prev)) return prev;
@@ -2267,11 +2273,22 @@ function App() {
               },
               curves: [],
               warnings: [warningMessage],
+              load_failed: true,
             },
           };
         });
       });
+    } finally {
+      if (requestSeq === invCurveRequestSeqRef.current) {
+        setInvCurveBenchmarksBusy(false);
+      }
     }
+  }
+
+  async function handleRetryInvestmentCurveBenchmarks() {
+    const req = invCurveRequestRef.current ?? buildInvestmentCurveRequest(invCurveQuery);
+    invCurveRequestRef.current = req;
+    await hydrateInvestmentCurveBenchmarks(req, invCurveRequestSeqRef.current);
   }
 
   async function handleWealthOverviewQuery() {
@@ -2635,6 +2652,8 @@ function App() {
     ?? readString(fireProgressResult, "freedom_ratio_pct_text")
     ?? "-";
   const fireTabFreedomTone: "default" = "default";
+  const fireTabInvestableText = formatCentsShort(readNumber(fireProgressResult, "investable_assets.total_cents") ?? undefined);
+  const fireTabInvestableTone: "default" = "default";
   const manualEntryTabMonthCountText = manualEntryTabMonthCountBusy && manualEntryTabMonthCount === null
     ? "..."
     : `${manualEntryTabMonthCount ?? 0}笔`;
@@ -2697,7 +2716,10 @@ function App() {
       { label: wealthTabMonthlyGrowthLabel, value: wealthTabMonthlyGrowthText, tone: wealthTabMonthlyGrowthTone },
       { label: "净资产", value: wealthTabNetAssetText, tone: wealthTabNetAssetTone },
     ],
-    "budget-fire": [{ label: "自由度", value: fireTabFreedomText, tone: fireTabFreedomTone }],
+    "budget-fire": [
+      { label: "自由度", value: fireTabFreedomText, tone: fireTabFreedomTone },
+      { label: "可投金额", value: fireTabInvestableText, tone: fireTabInvestableTone },
+    ],
     "income-analysis": [
       { label: incomeTabMonthlyLabel, value: incomeTabMonthlyText, tone: incomeTabMonthlyTone },
       { label: incomeTabYearTotalLabel, value: incomeTabYearTotalText, tone: incomeTabYearTotalTone },
@@ -2715,14 +2737,14 @@ function App() {
       : quickManualInvAccountAssetsBusy
         ? "当前总资金加载中..."
         : quickManualInvAccountAssetsCents !== null
-          ? `当前总资金：${formatCentsYuanText(quickManualInvAccountAssetsCents)} 元${
+          ? `当前总资金：${maskAmountDisplayText(formatCentsYuanText(quickManualInvAccountAssetsCents))} 元${
               quickManualInvAccountAssetsDate ? `（${quickManualInvAccountAssetsDate}）` : ""
             }`
           : "当前总资金：暂无历史快照";
   const quickManualAccountHintToneClass = quickManualInvAccountAssetsError ? "warn-text" : "";
   const quickManualTotalAssetsInputYuan = parseYuanInputToNumber(`${quickManualInvForm.total_assets ?? ""}`);
   const quickManualTotalAssetsWanText = quickManualTotalAssetsInputYuan !== null && Math.abs(quickManualTotalAssetsInputYuan) >= 100000
-    ? `${(quickManualTotalAssetsInputYuan / 10000).toFixed(2)} 万`
+    ? maskAmountDisplayText(`${(quickManualTotalAssetsInputYuan / 10000).toFixed(2)} 万`)
     : "";
   const quickManualAssetClass = normalizeQuickManualAssetClass(quickManualAssetForm.asset_class);
   const quickManualAssetAccountKinds = accountKindsForAssetClass(quickManualAssetClass) ?? [];
@@ -2734,14 +2756,14 @@ function App() {
       : quickManualAssetAccountValueBusy
         ? "当前快照加载中..."
         : quickManualAssetAccountValueCents !== null
-          ? `当前快照：${formatCentsYuanText(quickManualAssetAccountValueCents)} 元${
+          ? `当前快照：${maskAmountDisplayText(formatCentsYuanText(quickManualAssetAccountValueCents))} 元${
               quickManualAssetAccountValueDate ? `（${quickManualAssetAccountValueDate}）` : ""
             }`
           : "当前快照：暂无历史记录";
   const quickManualAssetHintToneClass = quickManualAssetAccountValueError ? "warn-text" : "";
   const quickManualAssetValueInputYuan = parseYuanInputToNumber(`${quickManualAssetForm.value ?? ""}`);
   const quickManualAssetValueWanText = quickManualAssetValueInputYuan !== null && Math.abs(quickManualAssetValueInputYuan) >= 100000
-    ? `${(quickManualAssetValueInputYuan / 10000).toFixed(2)} 万`
+    ? maskAmountDisplayText(`${(quickManualAssetValueInputYuan / 10000).toFixed(2)} 万`)
     : "";
   const invReturnAutoQueryKey = JSON.stringify(buildInvestmentReturnRequest(invQuery));
   const invCurveAutoQueryKey = JSON.stringify(buildInvestmentCurveRequest(invCurveQuery));
@@ -2911,6 +2933,7 @@ function App() {
             wealthTabMonthlyGrowthText={wealthTabMonthlyGrowthText}
             wealthTabNetAssetText={wealthTabNetAssetText}
             fireTabFreedomText={fireTabFreedomText}
+            fireTabInvestableText={fireTabInvestableText}
             incomeTabMonthlyText={incomeTabMonthlyText}
             incomeTabYearTotalLabel={incomeTabYearTotalLabel}
             incomeTabYearTotalText={incomeTabYearTotalText}
@@ -2922,6 +2945,7 @@ function App() {
             wealthTabMonthlyGrowthTone={wealthTabMonthlyGrowthTone}
             wealthTabNetAssetTone={wealthTabNetAssetTone}
             fireTabFreedomTone={fireTabFreedomTone}
+            fireTabInvestableTone={fireTabInvestableTone}
             incomeTabMonthlyTone={incomeTabMonthlyTone}
             incomeTabYearTotalTone={incomeTabYearTotalTone}
             consumptionTabMonthlyTone={consumptionTabMonthlyTone}
@@ -3424,6 +3448,7 @@ function App() {
         makeEnterToQueryHandler={makeEnterToQueryHandler}
         handleInvestmentReturnQuery={handleInvestmentReturnQuery}
         handleInvestmentCurveQuery={handleInvestmentCurveQuery}
+        handleRetryInvestmentCurveBenchmarks={handleRetryInvestmentCurveBenchmarks}
         handleInvestmentReturnsQuery={handleInvestmentReturnsQuery}
         AccountIdSelect={AccountIdSelect}
         invCurveQuery={invCurveQuery}
@@ -3436,6 +3461,7 @@ function App() {
         invBatchBusy={invBatchBusy}
         invError={invError}
         invCurveError={invCurveError}
+        invCurveBenchmarksBusy={invCurveBenchmarksBusy}
         invBatchError={invBatchError}
         InvestmentCurvePreview={InvestmentCurvePreview}
         invCurveResult={invCurveResult}

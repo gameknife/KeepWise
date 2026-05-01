@@ -66,6 +66,7 @@ export type LineAreaChartProps = {
   height?: number;
   preferZeroBaseline?: boolean;
   maxXTicks?: number;
+  smooth?: boolean;
 };
 
 export type AutoRefreshHintProps = {
@@ -346,6 +347,7 @@ export function LineAreaChart({
   height = 240,
   preferZeroBaseline = false,
   maxXTicks = 8,
+  smooth = false,
 }: LineAreaChartProps) {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
@@ -469,30 +471,53 @@ export function LineAreaChart({
     y: margin.top + innerH * tick.ratio,
   }));
 
+  const buildSegmentPath = (coords: Array<{ x: number; y: number }>) => {
+    if (coords.length === 0) return "";
+    if (!smooth || coords.length <= 2) {
+      return coords
+        .map((coord, idx) => `${idx === 0 ? "M" : "L"} ${coord.x.toFixed(2)} ${coord.y.toFixed(2)}`)
+        .join(" ");
+    }
+    const commands = [`M ${coords[0].x.toFixed(2)} ${coords[0].y.toFixed(2)}`];
+    const tensionDivisor = 8;
+    for (let idx = 0; idx < coords.length - 1; idx += 1) {
+      const prev = coords[idx - 1] ?? coords[idx];
+      const current = coords[idx];
+      const next = coords[idx + 1];
+      const afterNext = coords[idx + 2] ?? next;
+      const cp1x = current.x + (next.x - prev.x) / tensionDivisor;
+      const cp1y = current.y + (next.y - prev.y) / tensionDivisor;
+      const cp2x = next.x - (afterNext.x - current.x) / tensionDivisor;
+      const cp2y = next.y - (afterNext.y - current.y) / tensionDivisor;
+      commands.push(
+        `C ${cp1x.toFixed(2)} ${cp1y.toFixed(2)} ${cp2x.toFixed(2)} ${cp2y.toFixed(2)} ${next.x.toFixed(2)} ${next.y.toFixed(2)}`,
+      );
+    }
+    return commands.join(" ");
+  };
   const buildSeriesPath = (valueMap: Map<string, number>) => {
-    let started = false;
-    const commands: string[] = [];
+    const segments: Array<Array<{ x: number; y: number }>> = [];
+    let currentSegment: Array<{ x: number; y: number }> = [];
     clean.forEach((point, idx) => {
       const value = valueMap.get(point.label);
       if (typeof value !== "number" || !Number.isFinite(value)) {
-        started = false;
+        if (currentSegment.length > 0) segments.push(currentSegment);
+        currentSegment = [];
         return;
       }
-      commands.push(`${started ? "L" : "M"} ${toX(idx).toFixed(2)} ${toY(value).toFixed(2)}`);
-      started = true;
+      currentSegment.push({ x: toX(idx), y: toY(value) });
     });
-    return commands.join(" ");
+    if (currentSegment.length > 0) segments.push(currentSegment);
+    return segments.map((segment) => buildSegmentPath(segment)).filter((path) => path).join(" ");
   };
   const primaryLinePath = buildSeriesPath(seriesValueMaps[0].valueMap);
-  const areaPath =
-    clean.length > 0
-      ? [
-          `M ${toX(0).toFixed(2)} ${(margin.top + innerH).toFixed(2)}`,
-          ...clean.map((p, idx) => `L ${toX(idx).toFixed(2)} ${toY(p.value).toFixed(2)}`),
-          `L ${toX(clean.length - 1).toFixed(2)} ${(margin.top + innerH).toFixed(2)}`,
-          "Z",
-        ].join(" ")
-      : "";
+  const areaPath = (() => {
+    if (!primaryLinePath || clean.length === 0) return "";
+    const baselineY = (margin.top + innerH).toFixed(2);
+    const firstX = toX(0).toFixed(2);
+    const lastX = toX(clean.length - 1).toFixed(2);
+    return `${primaryLinePath} L ${lastX} ${baselineY} L ${firstX} ${baselineY} Z`;
+  })();
 
   const effectiveMaxXTicks = Math.max(3, Math.min(maxXTicks, Math.floor(width / 72)));
   const tickStride =
@@ -597,7 +622,7 @@ export function LineAreaChart({
               d={path}
               fill="none"
               stroke={item.color}
-              strokeWidth={idx === 0 ? 2.25 : 2}
+              strokeWidth={idx === 0 ? 1.5 : 1.2}
               strokeOpacity={idx === 0 ? 1 : 0.44}
               strokeLinecap="round"
               strokeLinejoin="round"

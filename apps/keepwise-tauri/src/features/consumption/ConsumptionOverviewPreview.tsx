@@ -134,6 +134,8 @@ export function ConsumptionOverviewPreview({
       .replace(/\s*(?:账号|卡号|尾号)?[:：]?\s+\d{4,}\s*$/, "")
       .trim();
   };
+  const formatAmountYuan = (amount?: number): string =>
+    typeof amount === "number" && Number.isFinite(amount) ? formatCentsShort(Math.round(amount * 100)) : "-";
 
   const monthScopedTx = txRows.filter((r) => {
     if (needsReviewOnly) {
@@ -443,7 +445,7 @@ export function ConsumptionOverviewPreview({
                 className={`consumption-chip consumption-category-chip ${selectedCategories.includes(row.category) ? "active" : ""}`}
                 onClick={() => toggleMulti(selectedCategories, row.category, setSelectedCategories)}
                 style={categoryChipStyle(row.category)}
-                title={`${row.category} | ${row.amount.toFixed(2)} 元 | ${row.count} 笔`}
+                title={`${row.category} | ${formatAmountYuan(row.amount)} 元 | ${row.count} 笔`}
               >
                 {row.category}
               </button>
@@ -467,7 +469,7 @@ export function ConsumptionOverviewPreview({
                 type="button"
                 className={`consumption-chip ${selectedMerchants.includes(row.merchant) ? "active" : ""}`}
                 onClick={() => toggleMulti(selectedMerchants, row.merchant, setSelectedMerchants)}
-                title={`${row.merchant} | ${row.amount.toFixed(2)} 元 | ${row.count} 笔`}
+                title={`${row.merchant} | ${formatAmountYuan(row.amount)} 元 | ${row.count} 笔`}
               >
                 {formatMerchantDisplayName(row.merchant) || row.merchant}
               </button>
@@ -549,11 +551,11 @@ export function ConsumptionOverviewPreview({
             <div className="consumption-donut-legend">
               {donutStops.length > 0 ? (
                 donutStops.map((item) => (
-                  <div key={item.category} className="consumption-legend-row" title={`${item.category}: ${item.amount.toFixed(2)}`}>
+                  <div key={item.category} className="consumption-legend-row" title={`${item.category}: ${formatAmountYuan(item.amount)}`}>
                     <span className="consumption-legend-dot" style={{ backgroundColor: item.color }} />
                     <span className="consumption-legend-label">{item.category}</span>
                     <span className="consumption-legend-value">
-                      {item.amount.toFixed(2)} ({donutTotal > 0 ? ((item.amount / donutTotal) * 100).toFixed(1) : "0.0"}%)
+                      {formatAmountYuan(item.amount)} ({donutTotal > 0 ? ((item.amount / donutTotal) * 100).toFixed(1) : "0.0"}%)
                     </span>
                   </div>
                 ))
@@ -593,7 +595,7 @@ export function ConsumptionOverviewPreview({
                 return (
                   <tr key={`${category}-${idx}`}>
                     <td className="truncate-cell" title={category}>{category}</td>
-                    <td className="num">{amount.toFixed(2)}</td>
+                    <td className="num">{formatAmountYuan(amount)}</td>
                     <td className="num">{rowCount}</td>
                     <td className={`num ${review > 0 ? "warn-text" : ""}`}>{review}</td>
                   </tr>
@@ -627,7 +629,7 @@ export function ConsumptionOverviewPreview({
                   {monthSorted.map((row, idx) => (
                     <tr key={`${String(row.month)}-${idx}`}>
                       <td>{typeof row.month === "string" ? row.month : "-"}</td>
-                      <td className="num">{typeof row.amount === "number" ? row.amount.toFixed(2) : "-"}</td>
+                      <td className="num">{typeof row.amount === "number" ? formatAmountYuan(row.amount) : "-"}</td>
                       <td className="num">{typeof row.count === "number" ? row.count : "-"}</td>
                     </tr>
                   ))}
@@ -686,7 +688,7 @@ export function ConsumptionOverviewPreview({
                             rowCategory
                           )}
                         </td>
-                        <td className="num">{typeof row.amount === "number" ? row.amount.toFixed(2) : "-"}</td>
+                        <td className="num">{typeof row.amount === "number" ? formatAmountYuan(row.amount) : "-"}</td>
                       </tr>
                     );
                   })}
@@ -734,7 +736,7 @@ export function ConsumptionOverviewPreview({
                     <td>{row.date}</td>
                     <td className="truncate-cell" title={row.merchant}>{formatMerchantDisplayName(row.merchant) || row.merchant}</td>
                     <td>{row.category}</td>
-                    <td className="num">{row.amount.toFixed(2)}</td>
+                    <td className="num">{formatAmountYuan(row.amount)}</td>
                     <td className="truncate-cell" title={row.description}>{row.description}</td>
                     <td>
                       {pendingExcludeId === row.id ? (

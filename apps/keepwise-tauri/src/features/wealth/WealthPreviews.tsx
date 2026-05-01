@@ -253,11 +253,11 @@ function WealthStackedTrendChart({
         {visibility.investment ? <path d={buildAreaPath(invTopVals, invBottomVals)} fill="rgba(234,179,95,0.20)" /> : null}
         {visibility.liability ? <path d={buildAreaPath(debtTopVals, debtBottomVals)} fill={`url(#${debtPatternId})`} /> : null}
 
-        {visibility.cash ? <path d={buildLinePath(cashTopVals)} fill="none" stroke="#6fb4ff" strokeWidth="1.6" /> : null}
-        {visibility.realEstate ? <path d={buildLinePath(reTopVals)} fill="none" stroke="#9b84ff" strokeWidth="1.6" /> : null}
-        {visibility.investment ? <path d={buildLinePath(invTopVals)} fill="none" stroke="#eab35f" strokeWidth="1.8" /> : null}
+        {visibility.cash ? <path d={buildLinePath(cashTopVals)} fill="none" stroke="#6fb4ff" strokeWidth="1.2" /> : null}
+        {visibility.realEstate ? <path d={buildLinePath(reTopVals)} fill="none" stroke="#9b84ff" strokeWidth="1.2" /> : null}
+        {visibility.investment ? <path d={buildLinePath(invTopVals)} fill="none" stroke="#eab35f" strokeWidth="1.2" /> : null}
         {visibility.liability ? (
-          <path d={buildLinePath(debtBottomVals)} fill="none" stroke={debtColor} strokeWidth="1.6" strokeDasharray="6 4" />
+          <path d={buildLinePath(debtBottomVals)} fill="none" stroke={debtColor} strokeWidth="1.2" strokeDasharray="6 4" />
         ) : null}
 
         {xTicks.map((idx) => (
