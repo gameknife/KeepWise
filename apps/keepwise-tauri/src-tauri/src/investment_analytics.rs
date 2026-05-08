@@ -160,6 +160,13 @@ struct PortfolioHistoryRow {
 }
 
 #[derive(Debug, Clone)]
+struct TransferDetail {
+    account_id: String,
+    account_name: String,
+    transfer_amount_cents: i64,
+}
+
+#[derive(Debug, Clone)]
 struct BenchmarkHistoryRow {
     market_date: NaiveDate,
     close: f64,
@@ -171,6 +178,7 @@ struct CurveAnchorRow {
     effective_snapshot_date: NaiveDate,
     total_assets_cents: i64,
     transfer_amount_cents: i64,
+    transfer_details: Vec<TransferDetail>,
     cumulative_net_growth_cents: i64,
     cumulative_return_rate: Option<f64>,
     is_observed: bool,
@@ -1152,6 +1160,18 @@ fn curve_row_to_json(
         "total_assets_yuan": cents_to_yuan_text(row.total_assets_cents),
         "transfer_amount_cents": row.transfer_amount_cents,
         "transfer_amount_yuan": cents_to_yuan_text(row.transfer_amount_cents),
+        "transfer_details": row
+            .transfer_details
+            .iter()
+            .map(|detail| {
+                json!({
+                    "account_id": detail.account_id,
+                    "account_name": detail.account_name,
+                    "transfer_amount_cents": detail.transfer_amount_cents,
+                    "transfer_amount_yuan": cents_to_yuan_text(detail.transfer_amount_cents),
+                })
+            })
+            .collect::<Vec<_>>(),
         "cumulative_net_growth_cents": row.cumulative_net_growth_cents,
         "cumulative_net_growth_yuan": cents_to_yuan_text(row.cumulative_net_growth_cents),
         "cumulative_return_rate": row.cumulative_return_rate,
@@ -1201,6 +1221,7 @@ fn interpolate_curve_rows_daily(anchors: &[CurveAnchorRow]) -> Vec<Value> {
                     ratio,
                 ),
                 transfer_amount_cents: 0,
+                transfer_details: Vec::new(),
                 cumulative_net_growth_cents: interpolate_i64(
                     anchor.cumulative_net_growth_cents,
                     next_anchor.cumulative_net_growth_cents,
@@ -1590,6 +1611,15 @@ fn build_single_account_investment_curve_payload(
             effective_snapshot_date: point_end_date,
             total_assets_cents: point_end_assets,
             transfer_amount_cents,
+            transfer_details: if transfer_amount_cents == 0 {
+                Vec::new()
+            } else {
+                vec![TransferDetail {
+                    account_id: account_id.to_string(),
+                    account_name: bounds.account_name.clone(),
+                    transfer_amount_cents,
+                }]
+            },
             cumulative_net_growth_cents,
             cumulative_return_rate: cumulative_return,
             is_observed: true,
@@ -1782,34 +1812,66 @@ fn build_portfolio_investment_curve_payload(
     let begin_assets = *totals
         .get(&window.effective_from.format("%Y-%m-%d").to_string())
         .unwrap_or(&0);
+    let effective_from_text = window.effective_from.format("%Y-%m-%d").to_string();
 
-    let mut flow_stmt = conn
+    let mut transfer_detail_stmt = conn
         .prepare(
             r#"
-            SELECT snapshot_date, COALESCE(SUM(transfer_amount_cents), 0) AS transfer_amount_cents
-            FROM investment_records
-            WHERE snapshot_date > ?1 AND snapshot_date <= ?2 AND transfer_amount_cents != 0
-            GROUP BY snapshot_date
-            HAVING COALESCE(SUM(transfer_amount_cents), 0) != 0
-            ORDER BY snapshot_date ASC
+            SELECT
+                r.snapshot_date,
+                r.account_id,
+                COALESCE(a.name, r.account_id) AS account_name,
+                COALESCE(SUM(r.transfer_amount_cents), 0) AS transfer_amount_cents
+            FROM investment_records r
+            LEFT JOIN accounts a ON a.id = r.account_id
+            WHERE r.snapshot_date >= ?1
+              AND r.snapshot_date <= ?2
+              AND r.transfer_amount_cents != 0
+            GROUP BY r.snapshot_date, r.account_id, account_name
+            HAVING COALESCE(SUM(r.transfer_amount_cents), 0) != 0
+            ORDER BY r.snapshot_date ASC, account_name ASC
             "#,
         )
-        .map_err(|e| format!("查询组合曲线资金流失败: {e}"))?;
-    let flow_iter = flow_stmt
+        .map_err(|e| format!("查询组合曲线资金流明细失败: {e}"))?;
+    let transfer_detail_iter = transfer_detail_stmt
         .query_map(
             params![
                 window.effective_from.format("%Y-%m-%d").to_string(),
                 window.effective_to.format("%Y-%m-%d").to_string()
             ],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, i64>(3)?,
+                ))
+            },
         )
-        .map_err(|e| format!("查询组合曲线资金流失败: {e}"))?;
-    let mut flow_points = Vec::<(String, i64)>::new();
-    let mut transfer_by_date = HashMap::<String, i64>::new();
-    for row in flow_iter {
-        let (d, amount) = row.map_err(|e| format!("读取组合曲线资金流失败: {e}"))?;
-        flow_points.push((d.clone(), amount));
-        transfer_by_date.insert(d, amount);
+        .map_err(|e| format!("查询组合曲线资金流明细失败: {e}"))?;
+    let mut transfer_by_date = BTreeMap::<String, i64>::new();
+    let mut transfer_details_by_date = HashMap::<String, Vec<TransferDetail>>::new();
+    for row in transfer_detail_iter {
+        let (snapshot_date, account_id, account_name, amount) =
+            row.map_err(|e| format!("读取组合曲线资金流明细失败: {e}"))?;
+        *transfer_by_date.entry(snapshot_date.clone()).or_insert(0) += amount;
+        transfer_details_by_date
+            .entry(snapshot_date)
+            .or_default()
+            .push(TransferDetail {
+                account_id,
+                account_name,
+                transfer_amount_cents: amount,
+            });
+    }
+    for details in transfer_details_by_date.values_mut() {
+        details.sort_by(|left, right| {
+            right
+                .transfer_amount_cents
+                .abs()
+                .cmp(&left.transfer_amount_cents.abs())
+                .then_with(|| left.account_name.cmp(&right.account_name))
+        });
     }
 
     let mut anchors = Vec::<CurveAnchorRow>::new();
@@ -1821,7 +1883,10 @@ fn build_portfolio_investment_curve_payload(
         let point_assets = *totals.get(&point_date_text).unwrap_or(&0);
 
         let mut point_flows = Vec::<TransferRow>::new();
-        for (flow_date, flow_amount) in &flow_points {
+        for (flow_date, flow_amount) in &transfer_by_date {
+            if flow_date <= &effective_from_text {
+                continue;
+            }
             if flow_date > &point_date_text {
                 break;
             }
@@ -1848,6 +1913,10 @@ fn build_portfolio_investment_curve_payload(
             effective_snapshot_date: *point_date,
             total_assets_cents: point_assets,
             transfer_amount_cents,
+            transfer_details: transfer_details_by_date
+                .get(&point_date_text)
+                .cloned()
+                .unwrap_or_default(),
             cumulative_net_growth_cents,
             cumulative_return_rate: cumulative_return,
             is_observed: observed_dates.contains_key(&point_date_text),
@@ -2496,6 +2565,165 @@ mod tests {
                 .and_then(Value::as_f64)
                 .expect("portfolio end return"),
             0.26666667,
+            1e-8,
+        );
+
+        let _ = fs::remove_file(&db_path);
+    }
+
+    #[test]
+    fn portfolio_curve_query_returns_transfer_details_by_account() {
+        let db_path = create_temp_test_db();
+        apply_all_migrations_for_test(&db_path);
+        let conn = Connection::open(&db_path).expect("open db");
+        conn.execute_batch(
+            r#"
+            INSERT INTO accounts(id, name, account_type) VALUES
+              ('acct_curve_alpha', '日频Alpha', 'investment'),
+              ('acct_curve_beta', '日频Beta', 'investment');
+
+            INSERT INTO investment_records(id, account_id, snapshot_date, total_assets_cents, transfer_amount_cents, source_type) VALUES
+              ('curve_alpha_1', 'acct_curve_alpha', '2026-01-01', 1000000, 0, 'manual'),
+              ('curve_alpha_2', 'acct_curve_alpha', '2026-01-03', 1500000, 300000, 'manual'),
+              ('curve_beta_1', 'acct_curve_beta', '2026-01-01', 2000000, 0, 'manual'),
+              ('curve_beta_2', 'acct_curve_beta', '2026-01-03', 1800000, -300000, 'manual');
+            "#,
+        )
+        .expect("seed transfer details fixture");
+
+        let payload = investment_curve_query_at_db_path(
+            &db_path,
+            InvestmentCurveQueryRequest {
+                account_id: PORTFOLIO_ACCOUNT_ID.to_string(),
+                preset: Some("custom".to_string()),
+                from_date: Some("2026-01-01".to_string()),
+                to_date: Some("2026-01-03".to_string()),
+                benchmark_source: None,
+            },
+        )
+        .expect("query portfolio curve with transfer details");
+
+        let rows = payload
+            .get("rows")
+            .and_then(Value::as_array)
+            .expect("rows array");
+        let transfer_row = rows
+            .iter()
+            .find(|row| {
+                row.get("snapshot_date").and_then(Value::as_str) == Some("2026-01-03")
+            })
+            .expect("transfer row");
+        assert_eq!(
+            transfer_row
+                .get("transfer_amount_cents")
+                .and_then(Value::as_i64),
+            Some(0)
+        );
+        let transfer_details = transfer_row
+            .get("transfer_details")
+            .and_then(Value::as_array)
+            .expect("transfer details array");
+        assert_eq!(transfer_details.len(), 2);
+        assert_eq!(
+            transfer_details[0]
+                .get("account_name")
+                .and_then(Value::as_str),
+            Some("日频Alpha")
+        );
+        assert_eq!(
+            transfer_details[0]
+                .get("transfer_amount_cents")
+                .and_then(Value::as_i64),
+            Some(300000)
+        );
+        assert_eq!(
+            transfer_details[1]
+                .get("account_name")
+                .and_then(Value::as_str),
+            Some("日频Beta")
+        );
+        assert_eq!(
+            transfer_details[1]
+                .get("transfer_amount_cents")
+                .and_then(Value::as_i64),
+            Some(-300000)
+        );
+
+        let _ = fs::remove_file(&db_path);
+    }
+
+    #[test]
+    fn portfolio_curve_query_ignores_start_date_transfers_in_return_calc() {
+        let db_path = create_temp_test_db();
+        apply_all_migrations_for_test(&db_path);
+        let conn = Connection::open(&db_path).expect("open db");
+        conn.execute_batch(
+            r#"
+            INSERT INTO accounts(id, name, account_type) VALUES
+              ('acct_curve_alpha', '日频Alpha', 'investment');
+
+            INSERT INTO investment_records(id, account_id, snapshot_date, total_assets_cents, transfer_amount_cents, source_type) VALUES
+              ('curve_alpha_1', 'acct_curve_alpha', '2026-01-01', 1000000, 1000000, 'manual'),
+              ('curve_alpha_2', 'acct_curve_alpha', '2026-01-03', 1100000, 0, 'manual');
+            "#,
+        )
+        .expect("seed start-date flow fixture");
+
+        let payload = investment_curve_query_at_db_path(
+            &db_path,
+            InvestmentCurveQueryRequest {
+                account_id: PORTFOLIO_ACCOUNT_ID.to_string(),
+                preset: Some("custom".to_string()),
+                from_date: Some("2026-01-01".to_string()),
+                to_date: Some("2026-01-03".to_string()),
+                benchmark_source: None,
+            },
+        )
+        .expect("query portfolio curve with start-date flow");
+
+        let rows = payload
+            .get("rows")
+            .and_then(Value::as_array)
+            .expect("rows array");
+        let first_row = rows.first().and_then(Value::as_object).expect("first row");
+        assert_eq!(
+            first_row.get("snapshot_date").and_then(Value::as_str),
+            Some("2026-01-01")
+        );
+        assert_eq!(
+            first_row
+                .get("transfer_amount_cents")
+                .and_then(Value::as_i64),
+            Some(1000000)
+        );
+        assert_eq!(
+            first_row
+                .get("cumulative_net_growth_cents")
+                .and_then(Value::as_i64),
+            Some(0)
+        );
+        approx_eq(
+            first_row
+                .get("cumulative_return_rate")
+                .and_then(Value::as_f64)
+                .expect("first row return"),
+            0.0,
+            1e-8,
+        );
+
+        let last_row = rows.last().and_then(Value::as_object).expect("last row");
+        assert_eq!(
+            last_row
+                .get("cumulative_net_growth_cents")
+                .and_then(Value::as_i64),
+            Some(100000)
+        );
+        approx_eq(
+            last_row
+                .get("cumulative_return_rate")
+                .and_then(Value::as_f64)
+                .expect("last row return"),
+            0.10,
             1e-8,
         );
 

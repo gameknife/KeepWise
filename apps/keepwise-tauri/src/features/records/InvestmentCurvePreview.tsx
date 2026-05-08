@@ -27,6 +27,12 @@ type LineAreaChartProps = {
   smooth?: boolean;
   sourceLabel?: string;
   showZeroLine?: boolean;
+  markers?: Array<{
+    label: string;
+    color?: string;
+    tooltipTitle?: string;
+    tooltipLines?: string[];
+  }>;
 };
 
 export function InvestmentCurvePreview({
@@ -132,6 +138,42 @@ export function InvestmentCurvePreview({
   const maxDrawdownText = `${(maxDrawdownRatio * 100).toFixed(2)}%`;
   const maxDrawdownTone: "default" | "good" | "warn" =
     maxDrawdownRatio >= 0.2 ? "warn" : maxDrawdownRatio <= 0.05 ? "good" : "default";
+  const formatSignedFlow = (cents: number) => `${cents > 0 ? "+" : ""}${formatCentsShort(cents)} 元`;
+  const assetTransferMarkers = rows
+    .map((r) => {
+      const label = typeof r.snapshot_date === "string" ? r.snapshot_date : "";
+      const value = typeof r.total_assets_cents === "number" ? r.total_assets_cents : NaN;
+      const totalTransfer = typeof r.transfer_amount_cents === "number" ? r.transfer_amount_cents : 0;
+      const transferDetails = readArray(r, "transfer_details")
+        .filter(isRecord)
+        .map((detail) => {
+          const accountName = readString(detail, "account_name") ?? readString(detail, "account_id") ?? "未命名账户";
+          const amount = readNumber(detail, "transfer_amount_cents");
+          return typeof amount === "number" && Number.isFinite(amount) ? { accountName, amount } : null;
+        })
+        .filter((detail): detail is { accountName: string; amount: number } => detail !== null);
+      if (!label || !Number.isFinite(value) || transferDetails.length === 0) return null;
+      const color = totalTransfer > 0 ? "#73d7b6" : totalTransfer < 0 ? "#f08aa1" : "#dcb06a";
+      const tooltipTitle =
+        totalTransfer > 0
+          ? `当日净投入 ${formatSignedFlow(totalTransfer)}`
+          : totalTransfer < 0
+            ? `当日净转出 ${formatSignedFlow(totalTransfer)}`
+            : "当日有账户资金变动";
+      return {
+        label,
+        color,
+        tooltipTitle,
+        tooltipLines: transferDetails.map(({ accountName, amount }) =>
+          `${accountName} · ${amount > 0 ? "净投入" : "净转出"} ${formatSignedFlow(amount)}`,
+        ),
+      };
+    })
+    .filter(
+      (
+        marker,
+      ): marker is { label: string; color: string; tooltipTitle: string; tooltipLines: string[] } => marker !== null,
+    );
   const benchmarkColorMap: Record<string, string> = {
     sse: "#7cc3ff",
     hsi: "#73d7b6",
@@ -183,13 +225,14 @@ export function InvestmentCurvePreview({
   };
   const activeCurve =
     selectedCurveKind === "total_assets"
-      ? {
-          title: "总资产曲线",
-          points: assetPoints,
-          color: "#7cc3ff",
-          valueFormatter: (v: number) => formatCentsShort(v),
-          tooltipFormatter: (p: { label: string; value: number }) => `${p.label} · ${formatCentsShort(p.value)} 元`,
-        }
+        ? {
+            title: "总资产曲线",
+            points: assetPoints,
+            color: "#7cc3ff",
+            markers: assetTransferMarkers,
+            valueFormatter: (v: number) => formatCentsShort(v),
+            tooltipFormatter: (p: { label: string; value: number }) => `${p.label} · ${formatCentsShort(p.value)} 元`,
+          }
       : selectedCurveKind === "net_growth"
         ? {
             title: "累计净增长曲线",
@@ -265,6 +308,7 @@ export function InvestmentCurvePreview({
             multiTooltipFormatter={activeCurve.multiTooltipFormatter}
             sourceLabel={benchmarkSourceLabel}
             showZeroLine={selectedCurveKind === "return_rate" || selectedCurveKind === "net_growth"}
+            markers={activeCurve.markers}
           />
           {selectedCurveKind === "return_rate" ? (
             <>

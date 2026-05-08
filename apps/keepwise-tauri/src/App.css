@@ -1136,8 +1136,13 @@ h3 {
   font-size: 0.88rem;
 }
 
-.preview-subtle code {
+.preview-subtle code,
+.preview-note code,
+.return-analysis-focus-subtle code {
   color: #d6edf8;
+  font: inherit;
+  font-variant-numeric: inherit;
+  letter-spacing: inherit;
 }
 
 .preview-note {
@@ -1300,10 +1305,6 @@ h3 {
   font-size: 0.83rem;
   color: rgba(243, 239, 229, 0.72);
   font-variant-numeric: tabular-nums;
-}
-
-.return-analysis-focus-subtle code {
-  font-size: 0.78rem;
 }
 
 .return-curve-switch {
@@ -1796,6 +1797,19 @@ h3 {
   pointer-events: none;
 }
 
+.line-area-marker-ring {
+  fill: rgba(255, 255, 255, 0.03);
+  stroke: rgba(220, 176, 106, 0.72);
+  stroke-width: 1.25;
+  pointer-events: none;
+}
+
+.line-area-marker {
+  stroke: rgba(10, 14, 20, 0.92);
+  stroke-width: 1.35;
+  pointer-events: none;
+}
+
 .line-area-crosshair {
   stroke: rgba(124, 195, 255, 0.36);
   stroke-width: 1;
@@ -1905,6 +1919,30 @@ h3 {
   font-weight: 650;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+.line-area-tooltip-extra {
+  margin-top: 0.38rem;
+  padding-top: 0.34rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.line-area-tooltip-extra-title {
+  color: rgba(243, 239, 229, 0.84);
+  font-size: 0.76rem;
+  font-weight: 650;
+}
+
+.line-area-tooltip-extra-list {
+  margin-top: 0.18rem;
+  display: grid;
+  gap: 0.16rem;
+}
+
+.line-area-tooltip-extra-line {
+  color: rgba(243, 239, 229, 0.76);
+  font-size: 0.74rem;
+  line-height: 1.35;
 }
 
 .consumption-donut-wrap {

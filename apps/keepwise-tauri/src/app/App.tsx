@@ -228,9 +228,9 @@ const PRODUCT_TABS: ProductTabDef[] = [
   { key: "manual-asset-entry", icon: "▣", label: "更新资产", subtitle: "快捷录入现金/房产快照", status: "partial" },
   { key: "wealth-overview", icon: "◔", label: "财富总览", subtitle: "总览与财富曲线", status: "ready" },
   { key: "return-analysis", icon: "↗", label: "投资收益", subtitle: "投资收益率与收益曲线", status: "ready" },
-  { key: "budget-fire", icon: "◎", label: "FIRE进度", subtitle: "FIRE 进度、预算与复盘", status: "partial" },
-  { key: "income-analysis", icon: "¥", label: "收入分析", subtitle: "工资/公积金收入结构与趋势", status: "partial" },
-  { key: "consumption-analysis", icon: "¤", label: "消费分析", subtitle: "交易筛选与排除规则", status: "partial" },
+  { key: "budget-fire", icon: "◎", label: "FIRE进度", subtitle: "自由度、预算与复盘", status: "partial" },
+  { key: "income-analysis", icon: "¥", label: "收入分析", subtitle: "收入结构与趋势", status: "partial" },
+  { key: "consumption-analysis", icon: "¤", label: "消费分析", subtitle: "筛选、趋势与交易明细", status: "partial" },
   { key: "import-center", icon: "⇩", label: "数据导入", subtitle: "YZXY / EML / CMB PDF", status: "ready" },
   { key: "admin", icon: "⚙", label: "高级管理", subtitle: "调试、健康检查、管理操作", status: "ready" },
 ];
@@ -3182,7 +3182,6 @@ function App() {
             setShowRawJson={setShowRawJson}
             setDeveloperMode={setDeveloperMode}
             showRawJson={showRawJson}
-            status={status}
             isTab={isTab}
             AutoRefreshHint={AutoRefreshHint}
             consumptionOverviewBusy={consumptionOverviewBusy}

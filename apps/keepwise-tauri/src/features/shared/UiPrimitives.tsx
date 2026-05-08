@@ -69,6 +69,12 @@ export type LineAreaChartProps = {
   smooth?: boolean;
   sourceLabel?: string;
   showZeroLine?: boolean;
+  markers?: Array<{
+    label: string;
+    color?: string;
+    tooltipTitle?: string;
+    tooltipLines?: string[];
+  }>;
 };
 
 export type AutoRefreshHintProps = {
@@ -352,6 +358,7 @@ export function LineAreaChart({
   smooth = false,
   sourceLabel,
   showZeroLine = false,
+  markers,
 }: LineAreaChartProps) {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
@@ -398,6 +405,11 @@ export function LineAreaChart({
     ...item,
     valueMap: new Map(item.points.map((point) => [point.label, point.value])),
   }));
+  const markerMap = new Map(
+    (markers ?? [])
+      .filter((marker) => marker.label)
+      .map((marker) => [marker.label, marker] as const),
+  );
   const allValues = seriesValueMaps.flatMap((item) => item.points.map((point) => point.value));
 
   const width = measuredWidth;
@@ -560,6 +572,30 @@ export function LineAreaChart({
         })
         .filter((item): item is { id: string; label: string; color: string; dashed: boolean; value: number } => item !== null)
     : [];
+  const activeMarker = active ? markerMap.get(active.label) ?? null : null;
+  const markerPoints = clean
+    .map((point, idx) => {
+      const marker = markerMap.get(point.label);
+      if (!marker) return null;
+      return {
+        label: point.label,
+        marker,
+        x: toX(idx),
+        y: toY(point.value),
+        isActive: active?.label === point.label,
+      };
+    })
+    .filter(
+      (
+        point,
+      ): point is {
+        label: string;
+        marker: { label: string; color?: string; tooltipTitle?: string; tooltipLines?: string[] };
+        x: number;
+        y: number;
+        isActive: boolean;
+      } => point !== null,
+    );
 
   return (
     <div ref={wrapRef} className="line-area-chart-wrap" style={{ height: `${effectiveHeight}px` }}>
@@ -643,6 +679,26 @@ export function LineAreaChart({
             />
           );
         })}
+        {markerPoints.map((point) => (
+          <g key={`marker-${point.label}`}>
+            {point.isActive ? (
+              <circle
+                cx={point.x}
+                cy={point.y}
+                r={8}
+                className="line-area-marker-ring"
+                style={{ stroke: point.marker.color ?? "#dcb06a" }}
+              />
+            ) : null}
+            <circle
+              cx={point.x}
+              cy={point.y}
+              r={point.isActive ? 4.6 : 3.6}
+              className="line-area-marker"
+              style={{ fill: point.marker.color ?? "#dcb06a" }}
+            />
+          </g>
+        ))}
 
         {active && activeX != null && activeY != null ? (
           <g>
@@ -712,6 +768,20 @@ export function LineAreaChart({
               {tooltipFormatter ? tooltipFormatter(active) : formattedValue(active.value)}
             </div>
           )}
+          {activeMarker && ((activeMarker.tooltipTitle && activeMarker.tooltipTitle !== "") || activeMarker.tooltipLines?.length) ? (
+            <div className="line-area-tooltip-extra">
+              {activeMarker.tooltipTitle ? <div className="line-area-tooltip-extra-title">{activeMarker.tooltipTitle}</div> : null}
+              {activeMarker.tooltipLines && activeMarker.tooltipLines.length > 0 ? (
+                <div className="line-area-tooltip-extra-list">
+                  {activeMarker.tooltipLines.map((line) => (
+                    <div key={line} className="line-area-tooltip-extra-line">
+                      {line}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       ) : null}
       {sourceLabel ? <div className="line-area-source-label">{sourceLabel}</div> : null}

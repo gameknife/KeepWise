@@ -72,69 +72,61 @@ export function BudgetItemsPreview({
     setSortDir(next.dir);
   };
 
-  return (
-    <div className="subcard preview-card">
-      <div className="preview-header">
-        <h3>预算项预览</h3>
-        <div className="preview-subtle">按月预算条目</div>
-      </div>
-      {sortedRows.length > 0 ? (
-        <div className="preview-table-wrap">
-          <table className="preview-table">
-            <thead>
-              <tr>
-                <th><SortableHeaderButton label="名称" sortKey="name" activeSortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} /></th>
-                <th className="num"><SortableHeaderButton label="月预算" sortKey="monthly_amount_cents" activeSortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} /></th>
-                <th className="num"><SortableHeaderButton label="年预算" sortKey="annual_amount_cents" activeSortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} /></th>
-                <th className="num"><SortableHeaderButton label="排序" sortKey="sort_order" activeSortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} /></th>
-                <th><SortableHeaderButton label="启用" sortKey="is_active" activeSortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} /></th>
-                <th><SortableHeaderButton label="更新时间" sortKey="updated_at" activeSortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} /></th>
-                {onDeleteRow ? <th>操作</th> : null}
+  return sortedRows.length > 0 ? (
+    <div className="preview-table-wrap">
+      <table className="preview-table">
+        <thead>
+          <tr>
+            <th><SortableHeaderButton label="名称" sortKey="name" activeSortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} /></th>
+            <th className="num"><SortableHeaderButton label="月预算" sortKey="monthly_amount_cents" activeSortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} /></th>
+            <th className="num"><SortableHeaderButton label="年预算" sortKey="annual_amount_cents" activeSortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} /></th>
+            <th className="num"><SortableHeaderButton label="排序" sortKey="sort_order" activeSortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} /></th>
+            <th><SortableHeaderButton label="启用" sortKey="is_active" activeSortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} /></th>
+            <th><SortableHeaderButton label="更新时间" sortKey="updated_at" activeSortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} /></th>
+            {onDeleteRow ? <th>操作</th> : null}
+          </tr>
+        </thead>
+        <tbody>
+          {sortedRows.map((row, idx) => {
+            const id = typeof row.id === "string" ? row.id : `row_${idx}`;
+            const name = typeof row.name === "string" ? row.name : "-";
+            const monthly = typeof row.monthly_amount_cents === "number" ? row.monthly_amount_cents : undefined;
+            const annual = typeof row.annual_amount_cents === "number" ? row.annual_amount_cents : undefined;
+            const sort = typeof row.sort_order === "number" ? row.sort_order : "-";
+            const active = typeof row.is_active === "boolean" ? row.is_active : false;
+            const builtin = typeof row.is_builtin === "boolean" ? row.is_builtin : false;
+            const updatedAt = typeof row.updated_at === "string" ? row.updated_at : "-";
+            const rowDeleteDisabled = deleteBusy || builtin || !id;
+            const rowDeleteBusy = deleteBusy && deletingItemId === id;
+            return (
+              <tr key={id}>
+                <td className="truncate-cell" title={name}>{name}{builtin ? "（内置）" : ""}</td>
+                <td className="num">{formatCentsShort(monthly)}</td>
+                <td className="num">{formatCentsShort(annual)}</td>
+                <td className="num">{String(sort)}</td>
+                <td>{active ? "是" : "否"}</td>
+                <td>{updatedAt}</td>
+                {onDeleteRow ? (
+                  <td>
+                    <button
+                      type="button"
+                      className="danger-btn table-inline-btn"
+                      onClick={() => onDeleteRow(id, name)}
+                      disabled={rowDeleteDisabled}
+                      title={builtin ? "内置预算项暂不支持删除" : "删除预算项"}
+                    >
+                      {rowDeleteBusy ? "删除中..." : "删除"}
+                    </button>
+                  </td>
+                ) : null}
               </tr>
-            </thead>
-            <tbody>
-              {sortedRows.map((row, idx) => {
-                const id = typeof row.id === "string" ? row.id : `row_${idx}`;
-                const name = typeof row.name === "string" ? row.name : "-";
-                const monthly = typeof row.monthly_amount_cents === "number" ? row.monthly_amount_cents : undefined;
-                const annual = typeof row.annual_amount_cents === "number" ? row.annual_amount_cents : undefined;
-                const sort = typeof row.sort_order === "number" ? row.sort_order : "-";
-                const active = typeof row.is_active === "boolean" ? row.is_active : false;
-                const builtin = typeof row.is_builtin === "boolean" ? row.is_builtin : false;
-                const updatedAt = typeof row.updated_at === "string" ? row.updated_at : "-";
-                const rowDeleteDisabled = deleteBusy || builtin || !id;
-                const rowDeleteBusy = deleteBusy && deletingItemId === id;
-                return (
-                  <tr key={id}>
-                    <td className="truncate-cell" title={name}>{name}{builtin ? "（内置）" : ""}</td>
-                    <td className="num">{formatCentsShort(monthly)}</td>
-                    <td className="num">{formatCentsShort(annual)}</td>
-                    <td className="num">{String(sort)}</td>
-                    <td>{active ? "是" : "否"}</td>
-                    <td>{updatedAt}</td>
-                    {onDeleteRow ? (
-                      <td>
-                        <button
-                          type="button"
-                          className="danger-btn table-inline-btn"
-                          onClick={() => onDeleteRow(id, name)}
-                          disabled={rowDeleteDisabled}
-                          title={builtin ? "内置预算项暂不支持删除" : "删除预算项"}
-                        >
-                          {rowDeleteBusy ? "删除中..." : "删除"}
-                        </button>
-                      </td>
-                    ) : null}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <p className="placeholder">暂无预算项，请先新增预算项。</p>
-      )}
+            );
+          })}
+        </tbody>
+      </table>
     </div>
+  ) : (
+    <p className="placeholder">暂无预算项，请先新增预算项。</p>
   );
 }
 
@@ -152,28 +144,21 @@ export function BudgetOverviewPreview({
   signedMetricTone: (value?: number) => "default" | "good" | "warn";
 }) {
   if (!isRecord(data)) return null;
-  const year = readNumber(data, "year");
-  const asOf = readString(data, "as_of_date") ?? "-";
   const annualBudget = readNumber(data, "budget.annual_total_cents");
   const actual = readNumber(data, "actual.spent_total_cents");
   const annualRemaining = readNumber(data, "metrics.annual_remaining_cents");
-  const ytdVariance = readNumber(data, "metrics.ytd_variance_cents");
   const usageRateText = readString(data, "metrics.usage_rate_pct_text") ?? "-";
-  const elapsedMonths = readNumber(data, "analysis_scope.elapsed_months");
 
   const content = (
     <>
       <div className="preview-header">
-        <h3>预算概览预览</h3>
-        <div className="preview-subtle">{year ?? "-"} 年 · as_of {asOf}</div>
+        <h3>预算执行</h3>
       </div>
       <div className="preview-stat-grid">
         <PreviewStat label="年预算(元)" value={formatCentsShort(annualBudget)} />
         <PreviewStat label="累计支出(元)" value={formatCentsShort(actual)} />
         <PreviewStat label="年剩余(元)" value={formatCentsShort(annualRemaining)} tone={signedMetricTone(annualRemaining)} />
-        <PreviewStat label="YTD偏差(元)" value={formatCentsShort(ytdVariance)} tone={signedMetricTone(ytdVariance)} />
         <PreviewStat label="全年使用率" value={usageRateText} />
-        <PreviewStat label="已过月数" value={elapsedMonths ?? "-"} />
       </div>
     </>
   );
@@ -184,7 +169,6 @@ export function BudgetOverviewPreview({
 export function BudgetMonthlyReviewPreview({
   data,
   flat = false,
-  PreviewStat,
   SortableHeaderButton,
   formatCentsShort,
   nextSortState,
@@ -192,7 +176,6 @@ export function BudgetMonthlyReviewPreview({
 }: {
   data: unknown;
   flat?: boolean;
-  PreviewStat: ComponentType<PreviewStatProps>;
   SortableHeaderButton: ComponentType<SortableHeaderButtonProps>;
   formatCentsShort: (cents?: number) => string;
   nextSortState: (
@@ -206,10 +189,6 @@ export function BudgetMonthlyReviewPreview({
   const [sortDir, setSortDir] = useState<TableSortDirection>("asc");
   if (!isRecord(data)) return null;
   const rows = readArray(data, "rows").filter(isRecord);
-  const year = readNumber(data, "year");
-  const overMonths = readNumber(data, "summary.over_budget_months");
-  const underMonths = readNumber(data, "summary.under_budget_months");
-  const equalMonths = readNumber(data, "summary.equal_months");
   const sortedRows = [...rows].sort((a, b) => {
     const cmp = compareSortValues(a[sortKey], b[sortKey]);
     return sortDir === "asc" ? cmp : -cmp;
@@ -223,14 +202,7 @@ export function BudgetMonthlyReviewPreview({
   const content = (
     <>
       <div className="preview-header">
-        <h3>预算月度复盘预览</h3>
-        <div className="preview-subtle">{year ?? "-"} 年 12 个月</div>
-      </div>
-      <div className="preview-stat-grid">
-        <PreviewStat label="已出账月数" value={rows.length} />
-        <PreviewStat label="超预算月" value={overMonths ?? 0} tone={(overMonths ?? 0) > 0 ? "warn" : "good"} />
-        <PreviewStat label="低于预算月" value={underMonths ?? 0} tone={(underMonths ?? 0) > 0 ? "good" : "default"} />
-        <PreviewStat label="持平月" value={equalMonths ?? 0} />
+        <h3>月度复盘</h3>
       </div>
       {sortedRows.length > 0 ? (
         <div className="preview-table-wrap">
@@ -284,17 +256,13 @@ export function FireProgressPreview({
   flat = false,
   PreviewStat,
   formatCentsShort,
-  signedMetricTone,
 }: {
   data: unknown;
   flat?: boolean;
   PreviewStat: ComponentType<PreviewStatProps>;
   formatCentsShort: (cents?: number) => string;
-  signedMetricTone: (value?: number) => "default" | "good" | "warn";
 }) {
   if (!isRecord(data)) return null;
-  const asOfDate = readString(data, "as_of_date") ?? readString(data, "wealth_snapshot.as_of_date") ?? "-";
-  const annualBudget = readNumber(data, "budget.annual_total_cents");
   const investableTotal = readNumber(data, "investable_assets.total_cents");
   const coverageYearsText = readString(data, "metrics.coverage_years_text") ?? "-";
   const freedomRatioText = readString(data, "metrics.freedom_ratio_pct_text") ?? "-";
@@ -306,7 +274,6 @@ export function FireProgressPreview({
     })();
   const requiredAssets = readNumber(data, "metrics.required_assets_cents");
   const remainingToGoal = readNumber(data, "metrics.remaining_to_goal_cents");
-  const goalGap = readNumber(data, "metrics.goal_gap_cents");
   const freedomToneClass =
     typeof freedomRatioPct === "number" && Number.isFinite(freedomRatioPct)
       ? freedomRatioPct >= 100
@@ -318,10 +285,6 @@ export function FireProgressPreview({
 
   const content = (
     <>
-      <div className="preview-header">
-        <h3>FIRE 进度预览</h3>
-        <div className="preview-subtle">按最新资产快照计算{asOfDate !== "-" ? <> · 快照日期 <code>{asOfDate}</code></> : null}</div>
-      </div>
       <div className="fire-progress-stat-layout">
         <div className={`preview-stat fire-progress-focus tone-${freedomToneClass}`}>
           <div className="preview-stat-label">自由度</div>
@@ -329,12 +292,10 @@ export function FireProgressPreview({
           <div className="fire-progress-focus-subtle">覆盖年数 {coverageYearsText}</div>
         </div>
         <div className="preview-stat-grid fire-progress-stat-grid">
-          <PreviewStat label="年预算(元)" value={formatCentsShort(annualBudget)} />
           <PreviewStat label="可投资产(元)" value={formatCentsShort(investableTotal)} />
           <PreviewStat label="覆盖年数" value={coverageYearsText} />
           <PreviewStat label="目标资产(元)" value={formatCentsShort(requiredAssets)} />
           <PreviewStat label="距离目标(元)" value={formatCentsShort(remainingToGoal)} tone={(remainingToGoal ?? 0) === 0 ? "good" : "warn"} />
-          <PreviewStat label="目标差额(元)" value={formatCentsShort(goalGap)} tone={signedMetricTone(goalGap)} />
         </div>
       </div>
     </>

@@ -1,5 +1,5 @@
 import { useState, type ComponentType } from "react";
-import { isRecord, readArray, readNumber, readString } from "../../utils/value";
+import { isRecord, readArray, readNumber } from "../../utils/value";
 
 type TableSortDirection = "asc" | "desc";
 
@@ -54,9 +54,6 @@ export function SalaryIncomeOverviewPreview({
   const [employerSortKey, setEmployerSortKey] = useState<string>("amount_cents");
   const [employerSortDir, setEmployerSortDir] = useState<TableSortDirection>("desc");
   if (!isRecord(data)) return null;
-  const year = readNumber(data, "year");
-  const asOf = readString(data, "as_of_date") ?? "-";
-  const sourceType = readString(data, "source_type") ?? "-";
   const rows = readArray(data, "rows").filter(isRecord);
   const employers = readArray(data, "employers").filter(isRecord);
   const salaryTotal = readNumber(data, "summary.salary_total_cents");
@@ -84,12 +81,6 @@ export function SalaryIncomeOverviewPreview({
   });
   return (
     <div className="subcard preview-card">
-      <div className="preview-header">
-        <h3>工资收入概览预览</h3>
-        <div className="preview-subtle">
-          {year ?? "-"} 年 · {sourceType} · as_of {asOf}
-        </div>
-      </div>
       <div className="preview-stat-grid">
         <PreviewStat label="工资总额(元)" value={formatCentsShort(salaryTotal)} />
         <PreviewStat label="公积金总额(元)" value={formatCentsShort(fundTotal)} />
@@ -203,4 +194,3 @@ export function SalaryIncomeOverviewPreview({
     </div>
   );
 }
-

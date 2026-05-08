@@ -15,7 +15,6 @@ export function WorkspaceContentPanels(props: WorkspaceContentPanelsProps) {
     setShowRawJson,
     setDeveloperMode,
     showRawJson,
-    status,
     isTab,
     AutoRefreshHint,
     consumptionOverviewBusy,
@@ -128,17 +127,11 @@ export function WorkspaceContentPanels(props: WorkspaceContentPanelsProps) {
                   </div>
                 </>
               ) : null}
-              <div className={`status-pill status-${status}`}>桌面 {status.toUpperCase()}</div>
             </div>
           </section>
 
           {isTab("consumption-analysis") ? (
             <section className="card panel panel-flat-content panel-consumption-analysis">
-              <div className="panel-header">
-                <h2>消费分析</h2>
-                <p>按年度查看消费分析（分类分布、月度趋势、商户分布），支持交易检索与剔除管理。</p>
-              </div>
-
               <AutoRefreshHint busy={consumptionOverviewBusy}>消费总览已启用自动刷新：切换年份、导入或剔除后自动更新。</AutoRefreshHint>
 
               {consumptionOverviewError ? (
@@ -225,10 +218,6 @@ export function WorkspaceContentPanels(props: WorkspaceContentPanelsProps) {
 
           {isTab("budget-fire") ? (
             <section className="card panel panel-flat-content panel-fire-progress">
-              <div className="panel-header">
-                <h2>FIRE 进度</h2>
-                <p>基于当前预算与可投资产，展示财务自由目标进度与覆盖能力。</p>
-              </div>
               <AutoRefreshHint busy={fireProgressBusy}>进入本 TAB 或在设置中调整 FIRE 提取率后将自动刷新结果。</AutoRefreshHint>
               {fireProgressError ? <div className="inline-error" role="alert">{fireProgressError}</div> : null}
               <FireProgressPreview
@@ -236,7 +225,6 @@ export function WorkspaceContentPanels(props: WorkspaceContentPanelsProps) {
                 flat
                 PreviewStat={PreviewStat}
                 formatCentsShort={formatCentsShort}
-                signedMetricTone={signedMetricTone}
               />
               {showRawJson ? <JsonResultCard title="FIRE 进度 JSON" data={fireProgressResult} emptyText="暂无 FIRE 进度结果。" /> : null}
             </section>
@@ -280,11 +268,6 @@ export function WorkspaceContentPanels(props: WorkspaceContentPanelsProps) {
 
           {isTab("budget-fire") ? (
             <section className="card panel panel-flat-content">
-              <div className="panel-header">
-                <h2>预算概览与复盘</h2>
-                <p>按年份查看预算执行情况与月度复盘明细，用于跟踪全年预算节奏。</p>
-              </div>
-
               <div
                 className="query-form-grid query-form-grid-compact"
                 onKeyDown={makeEnterToQueryHandler(async () => {
@@ -323,7 +306,6 @@ export function WorkspaceContentPanels(props: WorkspaceContentPanelsProps) {
               <BudgetMonthlyReviewPreview
                 data={budgetReviewResult}
                 flat
-                PreviewStat={PreviewStat}
                 SortableHeaderButton={SortableHeaderButton}
                 formatCentsShort={formatCentsShort}
                 nextSortState={nextSortState}
@@ -341,8 +323,7 @@ export function WorkspaceContentPanels(props: WorkspaceContentPanelsProps) {
           {isTab("budget-fire") ? (
             <section className="card panel">
               <div className="panel-header">
-                <h2>预算项管理</h2>
-                <p>默认展示预算项列表；支持行内删除与新建预算项。</p>
+                <h2>预算项</h2>
               </div>
               <div className="db-actions">
                 <button type="button" className="secondary-btn" onClick={openBudgetItemCreateModal} disabled={budgetItemUpsertBusy}>
