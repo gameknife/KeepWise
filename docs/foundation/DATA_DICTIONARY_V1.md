@@ -42,7 +42,7 @@
 
 ## 规则文件（桌面运行时）
 
-桌面端运行时会在 app 本地目录维护规则，并在首次使用时从仓库 `data/rules` seed：
+桌面端运行时会在 app 本地目录维护规则，并在首次使用时从 Tauri crate 内嵌 CSV seed：
 
 - `merchant_map.csv`
 - `category_rules.csv`

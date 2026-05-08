@@ -1,5 +1,13 @@
-// @ts-nocheck
-export function InvestmentEditModal(props: any) {
+type InvestmentEditModalProps = Record<string, unknown>;
+type LooseUiEvent = {
+  target: EventTarget & { value?: string; checked?: boolean };
+  currentTarget: { getBoundingClientRect: () => DOMRect; select?: () => void };
+  clientX?: number;
+  clientY?: number;
+  stopPropagation: () => void;
+};
+
+export function InvestmentEditModal(props: InvestmentEditModalProps) {
   const {
     invEditModalOpen,
     closeInvestmentEditModal,
@@ -13,7 +21,7 @@ export function InvestmentEditModal(props: any) {
     accountSelectOptions,
     accountSelectOptionsLoading,
     updateInvError,
-  } = props;
+  } = props as Record<string, any>;
 
   return (
     <>
@@ -24,7 +32,7 @@ export function InvestmentEditModal(props: any) {
               role="dialog"
               aria-modal="true"
               aria-labelledby="investment-edit-modal-title"
-              onClick={(e) => e.stopPropagation()}
+              onClick={(e: LooseUiEvent) => e.stopPropagation()}
             >
               <div className="kw-modal-head">
                 <div>
@@ -48,7 +56,7 @@ export function InvestmentEditModal(props: any) {
                   <span>记录 ID</span>
                   <input
                     value={`${updateInvForm.id ?? ""}`}
-                    onChange={(e) => setUpdateInvForm((s) => ({ ...s, id: e.target.value }))}
+                    onChange={(e: LooseUiEvent) => setUpdateInvForm((s: Record<string, any>) => ({ ...s, id: e.target.value }))}
                     placeholder="investment record id"
                     disabled={updateInvBusy}
                   />
@@ -57,7 +65,7 @@ export function InvestmentEditModal(props: any) {
                   <span>快照日期</span>
                   <DateInput
                     value={`${updateInvForm.snapshot_date ?? ""}`}
-                    onChange={(e) => setUpdateInvForm((s) => ({ ...s, snapshot_date: e.target.value }))}
+                    onChange={(e: LooseUiEvent) => setUpdateInvForm((s: Record<string, any>) => ({ ...s, snapshot_date: e.target.value }))}
                     type="date"
                     placeholder="YYYY-MM-DD"
                   />
@@ -66,7 +74,7 @@ export function InvestmentEditModal(props: any) {
                   <span>账户</span>
                   <AccountIdSelect
                     value={`${updateInvForm.account_id ?? ""}`}
-                    onChange={(value) => setUpdateInvForm((s) => ({ ...s, account_id: value }))}
+                    onChange={(value: string) => setUpdateInvForm((s: Record<string, any>) => ({ ...s, account_id: value }))}
                     options={accountSelectOptions}
                     kinds={["investment"]}
                     emptyLabel={accountSelectOptionsLoading ? "加载账户中..." : "留空（按账户名称自动生成）"}
@@ -77,7 +85,7 @@ export function InvestmentEditModal(props: any) {
                   <span>账户名称（可选）</span>
                   <input
                     value={`${updateInvForm.account_name ?? ""}`}
-                    onChange={(e) => setUpdateInvForm((s) => ({ ...s, account_name: e.target.value }))}
+                    onChange={(e: LooseUiEvent) => setUpdateInvForm((s: Record<string, any>) => ({ ...s, account_name: e.target.value }))}
                     placeholder="当账户为空时用于自动生成账户"
                     disabled={updateInvBusy}
                   />
@@ -86,7 +94,7 @@ export function InvestmentEditModal(props: any) {
                   <span>总资产（元）</span>
                   <input
                     value={`${updateInvForm.total_assets ?? ""}`}
-                    onChange={(e) => setUpdateInvForm((s) => ({ ...s, total_assets: e.target.value }))}
+                    onChange={(e: LooseUiEvent) => setUpdateInvForm((s: Record<string, any>) => ({ ...s, total_assets: e.target.value }))}
                     placeholder="10000.00"
                     disabled={updateInvBusy}
                   />
@@ -95,7 +103,7 @@ export function InvestmentEditModal(props: any) {
                   <span>净转入/转出（元）</span>
                   <input
                     value={`${updateInvForm.transfer_amount ?? ""}`}
-                    onChange={(e) => setUpdateInvForm((s) => ({ ...s, transfer_amount: e.target.value }))}
+                    onChange={(e: LooseUiEvent) => setUpdateInvForm((s: Record<string, any>) => ({ ...s, transfer_amount: e.target.value }))}
                     placeholder="转入为正，转出为负"
                     disabled={updateInvBusy}
                   />

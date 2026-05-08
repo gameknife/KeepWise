@@ -1,5 +1,6 @@
-// @ts-nocheck
-export function WorkspaceSidebar(props: any) {
+type WorkspaceSidebarProps = Record<string, unknown>;
+
+export function WorkspaceSidebar(props: WorkspaceSidebarProps) {
   const {
     sidebarCollapsed,
     setSidebarCollapsed,
@@ -45,7 +46,7 @@ export function WorkspaceSidebar(props: any) {
     syncQuickTitle,
     syncQuickAriaLabel,
     handleQuickSyncIndicatorClick,
-  } = props;
+  } = props as Record<string, any>;
 
   return (
     <>
@@ -62,7 +63,7 @@ export function WorkspaceSidebar(props: any) {
             <button
               type="button"
               className="sidebar-toggle-btn"
-              onClick={() => setSidebarCollapsed((v) => !v)}
+              onClick={() => setSidebarCollapsed((v: string) => !v)}
               title={sidebarCollapsed ? "展开侧栏" : "收纳侧栏（仅显示图标）"}
               aria-label={sidebarCollapsed ? "展开侧栏" : "收纳侧栏"}
               aria-pressed={sidebarCollapsed}
@@ -71,7 +72,7 @@ export function WorkspaceSidebar(props: any) {
             </button>
           </div>
           <nav className="tab-nav">
-            {PRODUCT_TABS.map((tab) => {
+        {PRODUCT_TABS.map((tab: Record<string, any>) => {
               const isReturnTabButton = tab.key === "return-analysis";
               const isWealthTabButton = tab.key === "wealth-overview";
               const isFireTabButton = tab.key === "budget-fire";
@@ -222,7 +223,7 @@ export function WorkspaceSidebar(props: any) {
             <button
               type="button"
               className={`sidebar-tool-btn sidebar-privacy-btn ${amountPrivacyMasked ? "active" : ""}`}
-              onClick={() => setAmountPrivacyMasked((v) => !v)}
+              onClick={() => setAmountPrivacyMasked((v: string) => !v)}
               title={amountPrivacyMasked ? "关闭隐私显示（显示实际金额）" : "开启隐私显示（隐藏实际金额）"}
               aria-label={amountPrivacyMasked ? "关闭隐私显示" : "开启隐私显示"}
               aria-pressed={amountPrivacyMasked}

@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager};
 
 const DEFAULT_LEDGER_DB_RELATIVE_PATH: &str = "ledger/keepwise.db";
-const DEFAULT_REPO_RUNTIME_DB_RELATIVE_PATH: &str = "data/work/processed/ledger/keepwise.db";
 const EMBEDDED_DEMO_DB_BYTES: &[u8] = include_bytes!("../assets/demo.db");
 const ADMIN_RESET_CONFIRM_PHRASE: &str = "RESET KEEPWISE";
 const TRANSACTION_IMPORT_SOURCE_TYPES: &[&str] = &["cmb_eml", "cmb_bank_pdf"];
@@ -180,13 +179,6 @@ fn bootstrap_demo_db_if_missing(db_path: &Path) -> Result<(), String> {
     }
     apply_embedded_migrations(db_path)?;
     Ok(())
-}
-
-fn resolve_repo_runtime_db_path() -> PathBuf {
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    manifest_dir
-        .join("../../..")
-        .join(DEFAULT_REPO_RUNTIME_DB_RELATIVE_PATH)
 }
 
 fn import_db_file_to_app(
@@ -641,20 +633,6 @@ pub fn ledger_db_status(app: AppHandle) -> Result<LedgerDbStatus, String> {
 pub fn ledger_db_migrate(app: AppHandle) -> Result<LedgerDbMigrateResult, String> {
     let db_path = resolve_ledger_db_path(&app)?;
     apply_embedded_migrations(&db_path)
-}
-
-#[tauri::command]
-pub fn ledger_db_import_repo_runtime(
-    app: AppHandle,
-) -> Result<LedgerDbImportRepoRuntimeResult, String> {
-    let source_db_path = resolve_repo_runtime_db_path();
-    if !source_db_path.exists() {
-        return Err(format!(
-            "未找到仓库运行库: {}",
-            source_db_path.to_string_lossy()
-        ));
-    }
-    import_db_file_to_app(&app, &source_db_path)
 }
 
 #[tauri::command]

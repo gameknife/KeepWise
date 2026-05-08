@@ -28,6 +28,8 @@ async function invoke<T>(command: string, args?: Record<string, unknown>): Promi
   return normalizeTauriValue(raw) as T;
 }
 
+export type LoosePayload = Record<string, any>;
+
 export type HealthPing = {
   status: "ok";
   unix_ts: number;
@@ -109,10 +111,10 @@ export type LedgerAdminResetRequest = {
   confirm_text?: string;
 };
 
-export type LedgerAdminResetAllResult = unknown;
-export type LedgerAdminResetTransactionsResult = unknown;
+export type LedgerAdminResetAllResult = LoosePayload;
+export type LedgerAdminResetTransactionsResult = LoosePayload;
 
-export type RuntimeDbHealthCheckPayload = unknown;
+export type RuntimeDbHealthCheckPayload = LoosePayload;
 
 export type InvestmentReturnQueryRequest = {
   account_id: string;
@@ -181,41 +183,41 @@ export type MonthlyBudgetItemDeleteRequest = {
   id?: string;
 };
 
-export type InvestmentReturnPayload = unknown;
-export type InvestmentReturnsPayload = unknown;
-export type InvestmentCurvePayload = unknown;
-export type InvestmentCurveBenchmarksPayload = unknown;
-export type WealthOverviewPayload = unknown;
-export type WealthCurvePayload = unknown;
-export type MonthlyBudgetItemsPayload = unknown;
-export type MonthlyBudgetItemMutationPayload = unknown;
-export type BudgetOverviewPayload = unknown;
-export type BudgetMonthlyReviewPayload = unknown;
-export type SalaryIncomeOverviewPayload = unknown;
-export type FireProgressPayload = unknown;
-export type ConsumptionReportPayload = unknown;
-export type MetaAccountsPayload = unknown;
-export type QueryTransactionsPayload = unknown;
-export type QueryInvestmentsPayload = unknown;
-export type QueryAssetValuationsPayload = unknown;
-export type ImportJobsPayload = unknown;
-export type AccountCatalogPayload = unknown;
-export type AccountCatalogUpsertPayload = unknown;
-export type AccountCatalogDeletePayload = unknown;
-export type ManualInvestmentMutationPayload = unknown;
-export type InvestmentRecordMutationPayload = unknown;
-export type ManualAssetValuationMutationPayload = unknown;
-export type AssetValuationMutationPayload = unknown;
-export type TransactionAnalysisExclusionMutationPayload = unknown;
-export type TransactionReviewConfirmationPayload = unknown;
-export type YzxyPreviewPayload = unknown;
-export type YzxyImportPayload = unknown;
-export type CmbEmlPreviewPayload = unknown;
-export type CmbEmlImportPayload = unknown;
-export type CmbBankPdfPreviewPayload = unknown;
-export type CmbBankPdfImportPayload = unknown;
-export type RulesQueryPayload = unknown;
-export type RuleMutationPayload = unknown;
+export type InvestmentReturnPayload = LoosePayload;
+export type InvestmentReturnsPayload = LoosePayload;
+export type InvestmentCurvePayload = LoosePayload;
+export type InvestmentCurveBenchmarksPayload = LoosePayload;
+export type WealthOverviewPayload = LoosePayload;
+export type WealthCurvePayload = LoosePayload;
+export type MonthlyBudgetItemsPayload = LoosePayload;
+export type MonthlyBudgetItemMutationPayload = LoosePayload;
+export type BudgetOverviewPayload = LoosePayload;
+export type BudgetMonthlyReviewPayload = LoosePayload;
+export type SalaryIncomeOverviewPayload = LoosePayload;
+export type FireProgressPayload = LoosePayload;
+export type ConsumptionReportPayload = LoosePayload;
+export type MetaAccountsPayload = LoosePayload;
+export type QueryTransactionsPayload = LoosePayload;
+export type QueryInvestmentsPayload = LoosePayload;
+export type QueryAssetValuationsPayload = LoosePayload;
+export type ImportJobsPayload = LoosePayload;
+export type AccountCatalogPayload = LoosePayload;
+export type AccountCatalogUpsertPayload = LoosePayload;
+export type AccountCatalogDeletePayload = LoosePayload;
+export type ManualInvestmentMutationPayload = LoosePayload;
+export type InvestmentRecordMutationPayload = LoosePayload;
+export type ManualAssetValuationMutationPayload = LoosePayload;
+export type AssetValuationMutationPayload = LoosePayload;
+export type TransactionAnalysisExclusionMutationPayload = LoosePayload;
+export type TransactionReviewConfirmationPayload = LoosePayload;
+export type YzxyPreviewPayload = LoosePayload;
+export type YzxyImportPayload = LoosePayload;
+export type CmbEmlPreviewPayload = LoosePayload;
+export type CmbEmlImportPayload = LoosePayload;
+export type CmbBankPdfPreviewPayload = LoosePayload;
+export type CmbBankPdfImportPayload = LoosePayload;
+export type RulesQueryPayload = LoosePayload;
+export type RuleMutationPayload = LoosePayload;
 export type SyncSetupCreatePayload = {
   configured: boolean;
   endpoint: string;
@@ -540,10 +542,6 @@ export async function loadLedgerDbStatus(): Promise<LedgerDbStatus> {
 
 export async function runLedgerDbMigrate(): Promise<LedgerDbMigrateResult> {
   return invoke<LedgerDbMigrateResult>("ledger_db_migrate");
-}
-
-export async function importRepoRuntimeLedgerDb(): Promise<LedgerDbImportRepoRuntimeResult> {
-  return invoke<LedgerDbImportRepoRuntimeResult>("ledger_db_import_repo_runtime");
 }
 
 export async function importLedgerDbFromPath(

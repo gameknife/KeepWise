@@ -16,6 +16,13 @@ type WealthVisibility = {
 };
 
 type WealthAccountListView = "investable" | "all";
+type LooseUiEvent = {
+  target: EventTarget & { value?: string; checked?: boolean };
+  currentTarget: { getBoundingClientRect: () => DOMRect; select?: () => void };
+  clientX?: number;
+  clientY?: number;
+  stopPropagation: () => void;
+};
 
 const WEALTH_ACCOUNT_TYPE_META: Record<string, { label: string; order: number }> = {
   investment: { label: "投资", order: 1 },
@@ -60,7 +67,7 @@ function WealthStackedTrendChart({
     if (!el) return;
     const update = () => {
       const next = Math.max(360, Math.round(el.clientWidth || 720));
-      setMeasuredWidth((prev) => (prev === next ? prev : next));
+      setMeasuredWidth((prev: number) => (prev === next ? prev : next));
     };
     update();
     if (typeof ResizeObserver === "undefined") return;
@@ -202,17 +209,19 @@ function WealthStackedTrendChart({
           setHoverIndex(null);
           setHoverPos(null);
         }}
-        onMouseMove={(e) => {
+        onMouseMove={(e: LooseUiEvent) => {
           const wrapRect = wrapRef.current?.getBoundingClientRect();
           const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
-          const localX = e.clientX - rect.left;
+          const clientX = e.clientX ?? 0;
+          const clientY = e.clientY ?? 0;
+          const localX = clientX - rect.left;
           const svgX = (localX / rect.width) * width;
           const rawIdx = stepX > 0 ? Math.round((svgX - margin.left) / stepX) : 0;
           setHoverIndex(Math.max(0, Math.min(enriched.length - 1, rawIdx)));
           if (wrapRect) {
             setHoverPos({
-              x: Math.max(8, Math.min(wrapRect.width - 8, e.clientX - wrapRect.left)),
-              y: Math.max(8, Math.min(wrapRect.height - 8, e.clientY - wrapRect.top)),
+              x: Math.max(8, Math.min(wrapRect.width - 8, clientX - wrapRect.left)),
+              y: Math.max(8, Math.min(wrapRect.height - 8, clientY - wrapRect.top)),
             });
           }
         }}
@@ -504,7 +513,7 @@ function WealthSankeyDiagram({
   const summarySideValueFontSize = isMobileMode ? 17.5 : 11.5;
 
   const sankeyGraph = d3Sankey<any, any>()
-    .nodeId((d: any) => d.name)
+    .nodeId((d: { name: string }) => d.name)
     .nodeAlign(sankeyJustify)
     .nodeWidth(nodeWidth)
     .nodePadding(nodePadding)
@@ -673,7 +682,7 @@ export function WealthOverviewPreview({
   const asOf = readString(data, "as_of") ?? "-";
   const requestedAsOf = readString(data, "requested_as_of") ?? "-";
   const accountRows = rows
-    .map((row) => {
+    .map((row: Record<string, any>) => {
       const assetClass = readString(row, "asset_class") ?? "";
       const accountName = readString(row, "account_name") ?? readString(row, "account_id") ?? "-";
       const accountId = readString(row, "account_id") ?? "";
@@ -692,14 +701,14 @@ export function WealthOverviewPreview({
         typeOrder: meta.order,
       };
     })
-    .filter((row) => row.rawValue !== 0)
+    .filter((row: Record<string, any>) => row.rawValue !== 0)
     .sort((a, b) => {
       if (a.typeOrder !== b.typeOrder) return a.typeOrder - b.typeOrder;
       const valueDiff = Math.abs(b.rawValue) - Math.abs(a.rawValue);
       if (valueDiff !== 0) return valueDiff;
       return a.accountName.localeCompare(b.accountName, "zh-Hans-CN");
     });
-  const displayedAccountRows = accountRows.filter((row) =>
+  const displayedAccountRows = accountRows.filter((row: Record<string, any>) =>
     accountListView === "investable" ? row.assetClass === "investment" || row.assetClass === "cash" : true,
   );
   const accountShareDenominator = displayedAccountRows.reduce((acc, row) => acc + Math.abs(row.signedValue), 0);
@@ -757,7 +766,7 @@ export function WealthOverviewPreview({
                   </tr>
                 </thead>
                 <tbody>
-                  {displayedAccountRows.map((row) => {
+                  {displayedAccountRows.map((row: Record<string, any>) => {
                     const share = accountShareDenominator > 0 ? (Math.abs(row.signedValue) / accountShareDenominator) * 100 : 0;
                     return (
                       <tr key={`${row.assetClass}:${row.accountId}:${row.snapshotDate}`}>

@@ -1,5 +1,13 @@
-// @ts-nocheck
-export function QuickManualAssetValuationModal(props: any) {
+type QuickManualAssetValuationModalProps = Record<string, unknown>;
+type LooseUiEvent = {
+  target: EventTarget & { value?: string; checked?: boolean };
+  currentTarget: { getBoundingClientRect: () => DOMRect; select?: () => void };
+  clientX?: number;
+  clientY?: number;
+  stopPropagation: () => void;
+};
+
+export function QuickManualAssetValuationModal(props: QuickManualAssetValuationModalProps) {
   const {
     quickManualAssetOpen,
     closeQuickManualAssetValuationModal,
@@ -18,7 +26,7 @@ export function QuickManualAssetValuationModal(props: any) {
     quickManualAssetHintText,
     quickManualAssetValueWanText,
     quickManualAssetError,
-  } = props;
+  } = props as Record<string, any>;
 
   return (
     <>
@@ -29,7 +37,7 @@ export function QuickManualAssetValuationModal(props: any) {
             role="dialog"
             aria-modal="true"
             aria-labelledby="quick-manual-asset-modal-title"
-            onClick={(e) => e.stopPropagation()}
+            onClick={(e: LooseUiEvent) => e.stopPropagation()}
           >
             <div className="kw-modal-head">
               <div>
@@ -53,7 +61,7 @@ export function QuickManualAssetValuationModal(props: any) {
                 <span>快照日期</span>
                 <DateInput
                   value={`${quickManualAssetForm.snapshot_date ?? ""}`}
-                  onChange={(e) => setQuickManualAssetForm((s) => ({ ...s, snapshot_date: e.target.value }))}
+                  onChange={(e: LooseUiEvent) => setQuickManualAssetForm((s: Record<string, any>) => ({ ...s, snapshot_date: e.target.value }))}
                   type="date"
                   placeholder="YYYY-MM-DD"
                 />
@@ -65,7 +73,7 @@ export function QuickManualAssetValuationModal(props: any) {
                 <span>资产分类</span>
                 <select
                   value={`${quickManualAssetForm.asset_class ?? "cash"}`}
-                  onChange={(e) => handleQuickManualAssetClassChange(e.target.value)}
+                  onChange={(e: LooseUiEvent) => handleQuickManualAssetClassChange(e.target.value)}
                   disabled={quickManualAssetBusy}
                 >
                   <option value="cash">现金资产</option>
@@ -80,7 +88,7 @@ export function QuickManualAssetValuationModal(props: any) {
                 <span>目标账户</span>
                 <AccountIdSelect
                   value={`${quickManualAssetForm.account_id ?? ""}`}
-                  onChange={(value) => setQuickManualAssetForm((s) => ({ ...s, account_id: value }))}
+                  onChange={(value: string) => setQuickManualAssetForm((s: Record<string, any>) => ({ ...s, account_id: value }))}
                   options={accountSelectOptions}
                   kinds={quickManualAssetAccountKinds}
                   emptyLabel={accountSelectOptionsLoading ? "加载账户中..." : "请选择非投资账户"}
@@ -96,7 +104,7 @@ export function QuickManualAssetValuationModal(props: any) {
                 <span>快照数值（元）</span>
                 <input
                   value={`${quickManualAssetForm.value ?? ""}`}
-                  onChange={(e) => setQuickManualAssetForm((s) => ({ ...s, value: e.target.value }))}
+                  onChange={(e: LooseUiEvent) => setQuickManualAssetForm((s: Record<string, any>) => ({ ...s, value: e.target.value }))}
                   placeholder="100000.00"
                 />
                 <div className="quick-manual-inline-hint-slot" aria-live="polite">

@@ -61,7 +61,6 @@ import {
   cmbEmlPreview,
   deleteAccountCatalogEntry,
   deleteInvestmentRecord,
-  importRepoRuntimeLedgerDb,
   importLedgerDbFromPath,
   loadBootstrapProbe,
   loadLedgerDbAdminStats,
@@ -957,12 +956,11 @@ function App() {
     }
   }
 
-  async function runDbImportSequence(mode: "repo" | "path"): Promise<LedgerDbImportRepoRuntimeResult> {
+  async function runDbImportSequence(): Promise<LedgerDbImportRepoRuntimeResult> {
     setDbBusy(true);
     setDbStatusError("");
     try {
-      const result =
-        mode === "repo" ? await importRepoRuntimeLedgerDb() : await importLedgerDbFromPath(dbImportPath.trim());
+      const result = await importLedgerDbFromPath(dbImportPath.trim());
       startTransition(() => {
         setDbImportLastResult(result);
       });
@@ -980,17 +978,9 @@ function App() {
     }
   }
 
-  async function handleImportRepoRuntimeDb() {
-    try {
-      await runDbImportSequence("repo");
-    } catch {
-      // Error already surfaced in `dbStatusError`.
-    }
-  }
-
   async function handleImportDbFromPath() {
     try {
-      await runDbImportSequence("path");
+      await runDbImportSequence();
     } catch {
       // Error already surfaced in `dbStatusError`.
     }
@@ -2125,8 +2115,15 @@ function App() {
     setPipelineStatus("running");
     setPipelineMessage("");
     try {
-      const mode = dbImportPath.trim() ? "path" : "repo";
-      const importResult = await runDbImportSequence(mode);
+      if (!dbImportPath.trim()) {
+        startTransition(() => {
+          setPipelineStatus("fail");
+          setPipelineLastRunAt(Date.now());
+          setPipelineMessage("请先选择要导入的 keepwise.db 文件");
+        });
+        return;
+      }
+      const importResult = await runDbImportSequence();
       const rows = await runCoreAnalyticsSmokeSequence();
       void handleRunRuntimeHealthCheck();
       const allPassed = rows.every((row) => row.status === "pass");
@@ -2134,7 +2131,7 @@ function App() {
         setPipelineStatus(allPassed ? "pass" : "fail");
         setPipelineLastRunAt(Date.now());
         setPipelineMessage(
-          `${mode === "path" ? "导入成功 from selected path" : "导入成功 repo runtime DB"} | copied=${importResult.copied_bytes} bytes | smoke ${allPassed ? "PASS" : "FAIL"}`,
+          `导入成功 from selected path | copied=${importResult.copied_bytes} bytes | smoke ${allPassed ? "PASS" : "FAIL"}`,
         );
       });
     } catch (err) {
@@ -3316,7 +3313,6 @@ function App() {
         refreshDbStatus={refreshDbStatus}
         dbBusy={dbBusy}
         handleRunMigrations={handleRunMigrations}
-        handleImportRepoRuntimeDb={handleImportRepoRuntimeDb}
         dbImportPath={dbImportPath}
         setDbImportPath={setDbImportPath}
         handlePickDbImportPath={handlePickDbImportPath}

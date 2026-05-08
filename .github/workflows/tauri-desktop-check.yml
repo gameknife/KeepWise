@@ -7,7 +7,6 @@ on:
       - "apps/keepwise-tauri/**"
       - "apps/keepwise-tauri/scripts/validate_tauri_desktop_rust_regression.sh"
       - "apps/keepwise-tauri/scripts/validate_tauri_core_diff_regression.sh"
-      - "tools/migration/**"
       - "db/migrations/**"
   push:
     branches: [main]
@@ -15,7 +14,6 @@ on:
       - "apps/keepwise-tauri/**"
       - "apps/keepwise-tauri/scripts/validate_tauri_desktop_rust_regression.sh"
       - "apps/keepwise-tauri/scripts/validate_tauri_core_diff_regression.sh"
-      - "tools/migration/**"
       - "db/migrations/**"
 
 jobs:
@@ -42,14 +40,6 @@ jobs:
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-
-      - name: Install diff regression Python deps
-        run: python -m pip install pyyaml
 
       - name: Install frontend deps
         working-directory: apps/keepwise-tauri
@@ -79,37 +69,24 @@ jobs:
         if: always()
         run: |
           mkdir -p .artifacts/tauri-desktop-check
-          python3 - <<'PY'
-          import json, os, pathlib
-
-          out = pathlib.Path(".artifacts/tauri-desktop-check/regression_summary.txt")
-          diff_path = pathlib.Path(".artifacts/tauri-desktop-check/core_analytics_diff_regression.json")
-
-          lines = []
-          lines.append("KeepWise Tauri desktop-check regression summary")
-          lines.append(f"frontend_build_outcome={os.environ.get('FRONTEND_BUILD_OUTCOME', 'unknown')}")
-          lines.append(f"rust_check_outcome={os.environ.get('RUST_CHECK_OUTCOME', 'unknown')}")
-          lines.append(f"rust_regression_outcome={os.environ.get('RUST_REGRESSION_OUTCOME', 'unknown')}")
-          lines.append(f"core_diff_outcome={os.environ.get('CORE_DIFF_OUTCOME', 'unknown')}")
-
-          if diff_path.exists():
-              try:
-                  payload = json.loads(diff_path.read_text(encoding="utf-8"))
-                  summary = payload.get("summary", {})
-                  cases = summary.get("cases", {})
-                  cross = summary.get("cross_case_checks", {})
-                  lines.append(f"core_diff_cases_total={cases.get('total', 'n/a')}")
-                  lines.append(f"core_diff_cases_status_counts={cases.get('status_counts', {})}")
-                  lines.append(f"core_diff_cross_total={cross.get('total', 'n/a')}")
-                  lines.append(f"core_diff_cross_status_counts={cross.get('status_counts', {})}")
-              except Exception as exc:
-                  lines.append(f"core_diff_report_parse_error={exc}")
-          else:
-              lines.append("core_diff_report_missing=1")
-
-          out.write_text("\n".join(lines) + "\n", encoding="utf-8")
-          print(out)
-          PY
+          out=".artifacts/tauri-desktop-check/regression_summary.txt"
+          diff_path=".artifacts/tauri-desktop-check/core_analytics_diff_regression.json"
+          {
+            echo "KeepWise Tauri desktop-check regression summary"
+            echo "frontend_build_outcome=${FRONTEND_BUILD_OUTCOME:-unknown}"
+            echo "rust_check_outcome=${RUST_CHECK_OUTCOME:-unknown}"
+            echo "rust_regression_outcome=${RUST_REGRESSION_OUTCOME:-unknown}"
+            echo "core_diff_outcome=${CORE_DIFF_OUTCOME:-unknown}"
+            if [[ -f "$diff_path" ]]; then
+              echo "core_diff_cases_total=$(jq -r '.summary.cases.total // "n/a"' "$diff_path")"
+              echo "core_diff_cases_status_counts=$(jq -c '.summary.cases.status_counts // {}' "$diff_path")"
+              echo "core_diff_cross_total=$(jq -r '.summary.cross_case_checks.total // "n/a"' "$diff_path")"
+              echo "core_diff_cross_status_counts=$(jq -c '.summary.cross_case_checks.status_counts // {}' "$diff_path")"
+            else
+              echo "core_diff_report_missing=1"
+            fi
+          } > "$out"
+          echo "$out"
         env:
           FRONTEND_BUILD_OUTCOME: ${{ steps.frontend_build.outcome }}
           RUST_CHECK_OUTCOME: ${{ steps.rust_check.outcome }}

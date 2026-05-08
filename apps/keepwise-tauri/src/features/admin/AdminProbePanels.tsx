@@ -1,5 +1,6 @@
-// @ts-nocheck
-export function AdminProbePanels(props: any) {
+type AdminProbePanelsProps = Record<string, unknown>;
+
+export function AdminProbePanels(props: AdminProbePanelsProps) {
   const {
     isAdminDeveloperMode,
     status,
@@ -7,7 +8,7 @@ export function AdminProbePanels(props: any) {
     isReady,
     probe,
     PathRow,
-  } = props;
+  } = props as Record<string, any>;
 
   return (
     <>

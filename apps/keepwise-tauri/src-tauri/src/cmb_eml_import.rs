@@ -16,8 +16,6 @@ use walkdir::WalkDir;
 
 use crate::ledger_db::resolve_ledger_db_path;
 use crate::rules_store::ensure_app_rules_dir_seeded;
-#[cfg(test)]
-use crate::rules_store::resolve_repo_rules_dir;
 
 const DEFAULT_SOURCE_TYPE: &str = "cmb_eml";
 const DEFAULT_REVIEW_THRESHOLD: f64 = 0.70;
@@ -163,11 +161,6 @@ fn stat_category_set() -> &'static HashSet<&'static str> {
 
 fn trim_text(s: &str) -> String {
     ws_re().replace_all(s.trim(), " ").trim().to_string()
-}
-
-#[cfg(test)]
-fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..")
 }
 
 fn resolve_source_path_text(raw: Option<String>) -> Result<String, String> {
@@ -837,7 +830,8 @@ fn parse_and_classify_emls(
     source_path: &Path,
     review_threshold: f64,
 ) -> Result<(Vec<ClassifiedTransaction>, PreviewSummary), String> {
-    parse_and_classify_emls_with_rules_dir(source_path, review_threshold, &resolve_repo_rules_dir())
+    let rules_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("seeds/rules");
+    parse_and_classify_emls_with_rules_dir(source_path, review_threshold, &rules_dir)
 }
 
 fn parse_and_classify_emls_with_rules_dir(
@@ -1364,48 +1358,22 @@ pub fn cmb_eml_import(app: AppHandle, req: CmbEmlImportRequest) -> Result<Value,
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::{apply_all_migrations_for_test, create_temp_test_db};
     use std::collections::BTreeSet;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
-    fn create_temp_test_db() -> PathBuf {
-        let unique = format!(
-            "keepwise_eml_import_test_{}_{}.db",
-            std::process::id(),
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("system time before epoch")
-                .as_nanos()
-        );
-        std::env::temp_dir().join(unique)
+    fn fixture_path(relative: &str) -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/cmb_eml")
+            .join(relative)
     }
 
-    fn apply_all_migrations_for_test(db_path: &Path) {
-        let conn = Connection::open(db_path).expect("open temp db");
-        let mut entries = fs::read_dir(repo_root().join("db/migrations"))
-            .expect("read migrations dir")
-            .filter_map(|e| e.ok())
-            .map(|e| e.path())
-            .filter(|p| {
-                p.extension()
-                    .and_then(|s| s.to_str())
-                    .map(|s| s.eq_ignore_ascii_case("sql"))
-                    .unwrap_or(false)
-            })
-            .collect::<Vec<_>>();
-        entries.sort();
-        for path in entries {
-            let sql = fs::read_to_string(&path)
-                .unwrap_or_else(|e| panic!("read migration {:?} failed: {e}", path));
-            conn.execute_batch(&sql)
-                .unwrap_or_else(|e| panic!("apply migration {:?} failed: {e}", path));
-        }
+    fn rules_seed_dir() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("seeds/rules")
     }
 
     #[test]
     fn parses_2025_sample_with_stable_card_last4_set() {
-        let sample_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../..")
-            .join("data/input/raw/eml/cmb/2025");
+        let sample_dir = fixture_path("2025");
         if !sample_dir.exists() {
             return;
         }
@@ -1447,9 +1415,7 @@ mod tests {
 
     #[test]
     fn sample_2025_transaction_ids_are_unique_and_stable_across_parses() {
-        let sample_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../..")
-            .join("data/input/raw/eml/cmb/2025");
+        let sample_dir = fixture_path("2025");
         if !sample_dir.exists() {
             return;
         }
@@ -1483,16 +1449,14 @@ mod tests {
 
     #[test]
     fn importing_same_2025_samples_twice_is_idempotent_for_transactions() {
-        let sample_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../..")
-            .join("data/input/raw/eml/cmb/2025");
+        let sample_dir = fixture_path("2025");
         if !sample_dir.exists() {
             return;
         }
 
         let db_path = create_temp_test_db();
         apply_all_migrations_for_test(&db_path);
-        let rules_dir = repo_root().join("data/rules");
+        let rules_dir = rules_seed_dir();
 
         let import1 = cmb_eml_import_at_db_path(
             &db_path,
@@ -1543,9 +1507,7 @@ mod tests {
 
     #[test]
     fn parses_problematic_2026_sample_file_with_expected_row_count() {
-        let sample_file = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../..")
-            .join("data/input/raw/eml/cmb/2026/招商银行信用卡电子账单 (12).eml");
+        let sample_file = fixture_path("2026/招商银行信用卡电子账单 (12).eml");
         if !sample_file.exists() {
             return;
         }
@@ -1560,13 +1522,11 @@ mod tests {
 
     #[test]
     fn preview_problematic_2026_sample_summary_matches_expected_counts() {
-        let sample_file = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../..")
-            .join("data/input/raw/eml/cmb/2026/招商银行信用卡电子账单 (12).eml");
+        let sample_file = fixture_path("2026/招商银行信用卡电子账单 (12).eml");
         if !sample_file.exists() {
             return;
         }
-        let rules_dir = repo_root().join("data/rules");
+        let rules_dir = rules_seed_dir();
         let preview = cmb_eml_preview_at_path_with_rules_dir(
             &sample_file,
             DEFAULT_REVIEW_THRESHOLD,
@@ -1597,9 +1557,7 @@ mod tests {
     #[test]
     #[ignore]
     fn debug_problematic_2026_sample_preview_summary() {
-        let sample_file = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../..")
-            .join("data/input/raw/eml/cmb/2026/招商银行信用卡电子账单 (12).eml");
+        let sample_file = fixture_path("2026/招商银行信用卡电子账单 (12).eml");
         if !sample_file.exists() {
             return;
         }

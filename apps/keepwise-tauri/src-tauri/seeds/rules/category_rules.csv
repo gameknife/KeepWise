@@ -1,0 +1,22 @@
+priority,match_type,pattern,expense_category,confidence,note
+10,contains,肯德基|瑞幸|luckin|咖啡|奶茶|火锅|餐饮|麦当劳|汉堡,餐饮,0.90,餐饮关键词
+20,contains,拼多多|京东|淘宝|天猫|商贸|超市|麦德龙|钱大妈|自营旗舰店,购物,0.88,购物关键词
+30,contains,特来电|高速|停车|泊飞|哈啰|理想汽车|滴滴|绿道|环贸,交通出行,0.86,交通关键词
+40,contains,中国电信|移动|联通|迅雷|宽带|话费,通讯缴费,0.88,通讯关键词
+50,contains,PlayStation|网易云音乐|网易雷火|腾讯|GOOGLE ONE|Google CLOUD|Amazon web services|AWS|Apple,数字娱乐,0.82,数字内容关键词
+60,contains,cloud|Google|AWS|amazon,云服务/软件,0.78,云服务关键词
+70,contains,物业|华宇优家|优家|社区|公寓,居家物业,0.85,居家物业
+80,contains,学习|教育|课堂|乐读,教育学习,0.84,教育关键词
+10,contains,肯德基|瑞幸|luckin|咖啡|奶茶|火锅|餐饮|麦当劳|汉堡|拉扎斯|饿了么|寿司|茶餐厅|牛肉|面|食堂|美团,餐饮,0.90,餐饮关键词
+20,contains,拼多多|京东|淘宝|天猫|商贸|超市|麦德龙|钱大妈|自营旗舰店|盒马|沃尔玛|伊藤|百货|山姆|安踏|商城,购物,0.88,购物关键词
+30,contains,特来电|高速|停车|泊飞|哈啰|理想汽车|理想|滴滴|绿道|环贸|石化|高德打车|宜泊|智泊|通行宝|汽车,交通出行,0.86,交通关键词
+35,contains,人寿|保险|利宝,保险保障,0.95,保险关键词
+40,contains,中国电信|移动|联通|迅雷|宽带|话费|中铁网络,通讯缴费,0.88,通讯关键词
+50,contains,PlayStation|网易云音乐|网易雷火|腾讯|GOOGLE ONE|Google CLOUD|Amazon web services|AWS|Apple|Nuvei|NEXITALLY|Boku|淘票票,数字娱乐,0.84,数字内容关键词
+60,contains,cloud|Google|AWS|amazon|Microsoft,云服务/软件,0.80,云服务关键词
+70,contains,物业|华宇优家|优家|社区|公寓|贝壳|置业,居家物业,0.86,居家物业
+80,contains,学习|教育|课堂|乐读|书画院|中信书店,教育学习,0.84,教育关键词
+90,contains,携程|酒店|旅行社|华程西南,旅行住宿,0.90,旅行关键词
+95,contains,财政厅,行政缴费,0.95,政务缴费
+100,contains,美年,医疗健康,0.90,医疗关键词
+105,contains,理想,购车支出,0.92,购车相关

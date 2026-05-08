@@ -1,3 +1,4 @@
+import java.io.FileInputStream
 import java.util.Properties
 
 plugins {
@@ -13,6 +14,13 @@ val tauriProperties = Properties().apply {
     }
 }
 
+val releaseKeystoreProperties = Properties().apply {
+    val propFile = rootProject.file("keystore.properties")
+    if (propFile.exists()) {
+        FileInputStream(propFile).use { load(it) }
+    }
+}
+
 android {
     compileSdk = 36
     namespace = "com.gameknife.keepwise"
@@ -23,6 +31,29 @@ android {
         targetSdk = 36
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
+    }
+    signingConfigs {
+        create("release") {
+            val storePath = releaseKeystoreProperties.getProperty("storeFile")
+            val keyAliasValue = releaseKeystoreProperties.getProperty("keyAlias")
+            val keyPasswordValue =
+                releaseKeystoreProperties.getProperty("keyPassword")
+                    ?: releaseKeystoreProperties.getProperty("password")
+            val storePasswordValue =
+                releaseKeystoreProperties.getProperty("storePassword")
+                    ?: releaseKeystoreProperties.getProperty("password")
+            if (
+                storePath != null &&
+                keyAliasValue != null &&
+                keyPasswordValue != null &&
+                storePasswordValue != null
+            ) {
+                keyAlias = keyAliasValue
+                keyPassword = keyPasswordValue
+                storeFile = file(storePath)
+                storePassword = storePasswordValue
+            }
+        }
     }
     buildTypes {
         getByName("debug") {
@@ -37,6 +68,9 @@ android {
             }
         }
         getByName("release") {
+            if (releaseKeystoreProperties.getProperty("storeFile") != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             isMinifyEnabled = true
             proguardFiles(
                 *fileTree(".") { include("**/*.pro") }

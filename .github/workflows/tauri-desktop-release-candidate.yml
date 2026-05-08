@@ -45,14 +45,6 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-
-      - name: Install diff regression Python deps
-        run: python -m pip install pyyaml
-
       - name: Install frontend deps
         working-directory: apps/keepwise-tauri
         run: npm ci
@@ -64,40 +56,31 @@ jobs:
       - name: Version consistency preview check (package.json / Cargo.toml)
         run: |
           mkdir -p .artifacts/release-candidate
-          python3 - <<'PY'
-          import json, pathlib, re, sys
-
-          target = "${{ inputs.target_version }}"
-          pkg_path = pathlib.Path("apps/keepwise-tauri/package.json")
-          cargo_path = pathlib.Path("apps/keepwise-tauri/src-tauri/Cargo.toml")
-
-          pkg = json.loads(pkg_path.read_text(encoding="utf-8"))
-          pkg_ver = pkg.get("version", "")
-
-          cargo_text = cargo_path.read_text(encoding="utf-8")
-          m = re.search(r'(?ms)^\[package\].*?^version\s*=\s*"([^"]+)"', cargo_text)
-          cargo_ver = m.group(1) if m else ""
-
-          if not pkg_ver or not cargo_ver:
-              print("Failed to read package/cargo version")
-              sys.exit(1)
-
-          if pkg_ver != cargo_ver:
-              print(f"Version mismatch: package.json={pkg_ver}, Cargo.toml={cargo_ver}")
-              sys.exit(1)
-
-          rc = pathlib.Path(".artifacts/release-candidate/version_consistency_check.txt")
-          lines = []
-          lines.append("version_consistency=pass")
-          lines.append(f"target_version={target}")
-          lines.append(f"package_json_version={pkg_ver}")
-          lines.append(f"cargo_toml_version={cargo_ver}")
-          lines.append(f"matches_target_version={'yes' if pkg_ver == target else 'no'}")
-          if pkg_ver != target:
-              lines.append("note=RC workflow currently builds from working tree version; target_version is tracked in release draft and artifact naming")
-          rc.write_text("\n".join(lines) + "\n", encoding="utf-8")
-          print(rc)
-          PY
+          target="${{ inputs.target_version }}"
+          pkg_ver="$(jq -r '.version // empty' apps/keepwise-tauri/package.json)"
+          cargo_ver="$(sed -n '/^\[package\]/,/^\[/s/^version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' apps/keepwise-tauri/src-tauri/Cargo.toml | head -1)"
+          if [[ -z "$pkg_ver" || -z "$cargo_ver" ]]; then
+            echo "Failed to read package/cargo version"
+            exit 1
+          fi
+          if [[ "$pkg_ver" != "$cargo_ver" ]]; then
+            echo "Version mismatch: package.json=$pkg_ver, Cargo.toml=$cargo_ver"
+            exit 1
+          fi
+          rc=".artifacts/release-candidate/version_consistency_check.txt"
+          {
+            echo "version_consistency=pass"
+            echo "target_version=$target"
+            echo "package_json_version=$pkg_ver"
+            echo "cargo_toml_version=$cargo_ver"
+            if [[ "$pkg_ver" == "$target" ]]; then
+              echo "matches_target_version=yes"
+            else
+              echo "matches_target_version=no"
+              echo "note=RC workflow currently builds from working tree version; target_version is tracked in release draft and artifact naming"
+            fi
+          } > "$rc"
+          echo "$rc"
 
           {
             echo "### Version Consistency Preview Check"

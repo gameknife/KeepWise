@@ -25,18 +25,10 @@ write_summary() {
     echo "core_diff_outcome=$core_diff_status"
     echo "overall_status=$overall_status"
     if [[ -f "$ARTIFACT_DIR/core_analytics_diff_regression.json" ]]; then
-      python3 - <<PY
-import json, pathlib
-path = pathlib.Path(r'''$ARTIFACT_DIR/core_analytics_diff_regression.json''')
-payload = json.loads(path.read_text(encoding='utf-8'))
-summary = payload.get("summary", {})
-cases = summary.get("cases", {})
-cross = summary.get("cross_case_checks", {})
-print(f"core_diff_cases_total={cases.get('total', 'n/a')}")
-print(f"core_diff_cases_status_counts={cases.get('status_counts', {})}")
-print(f"core_diff_cross_total={cross.get('total', 'n/a')}")
-print(f"core_diff_cross_status_counts={cross.get('status_counts', {})}")
-PY
+      echo "core_diff_cases_total=$(jq -r '.summary.cases.total // "n/a"' "$ARTIFACT_DIR/core_analytics_diff_regression.json")"
+      echo "core_diff_cases_status_counts=$(jq -c '.summary.cases.status_counts // {}' "$ARTIFACT_DIR/core_analytics_diff_regression.json")"
+      echo "core_diff_cross_total=$(jq -r '.summary.cross_case_checks.total // "n/a"' "$ARTIFACT_DIR/core_analytics_diff_regression.json")"
+      echo "core_diff_cross_status_counts=$(jq -c '.summary.cross_case_checks.status_counts // {}' "$ARTIFACT_DIR/core_analytics_diff_regression.json")"
     else
       echo "core_diff_report_missing=1"
     fi

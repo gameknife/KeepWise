@@ -1,5 +1,13 @@
-// @ts-nocheck
-export function WorkspaceContentPanels(props: any) {
+type WorkspaceContentPanelsProps = Record<string, unknown>;
+type LooseUiEvent = {
+  target: EventTarget & { value?: string; checked?: boolean };
+  currentTarget: { getBoundingClientRect: () => DOMRect; select?: () => void };
+  clientX?: number;
+  clientY?: number;
+  stopPropagation: () => void;
+};
+
+export function WorkspaceContentPanels(props: WorkspaceContentPanelsProps) {
   const {
     activeTabMeta,
     isAdminTab,
@@ -85,7 +93,7 @@ export function WorkspaceContentPanels(props: any) {
     budgetItemForm,
     setBudgetItemForm,
     handleUpsertMonthlyBudgetItem,
-  } = props;
+  } = props as Record<string, any>;
 
   return (
     <>
@@ -105,13 +113,13 @@ export function WorkspaceContentPanels(props: any) {
                       if (developerMode) {
                         setShowRawJson(false);
                       }
-                      setDeveloperMode((v) => !v);
+                      setDeveloperMode((v: string) => !v);
                     }}
                   >
                     {developerMode ? "关闭开发者模式" : "打开开发者模式"}
                   </button>
                   {developerMode ? (
-                    <button type="button" className="secondary-btn" onClick={() => setShowRawJson((v) => !v)}>
+                    <button type="button" className="secondary-btn" onClick={() => setShowRawJson((v: string) => !v)}>
                       {showRawJson ? "隐藏原始 JSON" : "显示原始 JSON"}
                     </button>
                   ) : null}
@@ -152,7 +160,7 @@ export function WorkspaceContentPanels(props: any) {
                 SortableHeaderButton={SortableHeaderButton}
                 nextSortState={nextSortState}
                 compareSortValues={compareSortValues}
-                onExcludeTransaction={async (id, action, reason) => {
+                onExcludeTransaction={async (id: string, action: string, reason: string) => {
                   try {
                     await updateTransactionAnalysisExclusion({ id, action, reason });
                     void handleConsumptionOverviewQuery();
@@ -160,7 +168,7 @@ export function WorkspaceContentPanels(props: any) {
                     consumptionOverview.setError(toErrorMessage(err));
                   }
                 }}
-                onConfirmTransactionReview={async (id) => {
+                onConfirmTransactionReview={async (id: string) => {
                   try {
                     await confirmTransactionReview({ id });
                     void handleConsumptionOverviewQuery();
@@ -168,7 +176,7 @@ export function WorkspaceContentPanels(props: any) {
                     consumptionOverview.setError(toErrorMessage(err));
                   }
                 }}
-                onMerchantCategoryChange={async (merchant, expenseCategory) => {
+                onMerchantCategoryChange={async (merchant: string, expenseCategory: string) => {
                   setConsumptionCategoryUpdatingMerchant(merchant);
                   try {
                     await upsertMerchantMapRule({
@@ -203,12 +211,12 @@ export function WorkspaceContentPanels(props: any) {
                 <p>{queryWorkbenchHeader.description}</p>
               </div>
               <div className="workbench-module-strip">
-                {queryWorkbenchModules.map((label) => (
+                {queryWorkbenchModules.map((label: string) => (
                   <span key={label} className="workbench-module-pill">{label}</span>
                 ))}
               </div>
               <ol className="workbench-flow-list">
-                {queryWorkbenchFlow.map((step) => (
+                {queryWorkbenchFlow.map((step: string) => (
                   <li key={step}>{step}</li>
                 ))}
               </ol>
@@ -241,9 +249,9 @@ export function WorkspaceContentPanels(props: any) {
                   <span>年份</span>
                   <select
                     value={`${salaryIncomeQuery.year ?? currentYearText}`}
-                    onChange={(e) => setSalaryIncomeQuery((s) => ({ ...s, year: e.target.value }))}
+                    onChange={(e: LooseUiEvent) => setSalaryIncomeQuery((s: Record<string, any>) => ({ ...s, year: e.target.value }))}
                   >
-                    {budgetYearOptions.map((year) => (
+                    {budgetYearOptions.map((year: string) => (
                       <option key={year} value={year}>
                         {year}年
                       </option>
@@ -287,13 +295,13 @@ export function WorkspaceContentPanels(props: any) {
                   <span>年份</span>
                   <select
                     value={`${budgetOverviewQuery.year ?? budgetReviewQuery.year ?? currentYearText}`}
-                    onChange={(e) => {
+                    onChange={(e: LooseUiEvent) => {
                       const nextYear = e.target.value;
-                      setBudgetOverviewQuery((s) => ({ ...s, year: nextYear }));
-                      setBudgetReviewQuery((s) => ({ ...s, year: nextYear }));
+                      setBudgetOverviewQuery((s: Record<string, any>) => ({ ...s, year: nextYear }));
+                      setBudgetReviewQuery((s: Record<string, any>) => ({ ...s, year: nextYear }));
                     }}
                   >
-                    {budgetYearOptions.map((year) => (
+                    {budgetYearOptions.map((year: string) => (
                       <option key={year} value={year}>
                         {year}年
                       </option>
@@ -358,7 +366,7 @@ export function WorkspaceContentPanels(props: any) {
                 formatCentsShort={formatCentsShort}
                 nextSortState={nextSortState}
                 compareSortValues={compareSortValues}
-                onDeleteRow={(id, name) => {
+                onDeleteRow={(id: string, name: string) => {
                   const ok = window.confirm(`确认删除预算项「${name}」？\n${id}`);
                   if (!ok) return;
                   void handleDeleteMonthlyBudgetItem(id);
@@ -375,7 +383,7 @@ export function WorkspaceContentPanels(props: any) {
                     role="dialog"
                     aria-modal="true"
                     aria-labelledby="budget-item-create-modal-title"
-                    onClick={(e) => e.stopPropagation()}
+                    onClick={(e: LooseUiEvent) => e.stopPropagation()}
                   >
                     <div className="kw-modal-head">
                       <div>
@@ -393,7 +401,7 @@ export function WorkspaceContentPanels(props: any) {
                         <input
                           autoFocus
                           value={`${budgetItemForm.name ?? ""}`}
-                          onChange={(e) => setBudgetItemForm((s) => ({ ...s, id: "", name: e.target.value }))}
+                          onChange={(e: LooseUiEvent) => setBudgetItemForm((s: Record<string, any>) => ({ ...s, id: "", name: e.target.value }))}
                           placeholder="如：日常开销"
                         />
                       </label>
@@ -401,7 +409,7 @@ export function WorkspaceContentPanels(props: any) {
                         <span>月预算金额（元）</span>
                         <input
                           value={`${budgetItemForm.monthly_amount ?? ""}`}
-                          onChange={(e) => setBudgetItemForm((s) => ({ ...s, monthly_amount: e.target.value }))}
+                          onChange={(e: LooseUiEvent) => setBudgetItemForm((s: Record<string, any>) => ({ ...s, monthly_amount: e.target.value }))}
                           placeholder="3000.00"
                         />
                       </label>
@@ -409,14 +417,14 @@ export function WorkspaceContentPanels(props: any) {
                         <span>排序</span>
                         <input
                           value={`${budgetItemForm.sort_order ?? ""}`}
-                          onChange={(e) => setBudgetItemForm((s) => ({ ...s, sort_order: e.target.value }))}
+                          onChange={(e: LooseUiEvent) => setBudgetItemForm((s: Record<string, any>) => ({ ...s, sort_order: e.target.value }))}
                           placeholder="1000"
                         />
                       </label>
                       <BoolField
                         label="是否启用"
                         value={budgetItemForm.is_active ?? "true"}
-                        onChange={(value) => setBudgetItemForm((s) => ({ ...s, is_active: value }))}
+                        onChange={(value: string) => setBudgetItemForm((s: Record<string, any>) => ({ ...s, is_active: value }))}
                       />
                     </div>
 

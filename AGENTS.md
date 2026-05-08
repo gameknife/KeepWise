@@ -7,7 +7,14 @@ Personal finance tool: import bank/investment data, analyze wealth, track budget
 
 ```
 apps/keepwise-tauri/          # Main (only) application
-  src/App.tsx                 # Entire React UI (single-file, ~10K lines)
+  src/main.tsx                # Entry + RootErrorBoundary
+  src/App.tsx                 # Thin default export forwarding to ./app/App
+  src/app/App.tsx             # Main product shell and feature assembly
+  src/app/{helpers,summaries,requestBuilders,amountFormatting}.ts
+  src/features/<domain>/      # Feature sections, previews, modals, layout
+  src/hooks/                  # Shared React hooks
+  src/types/app.ts            # Shared frontend app types
+  src/utils/value.ts          # Safe value helpers for loose payload edges
   src/lib/desktopApi.ts       # Typed Tauri invoke wrappers
   src-tauri/src/              # Rust backend (flat module-per-domain)
     lib.rs                    # Module declarations + pub use re-exports
@@ -22,11 +29,7 @@ apps/keepwise-tauri/          # Main (only) application
     yzxy_import.rs            # YZXY CSV/XLSX import
     bin/kw_migration_adapter.rs  # CLI adapter for diff regression
   scripts/                    # Tauri build/validation shell scripts
-apps/keepwise-legacy/         # Legacy Python/BS app (deprecated)
-  scripts/                    # Python analytics & web app scripts
-  examples/                   # Demo examples
 db/migrations/                # SQLite migration SQL files (0001-0006)
-tools/migration/              # Python-vs-Rust diff regression framework
 docs/engineering/             # Architecture & runbook docs
 ```
 
@@ -60,7 +63,7 @@ cargo test --manifest-path src-tauri/Cargo.toml --lib cmb_eml_import
 # Curated Rust regression subset (7 named tests via shell script)
 npm run test:rust:regression
 
-# Core analytics diff regression (Python baseline vs Rust, 25 cases)
+# Core analytics baseline regression (25 cases + 2 cross-checks)
 npm run test:diff:core
 
 # Full release gate (regression + diff + frontend build + cargo check)
@@ -98,7 +101,7 @@ GitHub Actions at `.github/workflows/`:
 ### Types
 - Always use `type`, never `interface`
 - Inline object types for component props (no separate `Props` type)
-- API response types are often aliased to `unknown` (loose response, strict request)
+- Some API response types are still aliased to `unknown` (loose response, strict request)
 - Union literals for state: `type LoadStatus = "idle" | "loading" | "ready" | "error"`
 
 ### Exports
@@ -120,7 +123,7 @@ catch (err) {
 - No JSDoc/TSDoc
 
 ### Architecture Notes
-- Entire UI lives in `App.tsx` (monolithic single-file, ~10K lines) - no component splitting
+- Frontend shell lives in `src/app/App.tsx`; feature panels/previews/modals are split under `src/features/`
 - State management: raw `useState` only (no Redux/Zustand)
 - CSS: single `App.css` with BEM-like classes (`preview-stat-label`, `line-area-chart-wrap`)
 - Conditional rendering: ternary `{cond ? <X /> : null}` (not `&&` short-circuit)
@@ -166,10 +169,10 @@ catch (err) {
 
 ## Key Engineering Facts
 
-- Core 4 analytics APIs have Python-vs-Rust differential regression (baseline passing)
+- Core 4 analytics APIs are covered by the baseline regression suite
 - CMB EML import: fixed HTML line parsing duplication + ID instability on re-import
 - CMB PDF import: fixed Chinese short-merchant false "personal transfer" classification
-- Rules runtime directory: app-local rules dir (seeded from repo `data/rules` on first run)
+- Rules runtime directory: app-local rules dir seeded from embedded CSV defaults on first run
 - Version must be synced across: `package.json`, `Cargo.toml`, `tauri.conf.json`
 
 ## Documentation

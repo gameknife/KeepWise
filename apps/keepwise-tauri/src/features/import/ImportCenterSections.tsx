@@ -1,4 +1,3 @@
-// @ts-nocheck
 import {
   summarizeCmbBankPdfImportPayload,
   summarizeCmbBankPdfPreviewPayload,
@@ -8,7 +7,7 @@ import {
   summarizeYzxyPreviewPayload,
 } from "../../app/summaries";
 
-function formatImportJobRange(row) {
+function formatImportJobRange(row: Record<string, any>) {
   const from = typeof row?.data_date_from === "string" ? row.data_date_from : "";
   const to = typeof row?.data_date_to === "string" ? row.data_date_to : "";
   if (!from && !to) return "-";
@@ -16,14 +15,14 @@ function formatImportJobRange(row) {
   return from || to;
 }
 
-function mapImportJobStatusTone(status) {
+function mapImportJobStatusTone(status: string) {
   if (status === "success") return "ready";
   if (status === "failed") return "error";
   if (status === "running") return "loading";
   return "idle";
 }
 
-function resolveImportFlowState(args) {
+function resolveImportFlowState(args: Record<string, any>) {
   const {
     path,
     previewBusy,
@@ -93,7 +92,9 @@ function resolveImportFlowState(args) {
   };
 }
 
-function ImportFlowCard(props) {
+type ImportFlowCardProps = Record<string, unknown>;
+
+function ImportFlowCard(props: ImportFlowCardProps) {
   const {
     title,
     description,
@@ -105,7 +106,7 @@ function ImportFlowCard(props) {
     onRun,
     disabled,
     status,
-  } = props;
+  } = props as Record<string, any>;
 
   return (
     <section className="card panel">
@@ -117,7 +118,7 @@ function ImportFlowCard(props) {
       <div className="db-import-path-row">
         <label className="field db-import-path-field">
           <span>{pathLabel}</span>
-          <input value={pathValue} onChange={(e) => onPathChange(e.target.value)} />
+          <input value={pathValue} onChange={(e: { target: { value: string; checked?: boolean } }) => onPathChange(e.target.value)} />
         </label>
         {browseButtons}
       </div>
@@ -139,7 +140,9 @@ function ImportFlowCard(props) {
   );
 }
 
-export function ImportCenterSections(props: any) {
+type ImportCenterSectionsProps = Record<string, unknown>;
+
+export function ImportCenterSections(props: ImportCenterSectionsProps) {
   const {
     isTab,
     handleImportJobsQuery,
@@ -179,7 +182,7 @@ export function ImportCenterSections(props: any) {
     cmbPdfPreviewResult,
     cmbPdfImportResult,
     PreviewStat,
-  } = props;
+  } = props as Record<string, any>;
 
   const importJobRows = Array.isArray(importJobsResult?.rows) ? importJobsResult.rows : [];
   const importJobsSummary = importJobsResult?.summary ?? {};
@@ -350,7 +353,7 @@ export function ImportCenterSections(props: any) {
                   </tr>
                 </thead>
                 <tbody>
-                  {importJobRows.map((row, index) => {
+                  {importJobRows.map((row: Record<string, any>, index: number) => {
                     const status = typeof row?.status === "string" ? row.status : "unknown";
                     const statusTone = mapImportJobStatusTone(status);
                     const sourceType = typeof row?.source_type === "string" ? row.source_type : "-";

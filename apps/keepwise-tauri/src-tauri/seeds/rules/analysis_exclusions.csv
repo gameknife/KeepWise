@@ -1,0 +1,4 @@
+enabled,rule_name,merchant_contains,description_contains,expense_category,min_amount,max_amount,start_date,end_date,reason
+1,exclude-car-purchase,理想,,购车支出,100000,,,,购车大额一次性支出，排除日常消费分析
+1,exclude-house-purchase,贝壳平台商户,,居家物业,30000,,,,房产相关大额一次性支出，排除日常消费分析
+1,exclude-car-ingest-purchase,江苏心电互动汽车销售服务有限,,交通出行,5000,,,,购车大额一次性支出，排除日常消费分析

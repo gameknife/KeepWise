@@ -17,6 +17,9 @@
 - 预算/FIRE/收入分析基础能力迁移
 - 左侧 TAB 产品化工作台 + 设置/隐私系统
 - 本地/CI 回归检查链路、RC workflow、发布准备脚本
+- 已废弃 legacy Python/Web 工作台、根目录 `data/` 与人工 contract 目录
+- 核心分析回归已从 Python oracle 切换为 Rust baseline regression
+- rules seed 已内嵌到 Tauri crate，首次运行写入 app 本地 rules 目录
 
 ## 进行中（高优先级）
 
@@ -31,6 +34,12 @@
 3. 发布流程收口
 - 签名/公证（macOS）正式化
 - RC -> 发布执行流程稳定化
+
+4. 重构清理后续
+- feature section props 类型化，移除剩余 `ts-nocheck`
+- App shell 状态分域下沉到 feature hooks
+- `desktopApi.ts` payload 类型补齐
+- Rust 大文件拆分与测试辅助提取
 
 ## 后续阶段（暂缓）
 

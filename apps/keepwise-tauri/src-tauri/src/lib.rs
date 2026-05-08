@@ -13,6 +13,8 @@ mod record_mutations;
 mod rules_management;
 mod rules_store;
 mod sync_management;
+#[cfg(test)]
+mod test_support;
 mod transaction_mutations;
 pub mod wealth_analytics;
 mod yzxy_import;
@@ -38,7 +40,6 @@ pub fn run() {
             commands::app_paths,
             ledger_db::ledger_db_status,
             ledger_db::ledger_db_migrate,
-            ledger_db::ledger_db_import_repo_runtime,
             ledger_db::ledger_db_import_from_path,
             ledger_db::ledger_db_admin_stats,
             admin_health::runtime_db_health_check,

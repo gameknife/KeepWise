@@ -1,5 +1,13 @@
-// @ts-nocheck
-export function WealthOverviewSection(props: any) {
+type WealthOverviewSectionProps = Record<string, unknown>;
+type LooseUiEvent = {
+  target: EventTarget & { value?: string; checked?: boolean };
+  currentTarget: { getBoundingClientRect: () => DOMRect; select?: () => void };
+  clientX?: number;
+  clientY?: number;
+  stopPropagation: () => void;
+};
+
+export function WealthOverviewSection(props: WealthOverviewSectionProps) {
   const {
     isTab,
     wealthCurveQuery,
@@ -30,7 +38,7 @@ export function WealthOverviewSection(props: any) {
     computeMonthlyTotalAssetGrowthFromWealthCurve,
     showRawJson,
     JsonResultCard,
-  } = props;
+  } = props as Record<string, any>;
   return (
     <>
       {isTab("wealth-overview") ? <section className="card panel">
@@ -54,7 +62,7 @@ export function WealthOverviewSection(props: any) {
               <span>趋势区间</span>
               <select
                 value={wealthCurveQuery.preset}
-                onChange={(e) => setWealthCurveQuery((s) => ({ ...s, preset: e.target.value }))}
+                onChange={(e: LooseUiEvent) => setWealthCurveQuery((s: Record<string, any>) => ({ ...s, preset: e.target.value }))}
               >
                 <option value="ytd">年初至今</option>
                 <option value="1y">近1年</option>
@@ -77,7 +85,7 @@ export function WealthOverviewSection(props: any) {
                       : ""
                   }`}
                   onClick={() =>
-                    setWealthSharedAssetFilters((prev) => ({
+                    setWealthSharedAssetFilters((prev: Record<string, any>) => ({
                       ...prev,
                       include_investment: "true",
                       include_cash: "true",
@@ -125,7 +133,7 @@ export function WealthOverviewSection(props: any) {
                 <span>开始日期（自定义）</span>
                 <DateInput
                   value={wealthCurveQuery.from}
-                  onChange={(e) => setWealthCurveQuery((s) => ({ ...s, from: e.target.value }))}
+                  onChange={(e: LooseUiEvent) => setWealthCurveQuery((s: Record<string, any>) => ({ ...s, from: e.target.value }))}
                   type="date"
                   placeholder="YYYY-MM-DD"
                 />
@@ -134,7 +142,7 @@ export function WealthOverviewSection(props: any) {
                 <span>结束日期（可选）</span>
                 <DateInput
                   value={wealthCurveQuery.to}
-                  onChange={(e) => setWealthCurveQuery((s) => ({ ...s, to: e.target.value }))}
+                  onChange={(e: LooseUiEvent) => setWealthCurveQuery((s: Record<string, any>) => ({ ...s, to: e.target.value }))}
                   type="date"
                   placeholder="YYYY-MM-DD"
                 />

@@ -828,7 +828,7 @@ export function RulesAdminPanel({
     <section className="card panel">
       <div className="panel-header">
         <h2>规则管理</h2>
-        <p>在 desktop 内维护导入规则文件（当前写入仓库 `data/rules/*.csv`），供 EML / CMB PDF 导入即时生效。</p>
+        <p>在 desktop 内维护 app 本地导入规则文件，供 EML / CMB PDF 导入即时生效。</p>
       </div>
 
       <AutoRefreshHint busy={merchantQueryBusy || merchantSuggestionsBusy || categoryQueryBusy || bankQueryBusy || exclQueryBusy}>

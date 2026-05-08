@@ -1,11 +1,19 @@
-// @ts-nocheck
 import { useEffect, useState } from "react";
 import QRCode from "qrcode";
 
 const SYNC_QR_RENDER_SIZE = 360;
 const SYNC_QR_DISPLAY_SIZE = 280;
 
-export function AppSettingsModal(props: any) {
+type AppSettingsModalProps = Record<string, unknown>;
+type LooseUiEvent = {
+  target: EventTarget & { value?: string; checked?: boolean };
+  currentTarget: { getBoundingClientRect: () => DOMRect; select?: () => void };
+  clientX?: number;
+  clientY?: number;
+  stopPropagation: () => void;
+};
+
+export function AppSettingsModal(props: AppSettingsModalProps) {
   const {
     settingsOpen,
     setSettingsOpen,
@@ -24,7 +32,7 @@ export function AppSettingsModal(props: any) {
     handleSyncSetupCreate,
     handleSyncSetupLink,
     handleSyncShareCodeRefresh,
-  } = props;
+  } = props as Record<string, any>;
   const [activeCategory, setActiveCategory] = useState<"display" | "data" | "fire" | "sync">("display");
   const [syncShareQrDataUrl, setSyncShareQrDataUrl] = useState("");
 
@@ -45,7 +53,7 @@ export function AppSettingsModal(props: any) {
       errorCorrectionLevel: "L",
       color: { dark: "#000000", light: "#FFFFFF" },
     })
-      .then((url) => {
+      .then((url: string) => {
         if (!cancelled) setSyncShareQrDataUrl(url);
       })
       .catch(() => {
@@ -65,7 +73,7 @@ export function AppSettingsModal(props: any) {
             role="dialog"
             aria-modal="true"
             aria-labelledby="app-settings-modal-title"
-            onClick={(e) => e.stopPropagation()}
+            onClick={(e: LooseUiEvent) => e.stopPropagation()}
           >
             <div className="kw-modal-head">
               <div>
@@ -132,8 +140,8 @@ export function AppSettingsModal(props: any) {
                             <span>着色方案</span>
                             <select
                               value={appSettings.gainLossColorScheme}
-                              onChange={(e) =>
-                                setAppSettings((prev) => ({
+                              onChange={(e: LooseUiEvent) =>
+                                setAppSettings((prev: Record<string, any>) => ({
                                   ...prev,
                                   gainLossColorScheme: e.target.value as any,
                                 }))
@@ -157,7 +165,7 @@ export function AppSettingsModal(props: any) {
                               type="button"
                               className={`settings-segmented-btn ${appSettings.defaultPrivacyMaskOnLaunch ? "active" : ""}`}
                               onClick={() =>
-                                setAppSettings((prev) => ({ ...prev, defaultPrivacyMaskOnLaunch: true }))
+                                setAppSettings((prev: Record<string, any>) => ({ ...prev, defaultPrivacyMaskOnLaunch: true }))
                               }
                             >
                               默认隐藏金额
@@ -166,7 +174,7 @@ export function AppSettingsModal(props: any) {
                               type="button"
                               className={`settings-segmented-btn ${!appSettings.defaultPrivacyMaskOnLaunch ? "active" : ""}`}
                               onClick={() =>
-                                setAppSettings((prev) => ({ ...prev, defaultPrivacyMaskOnLaunch: false }))
+                                setAppSettings((prev: Record<string, any>) => ({ ...prev, defaultPrivacyMaskOnLaunch: false }))
                               }
                             >
                               默认显示金额
@@ -186,7 +194,7 @@ export function AppSettingsModal(props: any) {
                               type="button"
                               className={`settings-segmented-btn ${appSettings.uiMotionEnabled ? "active" : ""}`}
                               onClick={() =>
-                                setAppSettings((prev) => ({ ...prev, uiMotionEnabled: true }))
+                                setAppSettings((prev: Record<string, any>) => ({ ...prev, uiMotionEnabled: true }))
                               }
                             >
                               开启
@@ -195,7 +203,7 @@ export function AppSettingsModal(props: any) {
                               type="button"
                               className={`settings-segmented-btn ${!appSettings.uiMotionEnabled ? "active" : ""}`}
                               onClick={() =>
-                                setAppSettings((prev) => ({ ...prev, uiMotionEnabled: false }))
+                                setAppSettings((prev: Record<string, any>) => ({ ...prev, uiMotionEnabled: false }))
                               }
                             >
                               关闭
@@ -215,7 +223,7 @@ export function AppSettingsModal(props: any) {
                               type="button"
                               className={`settings-segmented-btn ${appSettings.consumptionExcludeNeedsReviewByDefault ? "active" : ""}`}
                               onClick={() =>
-                                setAppSettings((prev) => ({ ...prev, consumptionExcludeNeedsReviewByDefault: true }))
+                                setAppSettings((prev: Record<string, any>) => ({ ...prev, consumptionExcludeNeedsReviewByDefault: true }))
                               }
                             >
                               默认排除
@@ -224,7 +232,7 @@ export function AppSettingsModal(props: any) {
                               type="button"
                               className={`settings-segmented-btn ${!appSettings.consumptionExcludeNeedsReviewByDefault ? "active" : ""}`}
                               onClick={() =>
-                                setAppSettings((prev) => ({ ...prev, consumptionExcludeNeedsReviewByDefault: false }))
+                                setAppSettings((prev: Record<string, any>) => ({ ...prev, consumptionExcludeNeedsReviewByDefault: false }))
                               }
                             >
                               默认显示
@@ -251,7 +259,7 @@ export function AppSettingsModal(props: any) {
                               type="button"
                               className={`settings-segmented-btn ${appSettings.benchmarkMarketDataSource === "eastmoney" ? "active" : ""}`}
                               onClick={() =>
-                                setAppSettings((prev) => ({ ...prev, benchmarkMarketDataSource: "eastmoney" }))
+                                setAppSettings((prev: Record<string, any>) => ({ ...prev, benchmarkMarketDataSource: "eastmoney" }))
                               }
                             >
                               东方财富
@@ -260,7 +268,7 @@ export function AppSettingsModal(props: any) {
                               type="button"
                               className={`settings-segmented-btn ${appSettings.benchmarkMarketDataSource === "yahoo" ? "active" : ""}`}
                               onClick={() =>
-                                setAppSettings((prev) => ({ ...prev, benchmarkMarketDataSource: "yahoo" }))
+                                setAppSettings((prev: Record<string, any>) => ({ ...prev, benchmarkMarketDataSource: "yahoo" }))
                               }
                             >
                               Yahoo Finance
@@ -287,7 +295,7 @@ export function AppSettingsModal(props: any) {
                               type="button"
                               className={`settings-segmented-btn ${appSettings.fireWithdrawalRate === "0.03" ? "active" : ""}`}
                               onClick={() =>
-                                setAppSettings((prev) => ({ ...prev, fireWithdrawalRate: "0.03" }))
+                                setAppSettings((prev: Record<string, any>) => ({ ...prev, fireWithdrawalRate: "0.03" }))
                               }
                             >
                               3%
@@ -296,7 +304,7 @@ export function AppSettingsModal(props: any) {
                               type="button"
                               className={`settings-segmented-btn ${appSettings.fireWithdrawalRate === "0.04" ? "active" : ""}`}
                               onClick={() =>
-                                setAppSettings((prev) => ({ ...prev, fireWithdrawalRate: "0.04" }))
+                                setAppSettings((prev: Record<string, any>) => ({ ...prev, fireWithdrawalRate: "0.04" }))
                               }
                             >
                               4%
@@ -305,7 +313,7 @@ export function AppSettingsModal(props: any) {
                               type="button"
                               className={`settings-segmented-btn ${appSettings.fireWithdrawalRate === "0.05" ? "active" : ""}`}
                               onClick={() =>
-                                setAppSettings((prev) => ({ ...prev, fireWithdrawalRate: "0.05" }))
+                                setAppSettings((prev: Record<string, any>) => ({ ...prev, fireWithdrawalRate: "0.05" }))
                               }
                             >
                               5%
@@ -386,8 +394,8 @@ export function AppSettingsModal(props: any) {
                             <span>SecretId</span>
                             <input
                               value={syncCreateForm?.secret_id || ""}
-                              onChange={(e) =>
-                                setSyncCreateForm?.((prev: any) => ({ ...prev, secret_id: e.target.value }))
+                              onChange={(e: LooseUiEvent) =>
+                                setSyncCreateForm?.((prev: Record<string, any>) => ({ ...prev, secret_id: e.target.value }))
                               }
                               placeholder="AKID..."
                             />
@@ -397,8 +405,8 @@ export function AppSettingsModal(props: any) {
                             <input
                               type="password"
                               value={syncCreateForm?.secret_key || ""}
-                              onChange={(e) =>
-                                setSyncCreateForm?.((prev: any) => ({ ...prev, secret_key: e.target.value }))
+                              onChange={(e: LooseUiEvent) =>
+                                setSyncCreateForm?.((prev: Record<string, any>) => ({ ...prev, secret_key: e.target.value }))
                               }
                               placeholder="请输入 SecretKey"
                             />
@@ -407,8 +415,8 @@ export function AppSettingsModal(props: any) {
                             <span>Region</span>
                             <input
                               value={syncCreateForm?.region || ""}
-                              onChange={(e) =>
-                                setSyncCreateForm?.((prev: any) => ({ ...prev, region: e.target.value }))
+                              onChange={(e: LooseUiEvent) =>
+                                setSyncCreateForm?.((prev: Record<string, any>) => ({ ...prev, region: e.target.value }))
                               }
                               placeholder="ap-shanghai"
                             />
@@ -417,8 +425,8 @@ export function AppSettingsModal(props: any) {
                             <span>AppID</span>
                             <input
                               value={syncCreateForm?.app_id || ""}
-                              onChange={(e) =>
-                                setSyncCreateForm?.((prev: any) => ({ ...prev, app_id: e.target.value }))
+                              onChange={(e: LooseUiEvent) =>
+                                setSyncCreateForm?.((prev: Record<string, any>) => ({ ...prev, app_id: e.target.value }))
                               }
                               placeholder="腾讯云账号 AppID"
                             />
@@ -428,8 +436,8 @@ export function AppSettingsModal(props: any) {
                             <input
                               type="password"
                               value={syncCreateForm?.sync_password || ""}
-                              onChange={(e) =>
-                                setSyncCreateForm?.((prev: any) => ({ ...prev, sync_password: e.target.value }))
+                              onChange={(e: LooseUiEvent) =>
+                                setSyncCreateForm?.((prev: Record<string, any>) => ({ ...prev, sync_password: e.target.value }))
                               }
                               placeholder="用于端到端加密"
                             />
@@ -469,7 +477,7 @@ export function AppSettingsModal(props: any) {
                                 value={syncShareCode}
                                 rows={4}
                                 readOnly
-                                onFocus={(e) => e.currentTarget.select()}
+                                onFocus={(e: LooseUiEvent) => e.currentTarget.select?.()}
                               />
                             </label>
                             {syncShareQrDataUrl ? (
@@ -504,8 +512,8 @@ export function AppSettingsModal(props: any) {
                             <textarea
                               value={syncLinkForm?.share_code || ""}
                               rows={3}
-                              onChange={(e) =>
-                                setSyncLinkForm?.((prev: any) => ({ ...prev, share_code: e.target.value }))
+                              onChange={(e: LooseUiEvent) =>
+                                setSyncLinkForm?.((prev: Record<string, any>) => ({ ...prev, share_code: e.target.value }))
                               }
                               placeholder="扫码后自动填入，或手动粘贴"
                             />
@@ -515,8 +523,8 @@ export function AppSettingsModal(props: any) {
                             <input
                               type="password"
                               value={syncLinkForm?.sync_password || ""}
-                              onChange={(e) =>
-                                setSyncLinkForm?.((prev: any) => ({ ...prev, sync_password: e.target.value }))
+                              onChange={(e: LooseUiEvent) =>
+                                setSyncLinkForm?.((prev: Record<string, any>) => ({ ...prev, sync_password: e.target.value }))
                               }
                               placeholder="请输入同步密码"
                             />

@@ -1,5 +1,13 @@
-// @ts-nocheck
-export function ReturnAnalysisSection(props: any) {
+type ReturnAnalysisSectionProps = Record<string, unknown>;
+type LooseUiEvent = {
+  target: EventTarget & { value?: string; checked?: boolean };
+  currentTarget: { getBoundingClientRect: () => DOMRect; select?: () => void };
+  clientX?: number;
+  clientY?: number;
+  stopPropagation: () => void;
+};
+
+export function ReturnAnalysisSection(props: ReturnAnalysisSectionProps) {
   const {
     isTab,
     makeEnterToQueryHandler,
@@ -37,7 +45,7 @@ export function ReturnAnalysisSection(props: any) {
     compareSortValues,
     showRawJson,
     JsonResultCard,
-  } = props;
+  } = props as Record<string, any>;
   return (
     <>
       {isTab("return-analysis") ? <section className="card panel panel-flat-content panel-return-analysis">
@@ -51,8 +59,8 @@ export function ReturnAnalysisSection(props: any) {
             <span>账户</span>
             <AccountIdSelect
               value={invCurveQuery.account_id}
-              onChange={(value) =>
-                setInvestmentAnalysisSharedQuery((s) => ({
+              onChange={(value: string) =>
+                setInvestmentAnalysisSharedQuery((s: Record<string, any>) => ({
                   ...s,
                   account_id: value,
                 }))
@@ -69,8 +77,8 @@ export function ReturnAnalysisSection(props: any) {
             <span>预设区间</span>
             <select
               value={invCurveQuery.preset}
-              onChange={(e) =>
-                setInvestmentAnalysisSharedQuery((s) => ({
+              onChange={(e: LooseUiEvent) =>
+                setInvestmentAnalysisSharedQuery((s: Record<string, any>) => ({
                   ...s,
                   preset: e.target.value,
                 }))
@@ -89,8 +97,8 @@ export function ReturnAnalysisSection(props: any) {
                 <span>开始日期（自定义）</span>
                 <DateInput
                   value={invCurveQuery.from}
-                  onChange={(e) =>
-                    setInvestmentAnalysisSharedQuery((s) => ({
+                  onChange={(e: LooseUiEvent) =>
+                    setInvestmentAnalysisSharedQuery((s: Record<string, any>) => ({
                       ...s,
                       from: e.target.value,
                     }))
@@ -103,8 +111,8 @@ export function ReturnAnalysisSection(props: any) {
                 <span>结束日期（可选）</span>
                 <DateInput
                   value={invCurveQuery.to}
-                  onChange={(e) =>
-                    setInvestmentAnalysisSharedQuery((s) => ({
+                  onChange={(e: LooseUiEvent) =>
+                    setInvestmentAnalysisSharedQuery((s: Record<string, any>) => ({
                       ...s,
                       to: e.target.value,
                     }))

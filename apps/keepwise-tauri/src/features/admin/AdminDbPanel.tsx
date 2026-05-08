@@ -1,11 +1,11 @@
-// @ts-nocheck
-export function AdminDbPanel(props: any) {
+type AdminDbPanelProps = Record<string, unknown>;
+
+export function AdminDbPanel(props: AdminDbPanelProps) {
   const {
     isAdminDeveloperMode,
     refreshDbStatus,
     dbBusy,
     handleRunMigrations,
-    handleImportRepoRuntimeDb,
     dbImportPath,
     setDbImportPath,
     handlePickDbImportPath,
@@ -14,7 +14,7 @@ export function AdminDbPanel(props: any) {
     dbStatus,
     dbLastResult,
     dbImportLastResult,
-  } = props;
+  } = props as Record<string, any>;
 
   return (
     <>
@@ -31,15 +31,6 @@ export function AdminDbPanel(props: any) {
           <button type="button" className="primary-btn" onClick={() => void handleRunMigrations()} disabled={dbBusy}>
             {dbBusy ? "执行中..." : "初始化 / 迁移数据库"}
           </button>
-          <button
-            type="button"
-            className="primary-btn"
-            onClick={() => void handleImportRepoRuntimeDb()}
-            disabled={dbBusy}
-            title="复制仓库默认运行库 data/work/processed/ledger/keepwise.db 到 Tauri app 本地库"
-          >
-            {dbBusy ? "执行中..." : "导入仓库运行库"}
-          </button>
         </div>
 
         <div className="db-import-path-row">
@@ -47,7 +38,7 @@ export function AdminDbPanel(props: any) {
             <span>从路径导入已有数据库</span>
             <input
               value={dbImportPath}
-              onChange={(e) => setDbImportPath(e.target.value)}
+              onChange={(e: { target: { value: string; checked?: boolean } }) => setDbImportPath(e.target.value)}
               placeholder="/absolute/path/to/keepwise.db"
             />
           </label>
@@ -71,8 +62,7 @@ export function AdminDbPanel(props: any) {
           </button>
         </div>
         <p className="inline-hint">
-          适用于导入任意已有 `keepwise.db`（例如历史备份、副本、其他环境生成的库）。开发期也可继续使用上面的
-          `导入仓库运行库` 快捷按钮。
+          适用于导入任意已有 `keepwise.db`（例如历史备份、副本、其他环境生成的库）。
         </p>
 
         {dbStatusError ? (
@@ -116,7 +106,7 @@ export function AdminDbPanel(props: any) {
               <h3>已应用版本</h3>
               {dbStatus.applied_versions.length > 0 ? (
                 <ul className="mono-list">
-                  {dbStatus.applied_versions.map((v) => (
+                  {dbStatus.applied_versions.map((v: string) => (
                     <li key={v}>
                       <code>{v}</code>
                     </li>
@@ -130,7 +120,7 @@ export function AdminDbPanel(props: any) {
               <h3>待执行版本</h3>
               {dbStatus.pending_versions.length > 0 ? (
                 <ul className="mono-list">
-                  {dbStatus.pending_versions.map((v) => (
+                  {dbStatus.pending_versions.map((v: string) => (
                     <li key={v}>
                       <code>{v}</code>
                     </li>
@@ -163,7 +153,7 @@ export function AdminDbPanel(props: any) {
 
         {dbImportLastResult ? (
           <div className="subcard db-result-card">
-            <h3>最近导入仓库运行库结果</h3>
+            <h3>最近数据库导入结果</h3>
             <dl className="kv-grid">
               <dt>源数据库</dt>
               <dd>

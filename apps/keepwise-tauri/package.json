@@ -21,8 +21,9 @@
     "tauri:android:init": "tauri android init",
     "tauri:android:dev": "tauri android dev",
     "tauri:android:run": "tauri android run",
-    "tauri:android:build:internal": "tauri android build --target aarch64 --apk --aab",
-    "db:demo:build": "python3 scripts/make_demo_db.py --force",
+    "tauri:android:signing:setup": "bash scripts/setup_keepwise_android_release_signing.sh",
+    "tauri:android:run:release": "bash scripts/setup_keepwise_android_release_signing.sh && tauri android run --release",
+    "tauri:android:build:internal": "bash scripts/setup_keepwise_android_release_signing.sh && tauri android build --target aarch64 --apk --aab",
     "desktop:release:check": "bash scripts/validate_tauri_desktop_release_check.sh",
     "desktop:release:prepare": "bash scripts/prepare_keepwise_desktop_release.sh"
   },

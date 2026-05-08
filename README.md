@@ -1,12 +1,12 @@
 # BeyondYZYX / KeepWise
 
-KeepWise 已进入 **Tauri Desktop（React + Rust）产品化阶段**。当前桌面端主功能已基本完成迁移（约 90%+），核心导入、分析、规则管理、查询维护均可在桌面端运行，且核心分析接口已完成 Python vs Rust 差分回归。
+KeepWise 已进入 **Tauri Desktop（React + Rust）产品化阶段**。当前桌面端主功能已基本完成迁移，核心导入、分析、规则管理、查询维护均可在桌面端运行，且核心分析接口已由 Rust baseline regression 锁定。
 
 ## 当前状态（简版）
 
 - `desktop` 主链路：可用（Tauri + Rust + SQLite）
 - `android` 内部构建链路：可用（Tauri Android arm64 APK/AAB）
-- 核心分析（4 个接口）：Rust 已迁移，差分通过（`25/25 case + 2/2 cross-check`）
+- 核心分析（4 个接口）：Rust 已迁移，baseline regression 通过（`25/25 case + 2/2 cross-check`）
 - 导入链路：Rust 已支持
   - 有知有行 `CSV/XLSX`
   - 招行信用卡 `EML`
@@ -20,9 +20,6 @@ KeepWise 已进入 **Tauri Desktop（React + Rust）产品化阶段**。当前�
 - 桌面应用：`/Users/gameknife/github/BeyondYZYX/apps/keepwise-tauri`
 - 迁移与工程文档：`/Users/gameknife/github/BeyondYZYX/docs/engineering`
 - 产品基础文档：`/Users/gameknife/github/BeyondYZYX/docs/foundation`
-- 差分工具与用例：`/Users/gameknife/github/BeyondYZYX/tools/migration`
-- 测试契约（人工参考）：`/Users/gameknife/github/BeyondYZYX/tests/contracts/analytics`
-- 旧版脚本/Web 工作台：`/Users/gameknife/github/BeyondYZYX/apps/keepwise-legacy`
 
 ## 快速开始（桌面端，推荐）
 

@@ -1,5 +1,13 @@
-// @ts-nocheck
-export function AdminSections(props: any) {
+type AdminSectionsProps = Record<string, unknown>;
+type LooseUiEvent = {
+  target: EventTarget & { value?: string; checked?: boolean };
+  currentTarget: { getBoundingClientRect: () => DOMRect; select?: () => void };
+  clientX?: number;
+  clientY?: number;
+  stopPropagation: () => void;
+};
+
+export function AdminSections(props: AdminSectionsProps) {
   const {
     isTab,
     handleRefreshAdminDbStats,
@@ -86,7 +94,7 @@ export function AdminSections(props: any) {
     RulesAdminPanel,
     BoolField,
     maskAmountDisplayText,
-  } = props;
+  } = props as Record<string, any>;
   return (
     <>
       {isTab("admin") ? <section className="card panel">
@@ -136,7 +144,7 @@ export function AdminSections(props: any) {
               <span>确认口令</span>
               <input
                 value={adminResetConfirmText}
-                onChange={(e) => setAdminResetConfirmText(e.target.value)}
+                onChange={(e: LooseUiEvent) => setAdminResetConfirmText(e.target.value)}
                 placeholder={readString(adminDbStatsResult, "confirm_phrase") ?? "RESET KEEPWISE"}
               />
             </label>
@@ -225,7 +233,7 @@ export function AdminSections(props: any) {
           <button
             type="button"
             className="secondary-btn"
-            onClick={() => setShowRawJson((v) => !v)}
+            onClick={() => setShowRawJson((v: string) => !v)}
             disabled={pipelineBusy}
           >
             {showRawJson ? "隐藏原始 JSON" : "显示原始 JSON"}
@@ -256,7 +264,7 @@ export function AdminSections(props: any) {
         {pipelineMessage ? <p className="pipeline-message">{pipelineMessage}</p> : null}
 
         <div className="smoke-grid">
-          {smokeRows.map((row) => (
+          {smokeRows.map((row: Record<string, any>) => (
             <div key={row.key} className={`smoke-row smoke-${row.status}`}>
               <div className="smoke-row-head">
                 <code>{row.label}</code>
@@ -330,7 +338,7 @@ export function AdminSections(props: any) {
                 <span>类型</span>
                 <select
                   value={metaAccountsQuery.kind ?? "all"}
-                  onChange={(e) =>
+                  onChange={(e: LooseUiEvent) =>
                     setMetaAccountsQuery({
                       kind: e.target.value as any,
                     })
@@ -378,8 +386,8 @@ export function AdminSections(props: any) {
                   min={1}
                   max={500}
                   value={safeNumericInputValue(invListQuery.limit, 30)}
-                  onChange={(e) =>
-                    setInvListQuery((s) => ({
+                  onChange={(e: LooseUiEvent) =>
+                    setInvListQuery((s: Record<string, any>) => ({
                       ...s,
                       limit: parseNumericInputWithFallback(e.target.value || "30", 30),
                     }))
@@ -390,7 +398,7 @@ export function AdminSections(props: any) {
                 <span>开始日期</span>
                 <DateInput
                   value={`${invListQuery.from ?? ""}`}
-                  onChange={(e) => setInvListQuery((s) => ({ ...s, from: e.target.value }))}
+                  onChange={(e: LooseUiEvent) => setInvListQuery((s: Record<string, any>) => ({ ...s, from: e.target.value }))}
                   type="date"
                   placeholder="YYYY-MM-DD"
                 />
@@ -399,7 +407,7 @@ export function AdminSections(props: any) {
                 <span>结束日期</span>
                 <DateInput
                   value={`${invListQuery.to ?? ""}`}
-                  onChange={(e) => setInvListQuery((s) => ({ ...s, to: e.target.value }))}
+                  onChange={(e: LooseUiEvent) => setInvListQuery((s: Record<string, any>) => ({ ...s, to: e.target.value }))}
                   type="date"
                   placeholder="YYYY-MM-DD"
                 />
@@ -408,7 +416,7 @@ export function AdminSections(props: any) {
                 <span>来源类型</span>
                 <input
                   value={`${invListQuery.source_type ?? ""}`}
-                  onChange={(e) => setInvListQuery((s) => ({ ...s, source_type: e.target.value }))}
+                  onChange={(e: LooseUiEvent) => setInvListQuery((s: Record<string, any>) => ({ ...s, source_type: e.target.value }))}
                   placeholder="manual / yzxy_xlsx / ..."
                 />
               </label>
@@ -416,7 +424,7 @@ export function AdminSections(props: any) {
                 <span>账户 ID</span>
                 <AccountIdSelect
                   value={`${invListQuery.account_id ?? ""}`}
-                  onChange={(value) => setInvListQuery((s) => ({ ...s, account_id: value }))}
+                  onChange={(value: string) => setInvListQuery((s: Record<string, any>) => ({ ...s, account_id: value }))}
                   options={accountSelectOptions}
                   kinds={["investment"]}
                   emptyLabel={accountSelectOptionsLoading ? "加载账户中..." : "全部投资账户"}
@@ -439,10 +447,10 @@ export function AdminSections(props: any) {
               SortableHeaderButton={SortableHeaderButton}
               nextSortState={nextSortState}
               compareSortValues={compareSortValues}
-              onEditRow={(row) => {
+              onEditRow={(row: Record<string, any>) => {
                 prefillInvestmentUpdateFormFromRow(row);
               }}
-              onDeleteRow={(id, row) => {
+              onDeleteRow={(id: string, row: Record<string, any>) => {
                 const accountName =
                   (typeof row.account_name === "string" && row.account_name) ||
                   (typeof row.account_id === "string" ? row.account_id : "该记录");
@@ -468,8 +476,8 @@ export function AdminSections(props: any) {
                   min={1}
                   max={500}
                   value={safeNumericInputValue(assetListQuery.limit, 30)}
-                  onChange={(e) =>
-                    setAssetListQuery((s) => ({
+                  onChange={(e: LooseUiEvent) =>
+                    setAssetListQuery((s: Record<string, any>) => ({
                       ...s,
                       limit: parseNumericInputWithFallback(e.target.value || "30", 30),
                     }))
@@ -480,7 +488,7 @@ export function AdminSections(props: any) {
                 <span>开始日期</span>
                 <DateInput
                   value={`${assetListQuery.from ?? ""}`}
-                  onChange={(e) => setAssetListQuery((s) => ({ ...s, from: e.target.value }))}
+                  onChange={(e: LooseUiEvent) => setAssetListQuery((s: Record<string, any>) => ({ ...s, from: e.target.value }))}
                   type="date"
                   placeholder="YYYY-MM-DD"
                 />
@@ -489,7 +497,7 @@ export function AdminSections(props: any) {
                 <span>结束日期</span>
                 <DateInput
                   value={`${assetListQuery.to ?? ""}`}
-                  onChange={(e) => setAssetListQuery((s) => ({ ...s, to: e.target.value }))}
+                  onChange={(e: LooseUiEvent) => setAssetListQuery((s: Record<string, any>) => ({ ...s, to: e.target.value }))}
                   type="date"
                   placeholder="YYYY-MM-DD"
                 />
@@ -498,8 +506,8 @@ export function AdminSections(props: any) {
                 <span>资产类型</span>
                 <select
                   value={assetListQuery.asset_class ?? ""}
-                  onChange={(e) =>
-                    setAssetListQuery((s) => ({
+                  onChange={(e: LooseUiEvent) =>
+                    setAssetListQuery((s: Record<string, any>) => ({
                       ...s,
                       asset_class: e.target.value as any,
                     }))
@@ -515,7 +523,7 @@ export function AdminSections(props: any) {
                 <span>账户 ID</span>
                 <AccountIdSelect
                   value={`${assetListQuery.account_id ?? ""}`}
-                  onChange={(value) => setAssetListQuery((s) => ({ ...s, account_id: value }))}
+                  onChange={(value: string) => setAssetListQuery((s: Record<string, any>) => ({ ...s, account_id: value }))}
                   options={accountSelectOptions}
                   kinds={accountKindsForAssetClass(assetListQuery.asset_class ?? "") ?? undefined}
                   emptyLabel={accountSelectOptionsLoading ? "加载账户中..." : "全部账户"}

@@ -67,13 +67,7 @@ if ! [[ "$TARGET_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?(\+[0-9
 fi
 
 CURRENT_PACKAGE_VERSION="$(node -p "require('$PACKAGE_JSON').version")"
-CURRENT_CARGO_VERSION="$(python3 - <<PY
-import pathlib,re
-text = pathlib.Path(r'''$CARGO_TOML''').read_text(encoding='utf-8')
-m = re.search(r'(?ms)^\\[package\\].*?^version\\s*=\\s*\"([^\"]+)\"', text)
-print(m.group(1) if m else '')
-PY
-)"
+CURRENT_CARGO_VERSION="$(sed -n '/^\[package\]/,/^\[/s/^version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$CARGO_TOML" | head -1)"
 
 if [[ -z "$CURRENT_CARGO_VERSION" ]]; then
   echo "Failed to read version from $CARGO_TOML" >&2
@@ -105,67 +99,54 @@ COMMIT_COUNT="$(git -C "$ROOT_DIR" rev-list --count "$COMMITS_RANGE" 2>/dev/null
 GROUPED_COMMITS_MD="$RELEASE_DIR/GROUPED_COMMITS_DRAFT.md"
 COMMITS_TSV_PATH="$RELEASE_DIR/commits_for_grouping.tsv"
 printf "%s\n" "$COMMITS_TSV" > "$COMMITS_TSV_PATH"
-python3 - <<PY
-import pathlib
-
-tsv_path = pathlib.Path(r'''$COMMITS_TSV_PATH''')
-out_path = pathlib.Path(r'''$GROUPED_COMMITS_MD''')
-rows = []
-for line in tsv_path.read_text(encoding='utf-8').splitlines():
-    if not line.strip():
-        continue
-    if "\t" in line:
-        sha, msg = line.split("\t", 1)
-    else:
-        parts = line.split(" ", 1)
-        sha = parts[0]
-        msg = parts[1] if len(parts) > 1 else ""
-    rows.append((sha.strip(), msg.strip()))
-
-ordered_buckets = [
-    "导入与规则",
-    "分析与查询",
-    "界面与交互",
-    "桌面/Tauri 与构建发布",
-    "测试与验证",
-    "文档与规划",
-    "其他",
-]
-groups = {name: [] for name in ordered_buckets}
-
-def classify(msg: str) -> str:
-    m = msg.lower()
-    if any(k in m for k in ["eml", "pdf", "yzxy", "import", "merchant", "rules", "whitelist", "category-rules", "merchant-map"]):
-        return "导入与规则"
-    if any(k in m for k in ["analytics", "investment", "wealth", "budget", "fire", "income", "consumption", "account catalog", "query"]):
-        return "分析与查询"
-    if any(k in m for k in ["ui", "frontend", "workbench", "layout", "tab", "chart", "style", "logo", "icon"]):
-        return "界面与交互"
-    if any(k in m for k in ["tauri", "desktop", "build", "release", "workflow", "ci", "dmg", "msi", "appimage"]):
-        return "桌面/Tauri 与构建发布"
-    if any(k in m for k in ["test", "regression", "validate", "check", "diff"]):
-        return "测试与验证"
-    if any(k in m for k in ["docs", "runbook", "roadmap", "plan"]):
-        return "文档与规划"
-    return "其他"
-
-for sha, msg in rows:
-    groups[classify(msg)].append((sha, msg))
-
-lines = []
-if rows:
-    for bucket in ordered_buckets:
-        items = groups[bucket]
-        if not items:
-            continue
-        lines.append(f"### {bucket}")
-        for sha, msg in items:
-            lines.append(f"- {sha} {msg}")
-        lines.append("")
-
-content = "\n".join(lines).rstrip()
-out_path.write_text((content + "\n") if content else "", encoding="utf-8")
-PY
+node - <<'JS' "$COMMITS_TSV_PATH" "$GROUPED_COMMITS_MD"
+const fs = require('fs');
+const [tsvPath, outPath] = process.argv.slice(2);
+const rows = fs.readFileSync(tsvPath, 'utf8')
+  .split(/\r?\n/)
+  .filter((line) => line.trim())
+  .map((line) => {
+    if (line.includes('\t')) {
+      const [sha, ...rest] = line.split('\t');
+      return [sha.trim(), rest.join('\t').trim()];
+    }
+    const [sha, ...rest] = line.split(' ');
+    return [sha.trim(), rest.join(' ').trim()];
+  });
+const orderedBuckets = [
+  '导入与规则',
+  '分析与查询',
+  '界面与交互',
+  '桌面/Tauri 与构建发布',
+  '测试与验证',
+  '文档与规划',
+  '其他',
+];
+const groups = new Map(orderedBuckets.map((name) => [name, []]));
+function classify(msg) {
+  const m = msg.toLowerCase();
+  if (['eml', 'pdf', 'yzxy', 'import', 'merchant', 'rules', 'whitelist', 'category-rules', 'merchant-map'].some((k) => m.includes(k))) return '导入与规则';
+  if (['analytics', 'investment', 'wealth', 'budget', 'fire', 'income', 'consumption', 'account catalog', 'query'].some((k) => m.includes(k))) return '分析与查询';
+  if (['ui', 'frontend', 'workbench', 'layout', 'tab', 'chart', 'style', 'logo', 'icon'].some((k) => m.includes(k))) return '界面与交互';
+  if (['tauri', 'desktop', 'build', 'release', 'workflow', 'ci', 'dmg', 'msi', 'appimage'].some((k) => m.includes(k))) return '桌面/Tauri 与构建发布';
+  if (['test', 'regression', 'validate', 'check', 'diff'].some((k) => m.includes(k))) return '测试与验证';
+  if (['docs', 'runbook', 'roadmap', 'plan'].some((k) => m.includes(k))) return '文档与规划';
+  return '其他';
+}
+for (const [sha, msg] of rows) groups.get(classify(msg)).push([sha, msg]);
+const lines = [];
+if (rows.length) {
+  for (const bucket of orderedBuckets) {
+    const items = groups.get(bucket);
+    if (!items.length) continue;
+    lines.push(`### ${bucket}`);
+    for (const [sha, msg] of items) lines.push(`- ${sha} ${msg}`);
+    lines.push('');
+  }
+}
+const content = lines.join('\n').trimEnd();
+fs.writeFileSync(outPath, content ? `${content}\n` : '', 'utf8');
+JS
 
 CHANGELOG_PATH="$RELEASE_DIR/CHANGELOG_DRAFT.md"
 cat > "$CHANGELOG_PATH" <<EOF
@@ -216,30 +197,43 @@ else
 fi
 
 META_PATH="$RELEASE_DIR/release_meta.json"
-python3 - <<PY
-import json, pathlib
-path = pathlib.Path(r'''$META_PATH''')
-payload = {
-  "target_version": "$TARGET_VERSION",
-  "current_versions": {
-    "package_json": "$CURRENT_PACKAGE_VERSION",
-    "cargo_toml": "$CURRENT_CARGO_VERSION",
+node - <<'JS' "$META_PATH" "$TARGET_VERSION" "$CURRENT_PACKAGE_VERSION" "$CURRENT_CARGO_VERSION" "$WRITE_VERSION" "$FROM_REF" "$TO_REF" "$COMMIT_COUNT" "$PACKAGE_JSON" "$CARGO_TOML" "$CHANGELOG_PATH" "$GROUPED_COMMITS_MD"
+const fs = require('fs');
+const [
+  path,
+  targetVersion,
+  packageVersion,
+  cargoVersion,
+  writeVersion,
+  fromRef,
+  toRef,
+  commitCount,
+  packageJson,
+  cargoToml,
+  changelogDraft,
+  groupedCommitsDraft,
+] = process.argv.slice(2);
+const payload = {
+  target_version: targetVersion,
+  current_versions: {
+    package_json: packageVersion,
+    cargo_toml: cargoVersion,
   },
-  "write_version": bool($WRITE_VERSION),
-  "git": {
-    "from_ref": "$FROM_REF",
-    "to_ref_short": "$TO_REF",
-    "commit_count_non_merge": int("$COMMIT_COUNT" or 0),
+  write_version: writeVersion === '1',
+  git: {
+    from_ref: fromRef,
+    to_ref_short: toRef,
+    commit_count_non_merge: Number.parseInt(commitCount || '0', 10),
   },
-  "paths": {
-    "package_json": "$PACKAGE_JSON",
-    "cargo_toml": "$CARGO_TOML",
-    "changelog_draft": str(pathlib.Path(r'''$CHANGELOG_PATH''')),
-    "grouped_commits_draft": str(pathlib.Path(r'''$GROUPED_COMMITS_MD''')),
+  paths: {
+    package_json: packageJson,
+    cargo_toml: cargoToml,
+    changelog_draft: changelogDraft,
+    grouped_commits_draft: groupedCommitsDraft,
   },
-}
-path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-PY
+};
+fs.writeFileSync(path, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+JS
 
 if [[ "$WRITE_VERSION" -eq 1 ]]; then
   echo "[write-version] update package.json -> $TARGET_VERSION"
@@ -252,20 +246,21 @@ fs.writeFileSync(pkgPath, JSON.stringify(data, null, 2) + '\n');
 JS
 
   echo "[write-version] update Cargo.toml -> $TARGET_VERSION"
-  python3 - <<PY
-import pathlib, re
-path = pathlib.Path(r'''$CARGO_TOML''')
-text = path.read_text(encoding='utf-8')
-updated, count = re.subn(
-    r'(?ms)^(\\[package\\].*?^version\\s*=\\s*\")([^\"]+)(\")',
-    lambda m: m.group(1) + "$TARGET_VERSION" + m.group(3),
-    text,
-    count=1,
-)
-if count != 1:
-    raise SystemExit("Failed to update [package] version in Cargo.toml")
-path.write_text(updated, encoding='utf-8')
-PY
+  node - <<'JS' "$CARGO_TOML" "$TARGET_VERSION"
+const fs = require('fs');
+const [cargoPath, version] = process.argv.slice(2);
+const text = fs.readFileSync(cargoPath, 'utf8');
+let replaced = false;
+const updated = text.replace(/(^\[package\][\s\S]*?^version\s*=\s*")([^"]+)(")/m, (_m, left, _old, right) => {
+  replaced = true;
+  return `${left}${version}${right}`;
+});
+if (!replaced) {
+  console.error('Failed to update [package] version in Cargo.toml');
+  process.exit(1);
+}
+fs.writeFileSync(cargoPath, updated, 'utf8');
+JS
 fi
 
 SUMMARY_PATH="$RELEASE_DIR/prepare_summary.txt"

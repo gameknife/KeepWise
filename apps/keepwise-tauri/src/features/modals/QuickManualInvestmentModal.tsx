@@ -1,5 +1,13 @@
-// @ts-nocheck
-export function QuickManualInvestmentModal(props: any) {
+type QuickManualInvestmentModalProps = Record<string, unknown>;
+type LooseUiEvent = {
+  target: EventTarget & { value?: string; checked?: boolean };
+  currentTarget: { getBoundingClientRect: () => DOMRect; select?: () => void };
+  clientX?: number;
+  clientY?: number;
+  stopPropagation: () => void;
+};
+
+export function QuickManualInvestmentModal(props: QuickManualInvestmentModalProps) {
   const {
     quickManualInvOpen,
     closeQuickManualInvestmentModal,
@@ -16,7 +24,7 @@ export function QuickManualInvestmentModal(props: any) {
     quickManualAccountHintText,
     quickManualTotalAssetsWanText,
     quickManualInvError,
-  } = props;
+  } = props as Record<string, any>;
 
   return (
     <>
@@ -27,7 +35,7 @@ export function QuickManualInvestmentModal(props: any) {
               role="dialog"
               aria-modal="true"
               aria-labelledby="quick-manual-investment-modal-title"
-              onClick={(e) => e.stopPropagation()}
+              onClick={(e: LooseUiEvent) => e.stopPropagation()}
             >
               <div className="kw-modal-head">
                 <div>
@@ -51,7 +59,7 @@ export function QuickManualInvestmentModal(props: any) {
                   <span>快照日期</span>
                   <DateInput
                     value={`${quickManualInvForm.snapshot_date ?? ""}`}
-                    onChange={(e) => setQuickManualInvForm((s) => ({ ...s, snapshot_date: e.target.value }))}
+                    onChange={(e: LooseUiEvent) => setQuickManualInvForm((s: Record<string, any>) => ({ ...s, snapshot_date: e.target.value }))}
                     type="date"
                     placeholder="YYYY-MM-DD"
                   />
@@ -63,7 +71,7 @@ export function QuickManualInvestmentModal(props: any) {
                   <span>投资账户</span>
                   <AccountIdSelect
                     value={`${quickManualInvForm.account_id ?? ""}`}
-                    onChange={(value) => setQuickManualInvForm((s) => ({ ...s, account_id: value }))}
+                    onChange={(value: string) => setQuickManualInvForm((s: Record<string, any>) => ({ ...s, account_id: value }))}
                     options={accountSelectOptions}
                     kinds={["investment"]}
                     emptyLabel={accountSelectOptionsLoading ? "加载账户中..." : "请选择投资账户"}
@@ -79,7 +87,7 @@ export function QuickManualInvestmentModal(props: any) {
                   <span>总资产（元）</span>
                   <input
                     value={`${quickManualInvForm.total_assets ?? ""}`}
-                    onChange={(e) => setQuickManualInvForm((s) => ({ ...s, total_assets: e.target.value }))}
+                    onChange={(e: LooseUiEvent) => setQuickManualInvForm((s: Record<string, any>) => ({ ...s, total_assets: e.target.value }))}
                     placeholder="10000.00"
                   />
                   <div className="quick-manual-inline-hint-slot" aria-live="polite">
@@ -90,7 +98,7 @@ export function QuickManualInvestmentModal(props: any) {
                   <span>净转入/转出（元）</span>
                   <input
                     value={`${quickManualInvForm.transfer_amount ?? ""}`}
-                    onChange={(e) => setQuickManualInvForm((s) => ({ ...s, transfer_amount: e.target.value }))}
+                    onChange={(e: LooseUiEvent) => setQuickManualInvForm((s: Record<string, any>) => ({ ...s, transfer_amount: e.target.value }))}
                     placeholder="转入为正，转出为负，默认 0"
                   />
                 </label>

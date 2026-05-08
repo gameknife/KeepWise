@@ -1,4 +1,6 @@
-# Tauri Stack Migration Master Plan (Current)
+# Tauri Stack Migration Master Plan (HISTORICAL)
+
+> Historical migration-route document. Keep for context only; current execution view is `DEVELOPMENT_PLAN.md` plus `docs/engineering/REFACTOR_CLEANUP_PLAN_2026.md`.
 
 ## 一句话结论
 
@@ -12,7 +14,7 @@ Tauri Desktop 迁移已完成约 **90%+**。当前重点不再是“能否迁移
 
 ### 已完成（主干）
 - Tauri Desktop 基座（React + Rust + SQLite）
-- 核心分析 4 接口 Rust 化并差分通过
+- 核心分析 4 接口 Rust 化，并由 Rust baseline regression 锁定
 - 三类导入 Rust 化（YZXY / CMB EML / CMB PDF）
 - 规则管理 Rust 化（含商户建议）
 - 消费总览改为数据渲染（非内嵌 HTML）

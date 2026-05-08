@@ -1,41 +1,36 @@
-# Tauri Diff Adapter CLI Protocol (Concise)
+# Core Analytics Baseline Diff Protocol
 
-用于差分 runner 调用 Rust（或其他语言）实现。
+> Updated: 2026-05-08. The old Python-vs-Rust adapter protocol has been retired.
 
-## 调用方式
+## Current Runner
 
-- runner 通过 `stdin` 发送 JSON
-- adapter 通过 `stdout` 返回 JSON
-- 非 0 退出码表示执行失败（runner 记录错误）
+`npm run test:diff:core` builds and runs:
 
-## 输入 JSON（核心字段）
-
-- `case.id`：用例 ID
-- `endpoint.path`：目标接口路径（如 `/api/analytics/investment-return`）
-- `query`：查询参数
-- `dataset.db_path`：测试数据库路径
-- `runtime`：运行时元信息（可选）
-
-## 输出 JSON
-
-### 成功
-
-```json
-{"status":"success","payload":{}}
+```
+apps/keepwise-tauri/src-tauri/src/bin/kw_baseline_diff.rs
 ```
 
-### 失败
+The runner:
 
-```json
-{"status":"error","error":{"category":"INVALID_RANGE_ERROR","message":"...","type":"..."}}
+1. Reads the frozen Rust baseline JSON.
+2. Creates deterministic temporary SQLite datasets.
+3. Calls the current Rust analytics query functions directly.
+4. Compares current JSON envelopes against the baseline.
+5. Writes `.artifacts/tauri-desktop-check/core_analytics_diff_regression.json`.
+
+## Baseline
+
+```
+apps/keepwise-tauri/src-tauri/tests/baseline/core_analytics_diff_regression.baseline.json
 ```
 
-## 当前实现
+The baseline is a frozen behavior snapshot, not an external oracle. If a future analytics fix intentionally changes output, regenerate and review this file in the same change.
 
-- Rust adapter：`kw_migration_adapter`（支持核心 4 接口）
-- Python mock / Python adapter：用于协议验证与迁移初期对照
+## Retired Pieces
 
-## 设计原则
+- `tools/migration/run_diff_regression.py`
+- `tools/migration/python_adapter_cli.py`
+- `tools/migration/mock_rust_adapter.py`
+- `tools/migration/cases/analytics_core.yaml`
 
-- 协议层只做路由与序列化，不承载业务口径
-- 错误比较优先 `category`，错误文案只做辅助比对
+These files were removed to eliminate the Python oracle dependency.
