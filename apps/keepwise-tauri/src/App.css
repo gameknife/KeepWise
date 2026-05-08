@@ -1549,6 +1549,24 @@ h3 {
   height: 100%;
 }
 
+.line-area-source-label {
+  position: absolute;
+  right: 0.45rem;
+  bottom: 1.55rem;
+  max-width: min(58%, 240px);
+  padding: 0.16rem 0.42rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(15, 18, 24, 0.72);
+  color: rgba(243, 239, 229, 0.52);
+  font-size: 0.68rem;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 .line-area-chart-empty {
   height: 220px;
   display: grid;

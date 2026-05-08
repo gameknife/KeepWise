@@ -2,6 +2,7 @@ export type LoadStatus = "idle" | "loading" | "ready" | "error";
 export type BoolString = "true" | "false";
 export type GainLossColorScheme = "cn_red_up_green_down" | "intl_green_up_red_down";
 export type FireWithdrawalRate = "0.03" | "0.04" | "0.05";
+export type BenchmarkMarketDataSource = "eastmoney" | "yahoo";
 
 export type AppSettings = {
   gainLossColorScheme: GainLossColorScheme;
@@ -9,6 +10,7 @@ export type AppSettings = {
   uiMotionEnabled: boolean;
   fireWithdrawalRate: FireWithdrawalRate;
   consumptionExcludeNeedsReviewByDefault: boolean;
+  benchmarkMarketDataSource: BenchmarkMarketDataSource;
 };
 
 export type SmokeStatus = "idle" | "pass" | "fail";

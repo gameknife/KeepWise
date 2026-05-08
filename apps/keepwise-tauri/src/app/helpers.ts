@@ -22,6 +22,7 @@ export function parseStoredAppSettings(raw: string | null): AppSettings {
     uiMotionEnabled: true,
     fireWithdrawalRate: "0.03",
     consumptionExcludeNeedsReviewByDefault: true,
+    benchmarkMarketDataSource: "eastmoney",
   };
   if (!raw) return fallback;
   try {
@@ -34,12 +35,17 @@ export function parseStoredAppSettings(raw: string | null): AppSettings {
       parsed.fireWithdrawalRate === "0.03" || parsed.fireWithdrawalRate === "0.04" || parsed.fireWithdrawalRate === "0.05"
         ? parsed.fireWithdrawalRate
         : fallback.fireWithdrawalRate;
+    const benchmarkMarketDataSource =
+      parsed.benchmarkMarketDataSource === "yahoo" || parsed.benchmarkMarketDataSource === "eastmoney"
+        ? parsed.benchmarkMarketDataSource
+        : fallback.benchmarkMarketDataSource;
     return {
       gainLossColorScheme: scheme,
       defaultPrivacyMaskOnLaunch: parsed.defaultPrivacyMaskOnLaunch === true,
       uiMotionEnabled: parsed.uiMotionEnabled !== false,
       fireWithdrawalRate,
       consumptionExcludeNeedsReviewByDefault: parsed.consumptionExcludeNeedsReviewByDefault !== false,
+      benchmarkMarketDataSource,
     };
   } catch {
     return fallback;

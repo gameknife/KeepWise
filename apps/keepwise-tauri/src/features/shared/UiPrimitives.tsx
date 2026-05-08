@@ -67,6 +67,7 @@ export type LineAreaChartProps = {
   preferZeroBaseline?: boolean;
   maxXTicks?: number;
   smooth?: boolean;
+  sourceLabel?: string;
 };
 
 export type AutoRefreshHintProps = {
@@ -348,6 +349,7 @@ export function LineAreaChart({
   preferZeroBaseline = false,
   maxXTicks = 8,
   smooth = false,
+  sourceLabel,
 }: LineAreaChartProps) {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
@@ -701,6 +703,7 @@ export function LineAreaChart({
           )}
         </div>
       ) : null}
+      {sourceLabel ? <div className="line-area-source-label">{sourceLabel}</div> : null}
     </div>
   );
 }

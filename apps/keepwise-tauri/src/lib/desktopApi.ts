@@ -126,6 +126,7 @@ export type InvestmentCurveQueryRequest = {
   preset?: string;
   from?: string;
   to?: string;
+  benchmark_source?: "eastmoney" | "yahoo";
 };
 
 export type InvestmentReturnsQueryRequest = {

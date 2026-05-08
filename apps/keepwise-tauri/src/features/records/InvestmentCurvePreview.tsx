@@ -25,6 +25,7 @@ type LineAreaChartProps = {
   preferZeroBaseline?: boolean;
   maxXTicks?: number;
   smooth?: boolean;
+  sourceLabel?: string;
 };
 
 export function InvestmentCurvePreview({
@@ -85,9 +86,15 @@ export function InvestmentCurvePreview({
   const benchmarkWarnings = readArray(payload, "benchmarks.warnings")
     .map((item) => (typeof item === "string" ? item : ""))
     .filter((item) => item);
+  const benchmarkSource = readString(payload, "benchmarks.source") ?? "";
+  const benchmarkAvailableCount = readNumber(payload, "benchmarks.summary.available_count") ?? 0;
   const benchmarkLoadFailed = readBool(payload, "benchmarks.load_failed") === true;
   const hasBenchmarkWarning = benchmarkWarnings.length > 0;
   const benchmarkFailureNote = hasBenchmarkWarning ? "拉取对比指标失败" : "";
+  const benchmarkSourceLabel =
+    selectedCurveKind === "return_rate" && benchmarkSource && benchmarkAvailableCount > 0
+      ? `来源：${benchmarkSource}`
+      : undefined;
   const intervalReturnToneClass = signedMetricTone(intervalReturnRate);
   const assetPoints = rows
     .map((r) => {
@@ -255,6 +262,7 @@ export function InvestmentCurvePreview({
             valueFormatter={activeCurve.valueFormatter}
             tooltipFormatter={activeCurve.tooltipFormatter}
             multiTooltipFormatter={activeCurve.multiTooltipFormatter}
+            sourceLabel={benchmarkSourceLabel}
           />
           {selectedCurveKind === "return_rate" ? (
             <>

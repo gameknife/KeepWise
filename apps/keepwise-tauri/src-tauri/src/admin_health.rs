@@ -299,6 +299,7 @@ pub fn runtime_db_health_check(app: AppHandle) -> Result<Value, String> {
                 preset: Some("1y".to_string()),
                 from_date: None,
                 to_date: None,
+                benchmark_source: None,
             },
         ) {
             Ok(payload) => {

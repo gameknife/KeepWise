@@ -25,7 +25,7 @@ export function AppSettingsModal(props: any) {
     handleSyncSetupLink,
     handleSyncShareCodeRefresh,
   } = props;
-  const [activeCategory, setActiveCategory] = useState<"display" | "fire" | "sync">("display");
+  const [activeCategory, setActiveCategory] = useState<"display" | "data" | "fire" | "sync">("display");
   const [syncShareQrDataUrl, setSyncShareQrDataUrl] = useState("");
 
   useEffect(() => {
@@ -95,6 +95,14 @@ export function AppSettingsModal(props: any) {
                   >
                     <span className="settings-nav-item-title">FIRE</span>
                     <span className="settings-nav-item-subtitle">提取率与测算参数</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`settings-nav-item ${activeCategory === "data" ? "active" : ""}`}
+                    onClick={() => setActiveCategory("data")}
+                  >
+                    <span className="settings-nav-item-title">数据</span>
+                    <span className="settings-nav-item-subtitle">行情源与外部数据</span>
                   </button>
                   <button
                     type="button"
@@ -220,6 +228,42 @@ export function AppSettingsModal(props: any) {
                               }
                             >
                               默认显示
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  ) : activeCategory === "data" ? (
+                    <>
+                      <div className="settings-group-head">
+                        <h4>数据</h4>
+                        <p>用于调整外部行情与对比数据来源。</p>
+                      </div>
+
+                      <div className="settings-item-card">
+                        <div className="settings-item-card-head">
+                          <h5>投资对比行情源</h5>
+                          <p>控制投资收益页的指数对比数据优先从哪里拉取；失败时会自动尝试另一个来源。</p>
+                        </div>
+                        <div className="settings-item-grid">
+                          <div className="settings-segmented" role="group" aria-label="投资对比行情源">
+                            <button
+                              type="button"
+                              className={`settings-segmented-btn ${appSettings.benchmarkMarketDataSource === "eastmoney" ? "active" : ""}`}
+                              onClick={() =>
+                                setAppSettings((prev) => ({ ...prev, benchmarkMarketDataSource: "eastmoney" }))
+                              }
+                            >
+                              东方财富
+                            </button>
+                            <button
+                              type="button"
+                              className={`settings-segmented-btn ${appSettings.benchmarkMarketDataSource === "yahoo" ? "active" : ""}`}
+                              onClick={() =>
+                                setAppSettings((prev) => ({ ...prev, benchmarkMarketDataSource: "yahoo" }))
+                              }
+                            >
+                              Yahoo Finance
                             </button>
                           </div>
                         </div>

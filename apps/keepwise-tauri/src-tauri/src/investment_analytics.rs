@@ -14,13 +14,15 @@ use crate::ledger_db::resolve_ledger_db_path;
 const PORTFOLIO_ACCOUNT_ID: &str = "__portfolio__";
 const PORTFOLIO_ACCOUNT_NAME: &str = "全部投资账户（组合）";
 const SUPPORTED_PRESETS: &[&str] = &["ytd", "1y", "3y", "since_inception", "custom"];
-const BENCHMARK_SOURCE_NAME: &str = "Yahoo Finance";
+const YAHOO_FINANCE_SOURCE_NAME: &str = "Yahoo Finance";
+const EASTMONEY_SOURCE_NAME: &str = "东方财富";
 
 #[derive(Debug, Clone, Copy)]
 struct BenchmarkSpec {
     key: &'static str,
     label: &'static str,
     symbol: &'static str,
+    eastmoney_secid: &'static str,
 }
 
 const BENCHMARK_SPECS: &[BenchmarkSpec] = &[
@@ -28,16 +30,19 @@ const BENCHMARK_SPECS: &[BenchmarkSpec] = &[
         key: "sse",
         label: "上证指数",
         symbol: "000001.SS",
+        eastmoney_secid: "1.000001",
     },
     BenchmarkSpec {
         key: "hsi",
         label: "恒生指数",
         symbol: "^HSI",
+        eastmoney_secid: "100.HSI",
     },
     BenchmarkSpec {
         key: "sp500",
         label: "标普500",
         symbol: "^GSPC",
+        eastmoney_secid: "100.SPX",
     },
 ];
 
@@ -59,6 +64,7 @@ pub struct InvestmentCurveQueryRequest {
     pub from_date: Option<String>,
     #[serde(rename = "to")]
     pub to_date: Option<String>,
+    pub benchmark_source: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -170,6 +176,12 @@ struct CurveAnchorRow {
     is_observed: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BenchmarkMarketDataSource {
+    Eastmoney,
+    Yahoo,
+}
+
 fn parse_iso_date(raw: &str, field_name: &str) -> Result<NaiveDate, String> {
     let text = raw.trim();
     if text.is_empty() {
@@ -186,6 +198,16 @@ fn cents_to_yuan_text(cents: i64) -> String {
 fn round_to(value: f64, digits: i32) -> f64 {
     let factor = 10_f64.powi(digits);
     (value * factor).round() / factor
+}
+
+fn parse_benchmark_market_data_source(
+    raw: Option<&str>,
+) -> Result<BenchmarkMarketDataSource, String> {
+    match raw.unwrap_or("eastmoney").trim().to_lowercase().as_str() {
+        "" | "eastmoney" => Ok(BenchmarkMarketDataSource::Eastmoney),
+        "yahoo" => Ok(BenchmarkMarketDataSource::Yahoo),
+        _ => Err("benchmark_source 仅支持 eastmoney/yahoo".to_string()),
+    }
 }
 
 fn build_market_data_client() -> Result<Client, String> {
@@ -224,6 +246,24 @@ fn build_yahoo_chart_url(
         .append_pair("includeAdjustedClose", "true")
         .append_pair("period1", &from_ts.to_string())
         .append_pair("period2", &to_ts.to_string());
+    Ok(url)
+}
+
+fn build_eastmoney_kline_url(
+    secid: &str,
+    from_date: NaiveDate,
+    to_date: NaiveDate,
+) -> Result<Url, String> {
+    let mut url = Url::parse("https://push2his.eastmoney.com/api/qt/stock/kline/get")
+        .map_err(|e| format!("构造东方财富行情 URL 失败: {e}"))?;
+    url.query_pairs_mut()
+        .append_pair("secid", secid)
+        .append_pair("fields1", "f1,f2,f3,f4,f5,f6")
+        .append_pair("fields2", "f51,f52,f53,f54,f55,f56,f57,f58")
+        .append_pair("klt", "101")
+        .append_pair("fqt", "1")
+        .append_pair("beg", &from_date.format("%Y%m%d").to_string())
+        .append_pair("end", &to_date.format("%Y%m%d").to_string());
     Ok(url)
 }
 
@@ -306,7 +346,47 @@ fn parse_yahoo_chart_history(payload: &Value) -> Result<Vec<BenchmarkHistoryRow>
         .collect())
 }
 
-fn fetch_benchmark_history(
+fn parse_eastmoney_kline_history(payload: &Value) -> Result<Vec<BenchmarkHistoryRow>, String> {
+    let rc = payload.get("rc").and_then(Value::as_i64).unwrap_or(-1);
+    if rc != 0 {
+        return Err(format!("东方财富行情返回异常 rc={rc}"));
+    }
+    let klines = payload
+        .get("data")
+        .and_then(|data| data.get("klines"))
+        .and_then(Value::as_array)
+        .ok_or("东方财富行情返回为空")?;
+
+    let mut by_date = BTreeMap::<NaiveDate, f64>::new();
+    for item in klines {
+        let Some(line) = item.as_str() else {
+            continue;
+        };
+        let fields = line.split(',').collect::<Vec<_>>();
+        if fields.len() < 3 {
+            continue;
+        }
+        let market_date = NaiveDate::parse_from_str(fields[0].trim(), "%Y-%m-%d")
+            .map_err(|_| "东方财富行情日期格式异常".to_string())?;
+        let Ok(close) = fields[2].trim().parse::<f64>() else {
+            continue;
+        };
+        if !close.is_finite() || close <= 0.0 {
+            continue;
+        }
+        by_date.insert(market_date, close);
+    }
+    if by_date.is_empty() {
+        return Err("东方财富行情没有可用收盘价".to_string());
+    }
+
+    Ok(by_date
+        .into_iter()
+        .map(|(market_date, close)| BenchmarkHistoryRow { market_date, close })
+        .collect())
+}
+
+fn fetch_yahoo_benchmark_history(
     client: &Client,
     symbol: &str,
     from_date: NaiveDate,
@@ -325,6 +405,69 @@ fn fetch_benchmark_history(
     let payload: Value =
         serde_json::from_str(&body).map_err(|e| format!("解析行情响应失败: {e}"))?;
     parse_yahoo_chart_history(&payload)
+}
+
+fn fetch_eastmoney_benchmark_history(
+    client: &Client,
+    secid: &str,
+    from_date: NaiveDate,
+    to_date: NaiveDate,
+) -> Result<Vec<BenchmarkHistoryRow>, String> {
+    let url = build_eastmoney_kline_url(secid, from_date, to_date)?;
+    let response = client
+        .get(url)
+        .send()
+        .map_err(|e| format!("请求东方财富行情失败: {e}"))?
+        .error_for_status()
+        .map_err(|e| format!("请求东方财富行情失败: {e}"))?;
+    let body = response
+        .text()
+        .map_err(|e| format!("读取东方财富行情响应失败: {e}"))?;
+    let payload: Value =
+        serde_json::from_str(&body).map_err(|e| format!("解析东方财富行情响应失败: {e}"))?;
+    parse_eastmoney_kline_history(&payload)
+}
+
+fn fetch_benchmark_history_with_fallback(
+    client: &Client,
+    spec: &BenchmarkSpec,
+    from_date: NaiveDate,
+    to_date: NaiveDate,
+    preferred_source: BenchmarkMarketDataSource,
+) -> Result<(&'static str, Vec<BenchmarkHistoryRow>), String> {
+    if preferred_source == BenchmarkMarketDataSource::Eastmoney {
+        return match fetch_eastmoney_benchmark_history(
+            client,
+            spec.eastmoney_secid,
+            from_date,
+            to_date,
+        ) {
+            Ok(history) => Ok((EASTMONEY_SOURCE_NAME, history)),
+            Err(eastmoney_err) => {
+                match fetch_yahoo_benchmark_history(client, spec.symbol, from_date, to_date) {
+                    Ok(history) => Ok((YAHOO_FINANCE_SOURCE_NAME, history)),
+                    Err(yahoo_err) => Err(format!(
+                        "{EASTMONEY_SOURCE_NAME}: {eastmoney_err}; {YAHOO_FINANCE_SOURCE_NAME}: {yahoo_err}"
+                    )),
+                }
+            }
+        };
+    }
+
+    match fetch_yahoo_benchmark_history(client, spec.symbol, from_date, to_date) {
+        Ok(history) => Ok((YAHOO_FINANCE_SOURCE_NAME, history)),
+        Err(yahoo_err) => match fetch_eastmoney_benchmark_history(
+            client,
+            spec.eastmoney_secid,
+            from_date,
+            to_date,
+        ) {
+            Ok(history) => Ok((EASTMONEY_SOURCE_NAME, history)),
+            Err(eastmoney_err) => Err(format!(
+                "{YAHOO_FINANCE_SOURCE_NAME}: {yahoo_err}; {EASTMONEY_SOURCE_NAME}: {eastmoney_err}"
+            )),
+        },
+    }
 }
 
 fn build_benchmark_curve_rows(
@@ -389,10 +532,11 @@ fn build_benchmark_comparison_payload(
     curve_dates: &[NaiveDate],
     effective_from: NaiveDate,
     effective_to: NaiveDate,
+    preferred_source: BenchmarkMarketDataSource,
 ) -> Value {
     if curve_dates.is_empty() {
         return json!({
-            "source": BENCHMARK_SOURCE_NAME,
+            "source": "",
             "summary": {
                 "requested_count": BENCHMARK_SPECS.len(),
                 "available_count": 0,
@@ -413,6 +557,7 @@ fn build_benchmark_comparison_payload(
                         "key": spec.key,
                         "label": spec.label,
                         "symbol": spec.symbol,
+                        "source": Value::Null,
                         "rows": [],
                         "error": err,
                     })
@@ -423,7 +568,7 @@ fn build_benchmark_comparison_payload(
                 .map(|spec| format!("{} 对比曲线不可用：{}", spec.label, err))
                 .collect::<Vec<_>>();
             return json!({
-                "source": BENCHMARK_SOURCE_NAME,
+                "source": "",
                 "summary": {
                     "requested_count": BENCHMARK_SPECS.len(),
                     "available_count": 0,
@@ -440,13 +585,34 @@ fn build_benchmark_comparison_payload(
     let mut available_count = 0usize;
     let mut warnings = Vec::<String>::new();
     let mut curves = Vec::<Value>::new();
+    let mut sources = Vec::<&'static str>::new();
+    let mut next_preferred_source = preferred_source;
 
     for spec in BENCHMARK_SPECS {
-        match fetch_benchmark_history(&client, spec.symbol, buffered_from, buffered_to)
-            .and_then(|history| build_benchmark_curve_rows(curve_dates, &history, effective_from))
-        {
-            Ok((baseline_date, baseline_close, rows)) => {
+        match fetch_benchmark_history_with_fallback(
+            &client,
+            spec,
+            buffered_from,
+            buffered_to,
+            next_preferred_source,
+        )
+        .and_then(|(source, history)| {
+            build_benchmark_curve_rows(curve_dates, &history, effective_from).map(
+                |(baseline_date, baseline_close, rows)| {
+                    (source, baseline_date, baseline_close, rows)
+                },
+            )
+        }) {
+            Ok((source, baseline_date, baseline_close, rows)) => {
                 available_count += 1;
+                if source == EASTMONEY_SOURCE_NAME {
+                    next_preferred_source = BenchmarkMarketDataSource::Eastmoney;
+                } else if source == YAHOO_FINANCE_SOURCE_NAME {
+                    next_preferred_source = BenchmarkMarketDataSource::Yahoo;
+                }
+                if !sources.contains(&source) {
+                    sources.push(source);
+                }
                 let end_return_rate = rows
                     .last()
                     .and_then(|row| row.get("cumulative_return_rate"))
@@ -455,6 +621,7 @@ fn build_benchmark_comparison_payload(
                     "key": spec.key,
                     "label": spec.label,
                     "symbol": spec.symbol,
+                    "source": source,
                     "baseline_date": baseline_date,
                     "baseline_close": baseline_close,
                     "end_return_rate": end_return_rate,
@@ -469,6 +636,7 @@ fn build_benchmark_comparison_payload(
                     "key": spec.key,
                     "label": spec.label,
                     "symbol": spec.symbol,
+                    "source": Value::Null,
                     "rows": [],
                     "error": err,
                 }));
@@ -477,7 +645,7 @@ fn build_benchmark_comparison_payload(
     }
 
     json!({
-        "source": BENCHMARK_SOURCE_NAME,
+        "source": sources.join(" / "),
         "summary": {
             "requested_count": BENCHMARK_SPECS.len(),
             "available_count": available_count,
@@ -488,7 +656,10 @@ fn build_benchmark_comparison_payload(
     })
 }
 
-fn build_benchmark_payload_from_curve_payload(curve_payload: &Value) -> Result<Value, String> {
+fn build_benchmark_payload_from_curve_payload(
+    curve_payload: &Value,
+    preferred_source: BenchmarkMarketDataSource,
+) -> Result<Value, String> {
     let effective_from = curve_payload
         .get("range")
         .and_then(|range| range.get("effective_from"))
@@ -516,6 +687,7 @@ fn build_benchmark_payload_from_curve_payload(curve_payload: &Value) -> Result<V
         &curve_dates,
         parse_iso_date(effective_from, "effective_from")?,
         parse_iso_date(effective_to, "effective_to")?,
+        preferred_source,
     ))
 }
 
@@ -1809,8 +1981,9 @@ pub fn investment_curve_benchmarks_query_at_db_path(
     db_path: &Path,
     req: InvestmentCurveQueryRequest,
 ) -> Result<Value, String> {
+    let preferred_source = parse_benchmark_market_data_source(req.benchmark_source.as_deref())?;
     let curve_payload = investment_curve_query_at_db_path(db_path, req)?;
-    build_benchmark_payload_from_curve_payload(&curve_payload)
+    build_benchmark_payload_from_curve_payload(&curve_payload, preferred_source)
 }
 
 pub fn investment_returns_query_at_db_path(
@@ -2248,6 +2421,7 @@ mod tests {
                 preset: Some("custom".to_string()),
                 from_date: Some("2026-01-01".to_string()),
                 to_date: Some("2026-01-03".to_string()),
+                benchmark_source: None,
             },
         )
         .expect("query single account daily curve");
@@ -2294,6 +2468,7 @@ mod tests {
                 preset: Some("custom".to_string()),
                 from_date: Some("2026-01-01".to_string()),
                 to_date: Some("2026-01-03".to_string()),
+                benchmark_source: None,
             },
         )
         .expect("query portfolio daily curve");
@@ -2359,6 +2534,32 @@ mod tests {
             NaiveDate::from_ymd_opt(2026, 1, 2).expect("expected date")
         );
         approx_eq(rows[0].close, 3210.55, 1e-8);
+    }
+
+    #[test]
+    fn parse_eastmoney_kline_history_reads_daily_close_dates() {
+        let payload = json!({
+            "rc": 0,
+            "data": {
+                "klines": [
+                    "2026-01-02,3178.00,3210.55,3220.00,3168.00,100,200,0.50",
+                    "2026-01-05,3215.00,3233.12,3240.00,3201.00,120,240,0.40"
+                ]
+            }
+        });
+
+        let rows = parse_eastmoney_kline_history(&payload).expect("parse eastmoney history");
+        assert_eq!(rows.len(), 2);
+        assert_eq!(
+            rows[0].market_date,
+            NaiveDate::from_ymd_opt(2026, 1, 2).expect("expected date")
+        );
+        approx_eq(rows[0].close, 3210.55, 1e-8);
+        assert_eq!(
+            rows[1].market_date,
+            NaiveDate::from_ymd_opt(2026, 1, 5).expect("expected date")
+        );
+        approx_eq(rows[1].close, 3233.12, 1e-8);
     }
 
     #[test]

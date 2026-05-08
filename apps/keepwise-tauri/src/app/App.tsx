@@ -2244,7 +2244,10 @@ function App() {
     if (requestSeq !== invCurveRequestSeqRef.current) return;
     setInvCurveBenchmarksBusy(true);
     try {
-      const benchmarksPayload = await queryInvestmentCurveBenchmarks(req);
+      const benchmarksPayload = await queryInvestmentCurveBenchmarks({
+        ...req,
+        benchmark_source: appSettings.benchmarkMarketDataSource,
+      });
       if (requestSeq !== invCurveRequestSeqRef.current) return;
       startTransition(() => {
         setInvCurveResult((prev: InvestmentCurvePayload | null) => {
@@ -2265,7 +2268,7 @@ function App() {
           return {
             ...prev,
             benchmarks: {
-              source: "Yahoo Finance",
+              source: "",
               summary: {
                 requested_count: 0,
                 available_count: 0,
@@ -2439,10 +2442,12 @@ function App() {
         uiMotionEnabled: true,
         fireWithdrawalRate: "0.03",
         consumptionExcludeNeedsReviewByDefault: true,
+        benchmarkMarketDataSource: "eastmoney",
       };
     }
     return parseStoredAppSettings(window.localStorage.getItem(APP_SETTINGS_STORAGE_KEY));
   });
+  const benchmarkMarketDataSourceRef = useRef(appSettings.benchmarkMarketDataSource);
   const fireProgressQuery: FireProgressQueryRequest = {
     withdrawal_rate: appSettings.fireWithdrawalRate,
   };
@@ -2633,6 +2638,14 @@ function App() {
   const shouldAutoLoadAccountSelectCatalog =
     isAdminTab || isManualEntryTab || isReturnAnalysisTab || isConsumptionAnalysisTab;
   const accountSelectOptions = buildAccountSelectOptionsFromCatalog(accountSelectCatalogResult);
+
+  useEffect(() => {
+    const prevSource = benchmarkMarketDataSourceRef.current;
+    benchmarkMarketDataSourceRef.current = appSettings.benchmarkMarketDataSource;
+    if (prevSource === appSettings.benchmarkMarketDataSource) return;
+    if (!isReturnAnalysisTab || !invCurveResult || invCurveBusy || invCurveBenchmarksBusy) return;
+    void handleRetryInvestmentCurveBenchmarks();
+  }, [appSettings.benchmarkMarketDataSource, isReturnAnalysisTab, invCurveResult, invCurveBusy, invCurveBenchmarksBusy]);
   const accountSelectOptionsLoading = accountSelectCatalogBusy && accountSelectOptions.length === 0;
   const returnTabAnnualizedRate = returnTabYtdAnnualizedRate ?? undefined;
   const returnTabQuickMetricLabel = `${new Date().getFullYear()}年预估`;
