@@ -68,6 +68,7 @@ export type LineAreaChartProps = {
   maxXTicks?: number;
   smooth?: boolean;
   sourceLabel?: string;
+  showZeroLine?: boolean;
 };
 
 export type AutoRefreshHintProps = {
@@ -350,6 +351,7 @@ export function LineAreaChart({
   maxXTicks = 8,
   smooth = false,
   sourceLabel,
+  showZeroLine = false,
 }: LineAreaChartProps) {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
@@ -455,12 +457,11 @@ export function LineAreaChart({
     };
   });
 
-  const maxYLabelLen = Math.max(...yTickMeta.map((tick) => tick.label.length), 1);
   const margin = {
     top: baseMargin.top,
     right: baseMargin.right,
     bottom: baseMargin.bottom,
-    left: Math.min(108, Math.max(52, 16 + maxYLabelLen * 6)),
+    left: 10,
   };
   const innerW = Math.max(120, width - margin.left - margin.right);
   const stepX = clean.length > 1 ? innerW / (clean.length - 1) : 0;
@@ -472,6 +473,7 @@ export function LineAreaChart({
     ...tick,
     y: margin.top + innerH * tick.ratio,
   }));
+  const zeroY = yMin <= 0 && yMax >= 0 ? toY(0) : null;
 
   const buildSegmentPath = (coords: Array<{ x: number; y: number }>) => {
     if (coords.length === 0) return "";
@@ -593,7 +595,7 @@ export function LineAreaChart({
               y2={tick.y}
               className={`line-area-grid ${idx === yTicks.length - 1 ? "axis-baseline" : ""}`}
             />
-            <text x={margin.left - 8} y={tick.y + 4} className="line-area-axis-label line-area-axis-label-y" textAnchor="end">
+            <text x={margin.left + 6} y={tick.y + 4} className="line-area-axis-label line-area-axis-label-y" textAnchor="start">
               {tick.label}
             </text>
           </g>
@@ -615,6 +617,15 @@ export function LineAreaChart({
         ))}
 
         {areaPath ? <path d={areaPath} fill={`url(#${gradientId})`} stroke="none" /> : null}
+        {showZeroLine && zeroY != null ? (
+          <line
+            x1={margin.left}
+            x2={margin.left + innerW}
+            y1={zeroY}
+            y2={zeroY}
+            className="line-area-zero-line"
+          />
+        ) : null}
         {seriesValueMaps.map((item, idx) => {
           const path = idx === 0 ? primaryLinePath : buildSeriesPath(item.valueMap);
           if (!path) return null;

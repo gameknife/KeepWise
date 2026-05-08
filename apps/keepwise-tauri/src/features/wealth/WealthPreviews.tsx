@@ -144,12 +144,11 @@ function WealthStackedTrendChart({
     const value = yMax - ySpan * ratio;
     return { ratio, value, label: compactYAxisLabel(value) };
   });
-  const maxYLabelLen = Math.max(...yTickMeta.map((tick) => tick.label.length), 1);
   const margin = {
     top: baseMargin.top,
     right: baseMargin.right,
     bottom: baseMargin.bottom,
-    left: Math.min(108, Math.max(52, 16 + maxYLabelLen * 6)),
+    left: 10,
   };
   const innerW = Math.max(140, width - margin.left - margin.right);
   const stepX = enriched.length > 1 ? innerW / (enriched.length - 1) : 0;
@@ -237,14 +236,13 @@ function WealthStackedTrendChart({
           return (
             <g key={`y-tick-${idx}`}>
               <line x1={margin.left} x2={margin.left + innerW} y1={y} y2={y} className="stacked-axis-grid" />
-              <text x={margin.left - 10} y={y + 4} textAnchor="end" className="stacked-axis-label">
+              <text x={margin.left + 6} y={y + 4} textAnchor="start" className="stacked-axis-label">
                 {tick.label}
               </text>
             </g>
           );
         })}
 
-        <line x1={margin.left} x2={margin.left + innerW} y1={zeroY} y2={zeroY} className="stacked-axis-zero" />
         <line x1={margin.left} x2={margin.left} y1={margin.top} y2={margin.top + innerH} className="stacked-axis-line" />
         <line x1={margin.left} x2={margin.left + innerW} y1={margin.top + innerH} y2={margin.top + innerH} className="stacked-axis-line" />
 
@@ -253,6 +251,7 @@ function WealthStackedTrendChart({
         {visibility.investment ? <path d={buildAreaPath(invTopVals, invBottomVals)} fill="rgba(234,179,95,0.20)" /> : null}
         {visibility.liability ? <path d={buildAreaPath(debtTopVals, debtBottomVals)} fill={`url(#${debtPatternId})`} /> : null}
 
+        <line x1={margin.left} x2={margin.left + innerW} y1={zeroY} y2={zeroY} className="stacked-axis-zero" />
         {visibility.cash ? <path d={buildLinePath(cashTopVals)} fill="none" stroke="#6fb4ff" strokeWidth="1.2" /> : null}
         {visibility.realEstate ? <path d={buildLinePath(reTopVals)} fill="none" stroke="#9b84ff" strokeWidth="1.2" /> : null}
         {visibility.investment ? <path d={buildLinePath(invTopVals)} fill="none" stroke="#eab35f" strokeWidth="1.2" /> : null}

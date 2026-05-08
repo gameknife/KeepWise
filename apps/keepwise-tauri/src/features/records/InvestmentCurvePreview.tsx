@@ -26,6 +26,7 @@ type LineAreaChartProps = {
   maxXTicks?: number;
   smooth?: boolean;
   sourceLabel?: string;
+  showZeroLine?: boolean;
 };
 
 export function InvestmentCurvePreview({
@@ -263,6 +264,7 @@ export function InvestmentCurvePreview({
             tooltipFormatter={activeCurve.tooltipFormatter}
             multiTooltipFormatter={activeCurve.multiTooltipFormatter}
             sourceLabel={benchmarkSourceLabel}
+            showZeroLine={selectedCurveKind === "return_rate" || selectedCurveKind === "net_growth"}
           />
           {selectedCurveKind === "return_rate" ? (
             <>

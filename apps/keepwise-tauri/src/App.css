@@ -1601,8 +1601,10 @@ h3 {
 }
 
 .stacked-axis-zero {
-  stroke: rgba(255, 255, 255, 0.24);
-  stroke-width: 1.2;
+  stroke: rgba(243, 239, 229, 0.34);
+  stroke-width: 1.25;
+  stroke-dasharray: 5 4;
+  shape-rendering: crispEdges;
 }
 
 .stacked-axis-label {
@@ -1611,6 +1613,10 @@ h3 {
   user-select: none;
   pointer-events: none;
   font-variant-numeric: tabular-nums;
+  paint-order: stroke;
+  stroke: rgba(10, 14, 20, 0.82);
+  stroke-width: 3px;
+  stroke-linejoin: round;
 }
 
 .stacked-hover-line {
@@ -1761,6 +1767,10 @@ h3 {
 
 .line-area-axis-label-y {
   font-variant-numeric: tabular-nums;
+  paint-order: stroke;
+  stroke: rgba(10, 14, 20, 0.82);
+  stroke-width: 3px;
+  stroke-linejoin: round;
 }
 
 .line-area-axis-label-x {
@@ -1795,6 +1805,14 @@ h3 {
 
 .line-area-crosshair.horizontal {
   stroke: rgba(124, 195, 255, 0.22);
+}
+
+.line-area-zero-line {
+  stroke: rgba(243, 239, 229, 0.36);
+  stroke-width: 1.2;
+  stroke-dasharray: 5 4;
+  shape-rendering: crispEdges;
+  pointer-events: none;
 }
 
 .line-area-tooltip {
