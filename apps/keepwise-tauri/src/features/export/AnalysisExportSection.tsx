@@ -417,6 +417,7 @@ export function AnalysisExportSection({
   const [codexProgress, setCodexProgress] = useState<CodexProgressEvent | null>(null);
   const [codexProgressLog, setCodexProgressLog] = useState<CodexProgressEvent[]>([]);
   const [storedCodexAnalysis, setStoredCodexAnalysis] = useState<StoredCodexAnalysis | null>(() => parseStoredCodexAnalysis());
+  const [storedAnalysisExpanded, setStoredAnalysisExpanded] = useState(true);
   const codexRunIdRef = useRef("");
   const selectedCli = availableCliRows.find((item) => item.cli_key === selectedCliKey) ?? availableCliRows[0] ?? null;
 
@@ -700,14 +701,44 @@ export function AnalysisExportSection({
   const codexRemainingMs = Math.max(0, codexTimeoutMs - codexElapsedMs);
   const codexProgressPct = Math.max(4, Math.min(100, (codexElapsedMs / codexTimeoutMs) * 100));
   const codexLatestOutput = codexProgress?.stdout_tail || codexProgress?.stderr_tail || "";
-  const latestRunCliLabel = readString(codexResult, "cli_label") ?? storedCodexAnalysis?.cliLabel ?? "";
-  const latestRunCliPath = readString(codexResult, "cli_path") ?? storedCodexAnalysis?.cliPath ?? "";
-  const latestRunMarkdownPath = readString(codexResult, "markdown_path") ?? storedCodexAnalysis?.markdownPath ?? "";
-  const renderedAnalysisContent = codexStdout.trim() || storedCodexAnalysis?.content || "";
-  const shouldShowRunResult = Boolean(codexResult || storedCodexAnalysis);
+  const storedAnalysisCliLabel = storedCodexAnalysis?.cliLabel ?? "";
+  const storedAnalysisCliPath = storedCodexAnalysis?.cliPath ?? "";
+  const storedAnalysisMarkdownPath = storedCodexAnalysis?.markdownPath ?? "";
+  const latestRunCliLabel = readString(codexResult, "cli_label") ?? "";
+  const latestRunCliPath = readString(codexResult, "cli_path") ?? "";
+  const latestRunMarkdownPath = readString(codexResult, "markdown_path") ?? "";
+  const renderedAnalysisContent = codexStdout.trim();
+  const shouldShowRunResult = Boolean(codexResult && (!storedCodexAnalysis || !codexSuccess));
 
   return (
     <>
+      {storedCodexAnalysis ? (
+        <details
+          className="card panel analysis-export-codex-result analysis-export-latest-card"
+          open={storedAnalysisExpanded}
+          onToggle={(event) => setStoredAnalysisExpanded(event.currentTarget.open)}
+        >
+          <summary className="analysis-export-result-summary">
+            <span>
+              <strong>上一次智能分析</strong>
+              <small>来自本机保存的最近一次分析结果。</small>
+            </span>
+            <span className="analysis-export-assist-indicator">{storedAnalysisExpanded ? "点击收起" : "点击展开"}</span>
+          </summary>
+          {storedAnalysisExpanded ? (
+            <>
+              <div className="analysis-export-codex-meta">
+                {storedAnalysisCliLabel ? <span>工具：{storedAnalysisCliLabel}</span> : null}
+                <span>分析日期：{formatAnalysisDate(storedCodexAnalysis.analyzedAt)}</span>
+                {storedAnalysisCliPath ? <span>CLI：{storedAnalysisCliPath}</span> : null}
+                {storedAnalysisMarkdownPath ? <span>快照：{storedAnalysisMarkdownPath}</span> : null}
+              </div>
+              <MarkdownReport content={storedCodexAnalysis.content} />
+            </>
+          ) : null}
+        </details>
+      ) : null}
+
       <section className="card panel analysis-export-preview">
         <div className="panel-header analysis-export-preview-header">
           <div>
@@ -811,7 +842,6 @@ export function AnalysisExportSection({
           <div className="analysis-export-codex-result">
             <div className="analysis-export-codex-meta">
               {latestRunCliLabel ? <span>工具：{latestRunCliLabel}</span> : null}
-              {storedCodexAnalysis ? <span>分析日期：{formatAnalysisDate(storedCodexAnalysis.analyzedAt)}</span> : null}
               {latestRunCliPath ? <span>CLI：{latestRunCliPath}</span> : null}
               {latestRunMarkdownPath ? <span>快照：{latestRunMarkdownPath}</span> : null}
               {codexResult ? <span>exit_code: {codexExitCode ?? "-"}</span> : null}

@@ -2340,6 +2340,38 @@ h3 {
   overflow: hidden;
 }
 
+.analysis-export-latest-card {
+  margin-top: 0;
+}
+
+.analysis-export-result-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  cursor: pointer;
+  list-style: none;
+}
+
+.analysis-export-result-summary::-webkit-details-marker {
+  display: none;
+}
+
+.analysis-export-result-summary span:first-child {
+  display: grid;
+  gap: 0.22rem;
+}
+
+.analysis-export-result-summary strong {
+  color: #f7f1e5;
+  font-size: 1.1rem;
+}
+
+.analysis-export-result-summary small {
+  color: rgba(243, 239, 229, 0.66);
+  font-size: 0.84rem;
+}
+
 .analysis-export-codex-status {
   margin-top: 0.85rem;
   border-radius: 12px;
