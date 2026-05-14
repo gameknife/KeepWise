@@ -171,6 +171,58 @@ export type ConsumptionReportQueryRequest = {
   year?: string;
 };
 
+export type AnalysisExportSnapshotRequest = {
+  year?: string;
+  wealth_curve_preset?: string;
+  include_consumption_detail?: "true" | "false";
+  fire_withdrawal_rate?: string;
+};
+
+export type AccountNotesQueryRequest = {
+  account_id?: string;
+};
+
+export type AccountNote = {
+  account_id: string;
+  holdings_text: string;
+  risk_note: string;
+  note_text: string;
+  updated_at: string;
+};
+
+export type UpsertAccountNoteRequest = {
+  account_id?: string;
+  holdings_text?: string;
+  risk_note?: string;
+  note_text?: string;
+};
+
+export type DeleteAccountNoteRequest = {
+  account_id?: string;
+};
+
+export type AnalysisExportWriteFileRequest = {
+  path: string;
+  content: string;
+};
+
+export type AnalysisExportLocalCli = {
+  cli_key: string;
+  label: string;
+  executable: string;
+  path: string;
+};
+
+export type AnalysisExportRunLocalCliRequest = {
+  cli_key: string;
+  content: string;
+  analysis_prompt?: string;
+  timeout_seconds?: number;
+  run_id?: string;
+};
+
+export type AnalysisExportRunCodexRequest = Omit<AnalysisExportRunLocalCliRequest, "cli_key">;
+
 export type MonthlyBudgetItemUpsertRequest = {
   id?: string;
   name?: string;
@@ -196,6 +248,13 @@ export type BudgetMonthlyReviewPayload = LoosePayload;
 export type SalaryIncomeOverviewPayload = LoosePayload;
 export type FireProgressPayload = LoosePayload;
 export type ConsumptionReportPayload = LoosePayload;
+export type AnalysisExportSnapshotPayload = LoosePayload;
+export type AccountNotesPayload = LoosePayload;
+export type AccountNoteMutationPayload = LoosePayload;
+export type AnalysisExportWriteFilePayload = LoosePayload;
+export type AnalysisExportListLocalClisPayload = LoosePayload;
+export type AnalysisExportRunLocalCliPayload = LoosePayload;
+export type AnalysisExportRunCodexPayload = LoosePayload;
 export type MetaAccountsPayload = LoosePayload;
 export type QueryTransactionsPayload = LoosePayload;
 export type QueryInvestmentsPayload = LoosePayload;
@@ -679,6 +738,46 @@ export async function queryConsumptionReport(
 
 export async function queryFireProgress(req: FireProgressQueryRequest): Promise<FireProgressPayload> {
   return invoke<FireProgressPayload>("query_fire_progress", { req });
+}
+
+export async function queryAnalysisExportSnapshot(
+  req: AnalysisExportSnapshotRequest,
+): Promise<AnalysisExportSnapshotPayload> {
+  return invoke<AnalysisExportSnapshotPayload>("analysis_export_snapshot", { req });
+}
+
+export async function queryAccountNotes(req: AccountNotesQueryRequest = {}): Promise<AccountNotesPayload> {
+  return invoke<AccountNotesPayload>("query_account_notes", { req });
+}
+
+export async function upsertAccountNote(req: UpsertAccountNoteRequest): Promise<AccountNoteMutationPayload> {
+  return invoke<AccountNoteMutationPayload>("upsert_account_note", { req });
+}
+
+export async function deleteAccountNote(req: DeleteAccountNoteRequest): Promise<AccountNoteMutationPayload> {
+  return invoke<AccountNoteMutationPayload>("delete_account_note", { req });
+}
+
+export async function writeAnalysisExportFile(
+  req: AnalysisExportWriteFileRequest,
+): Promise<AnalysisExportWriteFilePayload> {
+  return invoke<AnalysisExportWriteFilePayload>("analysis_export_write_file", req);
+}
+
+export async function listAnalysisExportLocalClis(): Promise<AnalysisExportListLocalClisPayload> {
+  return invoke<AnalysisExportListLocalClisPayload>("analysis_export_list_local_clis");
+}
+
+export async function runAnalysisExportLocalCli(
+  req: AnalysisExportRunLocalCliRequest,
+): Promise<AnalysisExportRunLocalCliPayload> {
+  return invoke<AnalysisExportRunLocalCliPayload>("analysis_export_run_local_cli", { req });
+}
+
+export async function runAnalysisExportCodex(
+  req: AnalysisExportRunCodexRequest,
+): Promise<AnalysisExportRunCodexPayload> {
+  return invoke<AnalysisExportRunCodexPayload>("analysis_export_run_codex", { req });
 }
 
 export async function queryMetaAccounts(req: MetaAccountsQueryRequest): Promise<MetaAccountsPayload> {

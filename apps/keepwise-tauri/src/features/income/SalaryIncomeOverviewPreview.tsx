@@ -60,10 +60,6 @@ export function SalaryIncomeOverviewPreview({
   const fundTotal = readNumber(data, "summary.housing_fund_total_cents");
   const totalIncome = readNumber(data, "summary.total_income_cents");
   const salaryCount = readNumber(data, "summary.salary_tx_count");
-  const fundCount = readNumber(data, "summary.housing_fund_tx_count");
-  const monthsWithSalary = readNumber(data, "summary.months_with_salary");
-  const monthsWithFund = readNumber(data, "summary.months_with_housing_fund");
-  const employerCount = readNumber(data, "summary.employer_count");
   const incomeChartPoints = rows
     .map((r) => {
       const label = typeof r.month_key === "string" ? r.month_key : "";
@@ -86,10 +82,6 @@ export function SalaryIncomeOverviewPreview({
         <PreviewStat label="公积金总额(元)" value={formatCentsShort(fundTotal)} />
         <PreviewStat label="总收入(元)" value={formatCentsShort(totalIncome)} tone={(totalIncome ?? 0) > 0 ? "good" : "warn"} />
         <PreviewStat label="工资笔数" value={salaryCount ?? 0} />
-        <PreviewStat label="公积金笔数" value={fundCount ?? 0} />
-        <PreviewStat label="工资到账月数" value={monthsWithSalary ?? 0} />
-        <PreviewStat label="公积金到账月数" value={monthsWithFund ?? 0} />
-        <PreviewStat label="雇主数" value={employerCount ?? 0} />
       </div>
       <div className="preview-chart-grid">
         <div className="sparkline-card">

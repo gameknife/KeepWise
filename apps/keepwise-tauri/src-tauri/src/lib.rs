@@ -1,7 +1,9 @@
 #![recursion_limit = "512"]
 
 mod account_catalog;
+mod account_notes;
 mod admin_health;
+mod analysis_export;
 mod budget_fire_analytics;
 mod cmb_bank_pdf_import;
 mod cmb_eml_import;
@@ -33,6 +35,7 @@ pub use wealth_analytics::{
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             commands::health_ping,
@@ -65,6 +68,14 @@ pub fn run() {
             account_catalog::query_account_catalog,
             account_catalog::upsert_account_catalog_entry,
             account_catalog::delete_account_catalog_entry,
+            account_notes::query_account_notes,
+            account_notes::upsert_account_note,
+            account_notes::delete_account_note,
+            analysis_export::analysis_export_snapshot,
+            analysis_export::analysis_export_write_file,
+            analysis_export::analysis_export_list_local_clis,
+            analysis_export::analysis_export_run_local_cli,
+            analysis_export::analysis_export_run_codex,
             record_mutations::upsert_manual_investment,
             record_mutations::update_investment_record,
             record_mutations::delete_investment_record,

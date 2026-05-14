@@ -86,6 +86,13 @@ export function InvestmentCurvePreview({
   const beginAssets = readNumber(payload, "summary.start_assets_cents");
   const endAssets = readNumber(payload, "summary.end_assets_cents");
   const endNetGrowth = readNumber(payload, "summary.end_net_growth_cents");
+  const periodNetFlow = readNumber(returnPayload, "metrics.net_flow_cents");
+  const endNetInput =
+    typeof beginAssets === "number" && typeof periodNetFlow === "number"
+      ? beginAssets + periodNetFlow
+      : typeof endAssets === "number" && typeof endNetGrowth === "number"
+        ? endAssets - endNetGrowth
+        : undefined;
   const annualizedRate = readNumber(returnPayload, "metrics.annualized_rate");
   const intervalReturnRate = readNumber(returnPayload, "metrics.return_rate");
   const returnNote = readString(returnPayload, "metrics.note") ?? "";
@@ -273,6 +280,7 @@ export function InvestmentCurvePreview({
           <PreviewStat label="年化收益率" value={formatRatePct(annualizedRate)} />
           <PreviewStat label="期初资产（元）" value={formatCentsShort(beginAssets)} />
           <PreviewStat label="期末资产（元）" value={formatCentsShort(endAssets)} />
+          <PreviewStat label="期末净投入（元）" value={formatCentsShort(endNetInput)} />
           <PreviewStat label="期末净增长（元）" value={formatCentsShort(endNetGrowth)} tone={signedMetricTone(endNetGrowth)} />
           <PreviewStat label="最大回撤比例" value={maxDrawdownText} tone={maxDrawdownTone} />
         </div>

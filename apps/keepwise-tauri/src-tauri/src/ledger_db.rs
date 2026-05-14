@@ -52,6 +52,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0006_add_monthly_budget_items.sql",
         include_str!("../../../../db/migrations/0006_add_monthly_budget_items.sql"),
     ),
+    (
+        "0007_add_account_notes.sql",
+        include_str!("../../../../db/migrations/0007_add_account_notes.sql"),
+    ),
 ];
 
 #[derive(Debug, Serialize)]

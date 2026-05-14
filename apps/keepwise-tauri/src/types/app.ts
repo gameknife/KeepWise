@@ -28,6 +28,7 @@ export type ProductTabKey =
   | "budget-fire"
   | "income-analysis"
   | "consumption-analysis"
+  | "export-analysis"
   | "admin";
 
 export type MobileView = "home" | ProductTabKey;

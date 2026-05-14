@@ -17,6 +17,7 @@ import {
   FireProgressPreview,
 } from "../features/budget/BudgetFirePreviews";
 import { ConsumptionOverviewPreview } from "../features/consumption/ConsumptionOverviewPreview";
+import { AnalysisExportSection } from "../features/export/AnalysisExportSection";
 import { ImportCenterSections } from "../features/import/ImportCenterSections";
 import { SalaryIncomeOverviewPreview } from "../features/income/SalaryIncomeOverviewPreview";
 import { MobileHomeGrid } from "../features/layout/MobileHomeGrid";
@@ -232,6 +233,7 @@ const PRODUCT_TABS: ProductTabDef[] = [
   { key: "income-analysis", icon: "¥", label: "收入分析", subtitle: "收入结构与趋势", status: "partial" },
   { key: "consumption-analysis", icon: "¤", label: "消费分析", subtitle: "筛选、趋势与交易明细", status: "partial" },
   { key: "import-center", icon: "⇩", label: "数据导入", subtitle: "YZXY / EML / CMB PDF", status: "ready" },
+  { key: "export-analysis", icon: "↑", label: "智能分析", subtitle: "生成 AI 分析所需的 Markdown 资产快照", status: "ready" },
   { key: "admin", icon: "⚙", label: "高级管理", subtitle: "调试、健康检查、管理操作", status: "ready" },
 ];
 
@@ -3487,6 +3489,13 @@ function App() {
         compareSortValues={compareSortValues}
         showRawJson={showRawJson}
         JsonResultCard={JsonResultCard}
+      />
+
+      <AnalysisExportSection
+        isActive={isTab("export-analysis")}
+        currentYearText={currentYearText}
+        defaultHideAmounts={amountPrivacyMasked}
+        fireWithdrawalRate={appSettings.fireWithdrawalRate}
       />
 
       <WealthOverviewSection
