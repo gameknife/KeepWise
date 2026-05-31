@@ -715,6 +715,7 @@ function App() {
     _reason: "manual" | "remote_poll",
   ): Promise<SyncReconcilePayload | null> {
     if (syncReconcileBusyRef.current) return null;
+    let syncStarted = false;
     try {
       const current = await syncStatus();
       startTransition(() => {
@@ -722,6 +723,11 @@ function App() {
       });
       if (!current.configured || current.syncing) return null;
       syncReconcileBusyRef.current = true;
+      syncStarted = true;
+      setSyncQuickBusy(true);
+      startTransition(() => {
+        setSyncRuntimeStatus({ ...current, syncing: true });
+      });
       const result = await syncReconcile();
       startTransition(() => {
         setSyncRuntimeStatus(result.status);
@@ -732,9 +738,11 @@ function App() {
       return result;
     } catch {
       // Keep auto-sync best-effort, don't block business flows.
+      if (syncStarted) void refreshSyncRuntimeStatus();
       return null;
     } finally {
       syncReconcileBusyRef.current = false;
+      if (syncStarted) setSyncQuickBusy(false);
     }
   }
 

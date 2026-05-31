@@ -8,7 +8,7 @@ use tauri::AppHandle;
 
 use crate::ledger_db::resolve_ledger_db_path;
 
-const SUPPORTED_PRESETS: &[&str] = &["ytd", "1y", "3y", "since_inception", "custom"];
+const SUPPORTED_PRESETS: &[&str] = &["ytd", "3m", "6m", "1y", "3y", "since_inception", "custom"];
 
 #[derive(Debug, Deserialize)]
 pub struct WealthOverviewQueryRequest {
@@ -137,6 +137,8 @@ fn resolve_window(
     let requested_from = match preset {
         "custom" => parse_iso_date(from_raw, "from")?,
         "ytd" => NaiveDate::from_ymd_opt(effective_to.year(), 1, 1).ok_or("无效 ytd 日期范围")?,
+        "3m" => effective_to - Duration::days(90),
+        "6m" => effective_to - Duration::days(180),
         "1y" => effective_to - Duration::days(365),
         "3y" => effective_to - Duration::days(365 * 3),
         "since_inception" => earliest,

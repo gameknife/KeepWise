@@ -498,7 +498,8 @@ mod tests {
     }
 
     fn create_temp_test_db() -> PathBuf {
-        let path = std::env::temp_dir().join(format!("kw_account_catalog_{}.sqlite", Uuid::new_v4()));
+        let path =
+            std::env::temp_dir().join(format!("kw_account_catalog_{}.sqlite", Uuid::new_v4()));
         if path.exists() {
             let _ = fs::remove_file(&path);
         }

@@ -1633,10 +1633,48 @@ h3 {
   stroke-linejoin: round;
 }
 
+.stacked-focus-axis-line {
+  stroke: rgba(88, 224, 173, 0.42);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+
+.stacked-focus-axis-title,
+.stacked-focus-axis-label {
+  fill: rgba(170, 245, 218, 0.82);
+  font-size: 10px;
+  user-select: none;
+  pointer-events: none;
+  font-variant-numeric: tabular-nums;
+  paint-order: stroke;
+  stroke: rgba(10, 14, 20, 0.86);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+
+.stacked-focus-axis-title {
+  font-weight: 700;
+}
+
 .stacked-hover-line {
   stroke: rgba(243, 239, 229, 0.28);
   stroke-width: 1;
   stroke-dasharray: 4 4;
+}
+
+.stacked-total-trend-halo {
+  stroke: rgba(8, 12, 18, 0.88);
+  stroke-width: 6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.stacked-total-trend-line {
+  stroke: #58e0ad;
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 0 5px rgba(88, 224, 173, 0.35));
 }
 
 .stacked-wealth-legend {
@@ -1669,6 +1707,13 @@ h3 {
   background: rgba(255, 140, 122, 0.12);
   border: 1px dashed rgba(255, 140, 122, 0.9);
   box-sizing: border-box;
+}
+
+.stacked-wealth-legend-swatch.total-trend {
+  height: 0.18rem;
+  border-radius: 999px;
+  background: #58e0ad;
+  box-shadow: 0 0 6px rgba(88, 224, 173, 0.42);
 }
 
 .stacked-wealth-tooltip {
@@ -1754,6 +1799,13 @@ h3 {
     );
   border: 1px solid rgba(255, 140, 122, 0.9);
   box-sizing: border-box;
+}
+
+.stacked-wealth-tooltip-swatch.total-trend {
+  height: 0.18rem;
+  border-radius: 999px;
+  background: #58e0ad;
+  box-shadow: 0 0 6px rgba(88, 224, 173, 0.42);
 }
 
 .line-area-grid {
@@ -2476,8 +2528,19 @@ h3 {
   gap: 0.55rem;
   padding: 0.55rem 0.75rem;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  color: rgba(243, 239, 229, 0.62);
   font-size: 0.76rem;
+}
+
+.analysis-export-codex-meta span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.55rem;
+  padding: 0.16rem 0.56rem;
+  border-radius: 999px;
+  border: 1px solid rgba(var(--kw-accent-rgb), 0.24);
+  background: rgba(var(--kw-accent-rgb), 0.07);
+  color: #d8fff2;
+  font-weight: 600;
 }
 
 .analysis-export-report-markdown {
@@ -2495,7 +2558,6 @@ h3 {
 .analysis-export-report-markdown h4,
 .analysis-export-report-markdown h5 {
   margin: 1rem 0 0.45rem;
-  color: #f7f1e5;
   line-height: 1.25;
 }
 
@@ -2506,15 +2568,27 @@ h3 {
 }
 
 .analysis-export-report-markdown h3 {
+  color: #9ee8d2;
   font-size: 1.18rem;
 }
 
 .analysis-export-report-markdown h4 {
+  color: #d8efff;
   font-size: 1.03rem;
 }
 
 .analysis-export-report-markdown h5 {
+  color: #f5cf6a;
   font-size: 0.94rem;
+}
+
+.analysis-export-report-markdown strong {
+  color: #8fe8c5;
+  font-weight: 700;
+}
+
+.analysis-export-amount-mask {
+  letter-spacing: 0.04em;
 }
 
 .analysis-export-report-markdown p {
@@ -4253,6 +4327,79 @@ h3 {
 
   .pipeline-last-run {
     width: 100%;
+  }
+}
+
+@media (min-width: 768px) and (max-width: 980px) {
+  .workspace-layout {
+    grid-template-columns: 240px minmax(0, 1fr);
+    height: 100%;
+  }
+
+  .workspace-layout.sidebar-collapsed {
+    grid-template-columns: 84px minmax(0, 1fr);
+  }
+
+  .workspace-sidebar {
+    height: 100%;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+  }
+
+  .tab-nav {
+    grid-template-columns: 1fr;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-right: 0.15rem;
+  }
+
+  .workspace-content {
+    height: 100%;
+    overflow-y: auto;
+    padding-right: 0.2rem;
+  }
+
+  .workspace-layout.sidebar-collapsed .workspace-brand-text,
+  .workspace-layout.sidebar-collapsed .tab-nav-title {
+    max-width: 0;
+    opacity: 0;
+    transform: translateX(-6px);
+  }
+
+  .workspace-layout.sidebar-collapsed .sidebar-toggle-btn {
+    width: 1.65rem;
+    height: 1.65rem;
+  }
+
+  .workspace-layout.sidebar-collapsed .tab-nav-btn {
+    justify-content: center;
+    padding: 0.5rem;
+  }
+
+  .workspace-layout.sidebar-collapsed .tab-nav-main {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    gap: 0;
+  }
+
+  .workspace-layout.sidebar-collapsed .workspace-sidebar-head {
+    flex-direction: column;
+    justify-content: flex-start;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .workspace-layout.sidebar-collapsed .workspace-brand {
+    justify-content: center;
+    gap: 0;
+  }
+
+  .workspace-layout.sidebar-collapsed .workspace-sidebar-footer {
+    justify-content: center;
+  }
+
+  .workspace-layout.sidebar-collapsed .sidebar-tool-btn {
+    width: 2.05rem;
+    height: 2.05rem;
   }
 }
 

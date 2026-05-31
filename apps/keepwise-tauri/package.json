@@ -18,6 +18,7 @@
     "tauri:build:mac": "tauri build --bundles app,dmg",
     "tauri:ios:init": "tauri ios init",
     "tauri:ios:dev": "tauri ios dev",
+    "tauri:ios:dev:ipad": "bash scripts/run_keepwise_ios_device_dev.sh",
     "tauri:android:init": "tauri android init",
     "tauri:android:dev": "tauri android dev",
     "tauri:android:run": "tauri android run",

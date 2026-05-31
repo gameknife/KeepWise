@@ -65,6 +65,8 @@ export function WealthOverviewSection(props: WealthOverviewSectionProps) {
                 onChange={(e: LooseUiEvent) => setWealthCurveQuery((s: Record<string, any>) => ({ ...s, preset: e.target.value }))}
               >
                 <option value="ytd">年初至今</option>
+                <option value="3m">近三月</option>
+                <option value="6m">近半年</option>
                 <option value="1y">近1年</option>
                 <option value="3y">近3年</option>
                 <option value="since_inception">成立以来</option>

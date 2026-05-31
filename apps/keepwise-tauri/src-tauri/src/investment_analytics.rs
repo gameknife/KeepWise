@@ -13,7 +13,7 @@ use crate::ledger_db::resolve_ledger_db_path;
 
 const PORTFOLIO_ACCOUNT_ID: &str = "__portfolio__";
 const PORTFOLIO_ACCOUNT_NAME: &str = "全部投资账户（组合）";
-const SUPPORTED_PRESETS: &[&str] = &["ytd", "1y", "3y", "since_inception", "custom"];
+const SUPPORTED_PRESETS: &[&str] = &["ytd", "3m", "6m", "1y", "3y", "since_inception", "custom"];
 const YAHOO_FINANCE_SOURCE_NAME: &str = "Yahoo Finance";
 const EASTMONEY_SOURCE_NAME: &str = "东方财富";
 
@@ -748,6 +748,8 @@ fn resolve_window(
     let requested_from = match preset {
         "custom" => parse_iso_date(from_raw, "from")?,
         "ytd" => NaiveDate::from_ymd_opt(effective_to.year(), 1, 1).ok_or("无效 ytd 日期范围")?,
+        "3m" => effective_to - Duration::days(90),
+        "6m" => effective_to - Duration::days(180),
         "1y" => effective_to - Duration::days(365),
         "3y" => effective_to - Duration::days(365 * 3),
         "since_inception" => earliest,
@@ -2609,9 +2611,7 @@ mod tests {
             .expect("rows array");
         let transfer_row = rows
             .iter()
-            .find(|row| {
-                row.get("snapshot_date").and_then(Value::as_str) == Some("2026-01-03")
-            })
+            .find(|row| row.get("snapshot_date").and_then(Value::as_str) == Some("2026-01-03"))
             .expect("transfer row");
         assert_eq!(
             transfer_row

@@ -539,16 +539,18 @@ fn median_i64(values: &mut [i64]) -> i64 {
     }
 }
 
-fn mortgage_fixed_profiles(records: &[BankPdfTransaction]) -> HashMap<String, MortgageProfile> {
+fn mortgage_fixed_profiles(
+    records: &[BankPdfTransaction],
+    historical_records: &[BankPdfTransaction],
+) -> HashMap<String, MortgageProfile> {
     let mut grouped: HashMap<String, Vec<i64>> = HashMap::new();
-    for rec in records {
-        if rec.currency != "CNY" || rec.summary != "个贷交易" || rec.amount_cents >= 0 {
-            continue;
+    for rec in records.iter().chain(historical_records.iter()) {
+        if rec.currency == "CNY" && rec.summary == "个贷交易" && rec.amount_cents < 0 {
+            grouped
+                .entry(loan_key(&rec.counterparty))
+                .or_default()
+                .push(rec.amount_cents.abs());
         }
-        grouped
-            .entry(loan_key(&rec.counterparty))
-            .or_default()
-            .push(rec.amount_cents.abs());
     }
     let mut out = HashMap::new();
     for (k, mut amounts) in grouped {
@@ -736,13 +738,14 @@ fn is_skip_summary(summary: &str) -> bool {
 fn classify_transactions(
     header: &PdfHeader,
     records: &[BankPdfTransaction],
+    historical_mortgage_records: &[BankPdfTransaction],
     transfer_whitelist: &HashSet<String>,
     merchant_map: &HashMap<String, (String, f64)>,
     category_rules: &[CategoryRule],
     review_threshold: f64,
 ) -> (Vec<ClassifiedPdfRow>, Value) {
     let _ = header;
-    let mortgage_profiles = mortgage_fixed_profiles(records);
+    let mortgage_profiles = mortgage_fixed_profiles(records, historical_mortgage_records);
     let mut rows = Vec::<ClassifiedPdfRow>::new();
     let mut counters: BTreeMap<String, i64> = BTreeMap::new();
     let mut amount_cents_by_tag: BTreeMap<String, i64> = BTreeMap::new();
@@ -1096,10 +1099,89 @@ fn stable_source_name(header: &PdfHeader) -> String {
     )
 }
 
+fn load_historical_mortgage_records(
+    db_path: &Path,
+    account_last4: &str,
+) -> Result<Vec<BankPdfTransaction>, String> {
+    if !db_path.exists() {
+        return Ok(Vec::new());
+    }
+
+    let conn = match Connection::open(db_path) {
+        Ok(conn) => conn,
+        Err(_) => return Ok(Vec::new()),
+    };
+    let transactions_table_exists = conn
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='transactions' LIMIT 1",
+            [],
+            |_row| Ok(true),
+        )
+        .unwrap_or(false);
+    if !transactions_table_exists {
+        return Ok(Vec::new());
+    }
+
+    let account_id = format!("acct_cmb_debit_{account_last4}");
+    let mut stmt = conn
+        .prepare(
+            r#"
+            SELECT
+                COALESCE(occurred_at, posted_at, '') AS tx_date,
+                currency,
+                amount_cents,
+                COALESCE(
+                    NULLIF(TRIM(merchant), ''),
+                    NULLIF(TRIM(merchant_normalized), ''),
+                    COALESCE(description, '')
+                ) AS counterparty,
+                COALESCE(description, '个贷交易') AS raw_detail
+            FROM transactions
+            WHERE source_type = 'cmb_bank_pdf'
+              AND account_id = ?1
+              AND statement_category = '个贷交易'
+              AND direction = 'expense'
+              AND currency = 'CNY'
+            GROUP BY
+                COALESCE(occurred_at, posted_at, ''),
+                currency,
+                amount_cents,
+                COALESCE(description, ''),
+                COALESCE(merchant, ''),
+                COALESCE(merchant_normalized, '')
+            "#,
+        )
+        .map_err(|e| format!("查询历史房贷样本失败: {e}"))?;
+
+    let rows = stmt
+        .query_map(params![account_id], |row| {
+            Ok(BankPdfTransaction {
+                page: 0,
+                date: row.get::<_, String>(0)?,
+                currency: row.get::<_, String>(1)?,
+                amount_text: String::new(),
+                amount_cents: row.get::<_, i64>(2)?,
+                balance_text: String::new(),
+                raw_detail: row.get::<_, String>(4)?,
+                summary: "个贷交易".to_string(),
+                counterparty: row.get::<_, String>(3)?,
+            })
+        })
+        .map_err(|e| format!("读取历史房贷样本失败: {e}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("组装历史房贷样本失败: {e}"))?;
+
+    Ok(rows
+        .into_iter()
+        .filter(|row| !row.date.trim().is_empty() && !row.counterparty.trim().is_empty())
+        .collect())
+}
+
 fn build_preview_and_rows_with_rules_dir(
     pdf_path: &Path,
     review_threshold: f64,
     rules_root: &Path,
+    historical_mortgage_records: &[BankPdfTransaction],
 ) -> Result<(PdfHeader, Vec<ClassifiedPdfRow>, Value), String> {
     let (header, records) = parse_pdf(pdf_path)?;
     let merchant_map = load_merchant_map(&rules_root.join("merchant_map.csv"));
@@ -1109,6 +1191,7 @@ fn build_preview_and_rows_with_rules_dir(
     let (rows, mut preview) = classify_transactions(
         &header,
         &records,
+        historical_mortgage_records,
         &transfer_whitelist,
         &merchant_map,
         &category_rules,
@@ -1394,9 +1477,14 @@ fn preview_at_path_with_rules_dir(
     pdf_path: &Path,
     review_threshold: f64,
     rules_root: &Path,
+    historical_mortgage_records: &[BankPdfTransaction],
 ) -> Result<Value, String> {
-    let (_header, _rows, preview) =
-        build_preview_and_rows_with_rules_dir(pdf_path, review_threshold, rules_root)?;
+    let (_header, _rows, preview) = build_preview_and_rows_with_rules_dir(
+        pdf_path,
+        review_threshold,
+        rules_root,
+        historical_mortgage_records,
+    )?;
     Ok(preview)
 }
 
@@ -1407,8 +1495,27 @@ fn import_at_db_path(
     source_type: &str,
     rules_root: &Path,
 ) -> Result<Value, String> {
-    let (header, rows, preview) =
-        build_preview_and_rows_with_rules_dir(pdf_path, review_threshold, rules_root)?;
+    let (header, records) = parse_pdf(pdf_path)?;
+    let historical_mortgage_records =
+        load_historical_mortgage_records(db_path, &header.account_last4)?;
+    let merchant_map = load_merchant_map(&rules_root.join("merchant_map.csv"));
+    let category_rules = load_category_rules(&rules_root.join("category_rules.csv"));
+    let transfer_whitelist =
+        load_bank_transfer_whitelist_names(&rules_root.join("bank_transfer_whitelist.csv"));
+    let (rows, mut preview) = classify_transactions(
+        &header,
+        &records,
+        &historical_mortgage_records,
+        &transfer_whitelist,
+        &merchant_map,
+        &category_rules,
+        review_threshold,
+    );
+    preview["file"] = json!({
+        "path": pdf_path.to_string_lossy().to_string(),
+        "name": pdf_path.file_name().and_then(|s| s.to_str()).unwrap_or_default(),
+        "stable_source_name": stable_source_name(&header),
+    });
 
     let conn = Connection::open(db_path).map_err(|e| format!("打开数据库失败: {e}"))?;
     conn.execute_batch("PRAGMA foreign_keys = ON;")
@@ -1481,7 +1588,16 @@ pub fn cmb_bank_pdf_preview(
     let source_path = resolve_source_path_text(req.source_path)?;
     let review_threshold = resolve_review_threshold(req.review_threshold)?;
     let rules_dir = ensure_app_rules_dir_seeded(&app)?;
-    preview_at_path_with_rules_dir(Path::new(&source_path), review_threshold, &rules_dir)
+    let db_path = resolve_ledger_db_path(&app)?;
+    let (header, _records) = parse_pdf(Path::new(&source_path))?;
+    let historical_mortgage_records =
+        load_historical_mortgage_records(&db_path, &header.account_last4)?;
+    preview_at_path_with_rules_dir(
+        Path::new(&source_path),
+        review_threshold,
+        &rules_dir,
+        &historical_mortgage_records,
+    )
 }
 
 #[tauri::command]
@@ -1818,6 +1934,7 @@ mod tests {
         let (rows, preview) = classify_transactions(
             &header,
             &records,
+            &[],
             &whitelist,
             &merchant_map,
             &category_rules,
@@ -1877,6 +1994,7 @@ mod tests {
         let (rows, preview) = classify_transactions(
             &header,
             &records,
+            &[],
             &whitelist,
             &merchant_map,
             &category_rules,
@@ -1898,5 +2016,56 @@ mod tests {
         );
         assert_eq!(rows[0].direction, "expense");
         assert_eq!(rows[0].expense_category, "餐饮");
+    }
+
+    #[test]
+    fn pdf_mortgage_fixed_can_be_recognized_from_historical_samples() {
+        let header = sample_header();
+        let records = vec![sample_bank_tx(
+            "2026-05-20",
+            "个贷交易",
+            "招商银行股份有限公司 6110394856200003",
+            -922_853,
+            "CNY",
+        )];
+        let historical_mortgage_records = vec![
+            sample_bank_tx(
+                "2026-04-20",
+                "个贷交易",
+                "招商银行股份有限公司 6110394856200003",
+                -922_853,
+                "CNY",
+            ),
+            sample_bank_tx(
+                "2026-03-20",
+                "个贷交易",
+                "招商银行股份有限公司 6110394856200003",
+                -924_159,
+                "CNY",
+            ),
+        ];
+
+        let (rows, preview) = classify_transactions(
+            &header,
+            &records,
+            &historical_mortgage_records,
+            &HashSet::new(),
+            &HashMap::new(),
+            &Vec::<CategoryRule>::new(),
+            0.7,
+        );
+
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].include_in_import);
+        assert!(rows[0].include_in_expense_analysis);
+        assert_eq!(rows[0].rule_tag, "mortgage_fixed");
+        assert_eq!(rows[0].expense_category, "房贷固定还款");
+        assert_eq!(preview["summary"]["import_rows_count"].as_i64(), Some(1));
+        assert_eq!(preview["summary"]["expense_rows_count"].as_i64(), Some(1));
+        assert_eq!(preview["rule_counts"]["mortgage_fixed"].as_i64(), Some(1));
+        assert_eq!(
+            preview["mortgage_profiles"]["6110394856200003"]["count"].as_u64(),
+            Some(3)
+        );
     }
 }

@@ -26,6 +26,9 @@
   },
   "bundle": {
     "active": true,
+    "iOS": {
+      "developmentTeam": "N5XNVW358C"
+    },
     "targets": "all",
     "icon": [
       "icons/32x32.png",

@@ -159,9 +159,8 @@ fn run() -> Result<(), String> {
     });
     if let Some(path) = json_out {
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).map_err(|e| {
-                format!("创建报告目录失败 ({}): {e}", parent.to_string_lossy())
-            })?;
+            fs::create_dir_all(parent)
+                .map_err(|e| format!("创建报告目录失败 ({}): {e}", parent.to_string_lossy()))?;
         }
         fs::write(
             &path,
@@ -345,7 +344,11 @@ fn diff_values(path: &str, baseline: &Value, current: &Value) -> Vec<DiffItem> {
                 return vec![DiffItem {
                     kind: "array_length_mismatch".to_string(),
                     path: path.to_string(),
-                    detail: format!("array length differs: baseline={}, current={}", a.len(), b.len()),
+                    detail: format!(
+                        "array length differs: baseline={}, current={}",
+                        a.len(),
+                        b.len()
+                    ),
                     baseline_value: Some(json!(a.len())),
                     current_value: Some(json!(b.len())),
                 }];
@@ -471,10 +474,7 @@ fn summarize(reports: &[CaseReport], cross_checks: &[Value]) -> Value {
 fn print_summary(reports: &[CaseReport], cross_checks: &[Value], summary: &Value) {
     println!("Manifest: embedded:analytics_core");
     println!("Selected cases: {}", reports.len());
-    println!(
-        "Case status counts: {}",
-        summary["cases"]["status_counts"]
-    );
+    println!("Case status counts: {}", summary["cases"]["status_counts"]);
     println!(
         "Cross-case check counts: {}",
         summary["cross_case_checks"]["status_counts"]
@@ -545,16 +545,38 @@ fn seed_minimal_dataset(db_path: &Path) -> Result<(), String> {
     conn.execute_batch("PRAGMA foreign_keys = ON;")
         .map_err(|e| format!("启用外键失败: {e}"))?;
 
-    insert_account(&conn, "acct_inv_regression", "回归测试投资账户", "investment")?;
+    insert_account(
+        &conn,
+        "acct_inv_regression",
+        "回归测试投资账户",
+        "investment",
+    )?;
     insert_account(&conn, "acct_cash_regression", "回归测试现金账户", "cash")?;
     insert_account(&conn, "acct_re_regression", "回归测试不动产账户", "other")?;
     insert_account(&conn, "acct_tx_regression", "回归测试信用卡", "credit_card")?;
-    insert_account(&conn, "acct_bank_income_regression", "回归测试银行卡", "bank")?;
+    insert_account(
+        &conn,
+        "acct_bank_income_regression",
+        "回归测试银行卡",
+        "bank",
+    )?;
 
     insert_investment(&conn, "acct_inv_regression", "2025-01-15", 9_200_000, 0)?;
     insert_investment(&conn, "acct_inv_regression", "2026-01-01", 10_000_000, 0)?;
-    insert_investment(&conn, "acct_inv_regression", "2026-01-10", 13_000_000, 2_000_000)?;
-    insert_investment(&conn, "acct_inv_regression", "2026-01-20", 12_500_000, -1_000_000)?;
+    insert_investment(
+        &conn,
+        "acct_inv_regression",
+        "2026-01-10",
+        13_000_000,
+        2_000_000,
+    )?;
+    insert_investment(
+        &conn,
+        "acct_inv_regression",
+        "2026-01-20",
+        12_500_000,
+        -1_000_000,
+    )?;
     insert_investment(&conn, "acct_inv_regression", "2026-01-31", 14_000_000, 0)?;
 
     insert_asset_valuation(

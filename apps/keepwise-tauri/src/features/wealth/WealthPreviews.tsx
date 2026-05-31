@@ -186,6 +186,26 @@ function WealthStackedTrendChart({
   const invBottomVals = enriched.map((p) => p.investmentBottom);
   const debtTopVals = enriched.map((p) => p.liabilityTop);
   const debtBottomVals = enriched.map((p) => p.liabilityBottom);
+  const grossTrendVals = enriched.map((p) => p.investmentTop);
+  const grossTrendMin = Math.min(...grossTrendVals);
+  const grossTrendMax = Math.max(...grossTrendVals);
+  const grossTrendSpan = grossTrendMax - grossTrendMin;
+  const grossTrendPad = Math.max(grossTrendSpan * 0.12, Math.abs(grossTrendMax) * 0.002, 1);
+  const grossTrendYMin = grossTrendMin - grossTrendPad;
+  const grossTrendYMax = grossTrendMax + grossTrendPad;
+  const grossTrendYSpan = grossTrendYMax - grossTrendYMin || 1;
+  const toFocusedTrendY = (value: number) =>
+    margin.top + innerH - ((value - grossTrendYMin) / grossTrendYSpan) * innerH;
+  const buildFocusedTrendPath = (vals: number[]) =>
+    vals.map((v, idx) => `${idx === 0 ? "M" : "L"} ${toX(idx).toFixed(2)} ${toFocusedTrendY(v).toFixed(2)}`).join(" ");
+  const showGrossTrendLine = grossTrendVals.length > 1 && grossTrendSpan > 0 && (visibility.cash || visibility.realEstate || visibility.investment);
+  const focusedTrendTickMeta = [grossTrendMax, (grossTrendMin + grossTrendMax) / 2, grossTrendMin];
+  const formatSignedCentsShort = (valueCents: number) => {
+    if (valueCents === 0) return "0";
+    const text = formatCentsShort(Math.abs(valueCents));
+    if (text === "****") return text;
+    return valueCents > 0 ? `+${text}` : `-${text}`;
+  };
 
   const xTicks = (() => {
     const maxTicks = 8;
@@ -199,6 +219,8 @@ function WealthStackedTrendChart({
   const zeroY = toY(0);
   const activeIndex = hoverIndex == null ? null : Math.max(0, Math.min(enriched.length - 1, hoverIndex));
   const activePoint = activeIndex == null ? null : enriched[activeIndex];
+  const activeGrossDelta = activePoint ? activePoint.investmentTop - enriched[0].investmentTop : 0;
+  const focusedAxisX = margin.left + innerW;
 
   return (
     <div className="stacked-wealth-chart-wrap" ref={wrapRef}>
@@ -254,6 +276,31 @@ function WealthStackedTrendChart({
 
         <line x1={margin.left} x2={margin.left} y1={margin.top} y2={margin.top + innerH} className="stacked-axis-line" />
         <line x1={margin.left} x2={margin.left + innerW} y1={margin.top + innerH} y2={margin.top + innerH} className="stacked-axis-line" />
+        {showGrossTrendLine ? (
+          <g pointerEvents="none">
+            <line
+              x1={focusedAxisX}
+              x2={focusedAxisX}
+              y1={margin.top}
+              y2={margin.top + innerH}
+              className="stacked-focus-axis-line"
+            />
+            <text x={focusedAxisX - 7} y={margin.top - 3} textAnchor="end" className="stacked-focus-axis-title">
+              总资产趋势
+            </text>
+            {focusedTrendTickMeta.map((value, idx) => {
+              const y = toFocusedTrendY(value);
+              return (
+                <g key={`focus-y-tick-${idx}`}>
+                  <line x1={focusedAxisX - 4} x2={focusedAxisX} y1={y} y2={y} className="stacked-focus-axis-line" />
+                  <text x={focusedAxisX - 7} y={y + 4} textAnchor="end" className="stacked-focus-axis-label">
+                    {compactYAxisLabel(value)}
+                  </text>
+                </g>
+              );
+            })}
+          </g>
+        ) : null}
 
         {visibility.cash ? <path d={buildAreaPath(cashTopVals, cashBottomVals)} fill="rgba(111,180,255,0.24)" /> : null}
         {visibility.realEstate ? <path d={buildAreaPath(reTopVals, reBottomVals)} fill="rgba(155,132,255,0.22)" /> : null}
@@ -266,6 +313,12 @@ function WealthStackedTrendChart({
         {visibility.investment ? <path d={buildLinePath(invTopVals)} fill="none" stroke="#eab35f" strokeWidth="1.2" /> : null}
         {visibility.liability ? (
           <path d={buildLinePath(debtBottomVals)} fill="none" stroke={debtColor} strokeWidth="1.2" strokeDasharray="6 4" />
+        ) : null}
+        {showGrossTrendLine ? (
+          <>
+            <path d={buildFocusedTrendPath(grossTrendVals)} fill="none" className="stacked-total-trend-halo" />
+            <path d={buildFocusedTrendPath(grossTrendVals)} fill="none" className="stacked-total-trend-line" />
+          </>
         ) : null}
 
         {xTicks.map((idx) => (
@@ -295,6 +348,12 @@ function WealthStackedTrendChart({
           <span className="stacked-wealth-legend-item">
             <span className="stacked-wealth-legend-swatch debt" />
             <span>负债（负轴）</span>
+          </span>
+        ) : null}
+        {showGrossTrendLine ? (
+          <span className="stacked-wealth-legend-item">
+            <span className="stacked-wealth-legend-swatch total-trend" />
+            <span>总资产趋势</span>
           </span>
         ) : null}
       </div>
@@ -342,6 +401,15 @@ function WealthStackedTrendChart({
             </span>
             <span className="stacked-wealth-tooltip-row-value">{formatCentsShort(activePoint.investmentTop)}</span>
           </div>
+          {showGrossTrendLine ? (
+            <div className="stacked-wealth-tooltip-row">
+              <span className="stacked-wealth-tooltip-row-label">
+                <span className="stacked-wealth-tooltip-swatch total-trend" />
+                总资产变化
+              </span>
+              <span className="stacked-wealth-tooltip-row-value">{formatSignedCentsShort(activeGrossDelta)}</span>
+            </div>
+          ) : null}
           {visibility.liability ? (
             <div className="stacked-wealth-tooltip-row">
               <span className="stacked-wealth-tooltip-row-label">

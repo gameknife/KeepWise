@@ -153,7 +153,10 @@ pub fn delete_account_note_at_db_path(
     }
     let conn = Connection::open(db_path).map_err(|e| format!("打开数据库失败: {e}"))?;
     let deleted = conn
-        .execute("DELETE FROM account_notes WHERE account_id = ?1", [account_id.clone()])
+        .execute(
+            "DELETE FROM account_notes WHERE account_id = ?1",
+            [account_id.clone()],
+        )
         .map_err(|e| format!("删除账户备注失败: {e}"))?;
     Ok(json!({
         "deleted": deleted > 0,
@@ -182,8 +185,9 @@ pub fn delete_account_note(app: AppHandle, req: DeleteAccountNoteRequest) -> Res
 #[cfg(test)]
 mod tests {
     use super::{
-        delete_account_note_at_db_path, query_account_notes_at_db_path, upsert_account_note_at_db_path,
-        AccountNotesQueryRequest, DeleteAccountNoteRequest, UpsertAccountNoteRequest,
+        delete_account_note_at_db_path, query_account_notes_at_db_path,
+        upsert_account_note_at_db_path, AccountNotesQueryRequest, DeleteAccountNoteRequest,
+        UpsertAccountNoteRequest,
     };
     use rusqlite::Connection;
     use serde_json::Value;

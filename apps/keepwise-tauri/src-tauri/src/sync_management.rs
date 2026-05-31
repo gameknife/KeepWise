@@ -18,7 +18,7 @@ use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::time::Duration as StdDuration;
-use tauri::{AppHandle, Manager};
+use tauri::{async_runtime, AppHandle, Manager};
 use url::Url;
 use uuid::Uuid;
 
@@ -38,6 +38,7 @@ const SERVICE_NAME_S3: &str = "s3";
 const S3_REQUEST_MAX_ATTEMPTS: u32 = 3;
 const S3_REQUEST_RETRY_BASE_MS: u64 = 500;
 const SINGLE_SNAPSHOT_OBJECT_NAME: &str = "snapshot-latest.kwsnap";
+const SNAPSHOT_RETENTION_COUNT: usize = 5;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(default)]
@@ -137,6 +138,8 @@ struct SyncHeadRef {
     parent_snapshot_id: Option<String>,
     updated_at: String,
     device_id: Option<String>,
+    #[serde(default)]
+    snapshot_plain_hash: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -155,6 +158,8 @@ struct SnapshotPlainBundle {
 #[derive(Debug, Serialize, Deserialize)]
 struct SnapshotEnvelope {
     v: u8,
+    #[serde(default)]
+    snapshot_id: Option<String>,
     created_at: String,
     parent_snapshot_id: Option<String>,
     device_id: String,
@@ -176,6 +181,12 @@ struct LocalSyncMaterial {
     rules: Vec<RuleFileBinary>,
 }
 
+#[derive(Debug, Clone)]
+struct SnapshotBuildResult {
+    bytes: Vec<u8>,
+    plain_hash: String,
+}
+
 #[derive(Debug)]
 struct S3Response {
     status: u16,
@@ -187,6 +198,12 @@ struct S3Target {
     url: String,
     host: String,
     canonical_uri: String,
+}
+
+#[derive(Debug, Clone)]
+struct RemoteSnapshotObject {
+    key: String,
+    last_modified: String,
 }
 
 struct S3Client<'a> {
@@ -647,6 +664,60 @@ impl<'a> S3Client<'a> {
             summarize_body(&resp.body)
         ))
     }
+
+    fn list_objects(&self, prefix: &str) -> Result<Vec<RemoteSnapshotObject>, String> {
+        let mut out = Vec::<RemoteSnapshotObject>::new();
+        let mut continuation_token: Option<String> = None;
+
+        loop {
+            let mut query = vec![
+                ("list-type".to_string(), "2".to_string()),
+                ("prefix".to_string(), prefix.to_string()),
+                ("max-keys".to_string(), "1000".to_string()),
+            ];
+            if let Some(token) = continuation_token.as_ref() {
+                query.push(("continuation-token".to_string(), token.clone()));
+            }
+
+            let resp = self.signed_request("GET", None, &query, &[], None)?;
+            if !(200..300).contains(&resp.status) {
+                return Err(format!(
+                    "列出远端对象失败 (prefix={}, status={}): {}",
+                    prefix,
+                    resp.status,
+                    summarize_body(&resp.body)
+                ));
+            }
+
+            let body = String::from_utf8_lossy(&resp.body);
+            out.extend(parse_list_objects_snapshot_entries(&body));
+            if !xml_first_tag_text(&body, "IsTruncated")
+                .map(|v| v.eq_ignore_ascii_case("true"))
+                .unwrap_or(false)
+            {
+                break;
+            }
+            continuation_token = xml_first_tag_text(&body, "NextContinuationToken");
+            if continuation_token.is_none() {
+                break;
+            }
+        }
+
+        Ok(out)
+    }
+
+    fn delete_object(&self, key: &str) -> Result<(), String> {
+        let resp = self.signed_request("DELETE", Some(key), &[], &[], None)?;
+        if (200..300).contains(&resp.status) || resp.status == 404 {
+            return Ok(());
+        }
+        Err(format!(
+            "删除远端对象失败 (key={}, status={}): {}",
+            key,
+            resp.status,
+            summarize_body(&resp.body)
+        ))
+    }
 }
 
 fn now_iso() -> String {
@@ -660,6 +731,45 @@ fn summarize_body(body: &[u8]) -> String {
     } else {
         text
     }
+}
+
+fn xml_unescape_text(input: &str) -> String {
+    input
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+        .replace("&amp;", "&")
+}
+
+fn xml_first_tag_text(input: &str, tag: &str) -> Option<String> {
+    let open = format!("<{tag}>");
+    let close = format!("</{tag}>");
+    let start = input.find(&open)? + open.len();
+    let end = input[start..].find(&close)? + start;
+    Some(xml_unescape_text(input[start..end].trim()))
+}
+
+fn parse_list_objects_snapshot_entries(input: &str) -> Vec<RemoteSnapshotObject> {
+    let mut out = Vec::<RemoteSnapshotObject>::new();
+    let mut rest = input;
+    while let Some(start) = rest.find("<Contents>") {
+        let after_start = &rest[start + "<Contents>".len()..];
+        let Some(end) = after_start.find("</Contents>") else {
+            break;
+        };
+        let block = &after_start[..end];
+        if let (Some(key), Some(last_modified)) = (
+            xml_first_tag_text(block, "Key"),
+            xml_first_tag_text(block, "LastModified"),
+        ) {
+            if key.ends_with(".kwsnap") {
+                out.push(RemoteSnapshotObject { key, last_modified });
+            }
+        }
+        rest = &after_start[end + "</Contents>".len()..];
+    }
+    out
 }
 
 fn is_no_such_bucket_error_text(text: &str) -> bool {
@@ -1070,12 +1180,23 @@ fn head_key(cfg: &PersistedSyncConfig) -> String {
 }
 
 fn snapshot_key(cfg: &PersistedSyncConfig, snapshot_id: &str) -> String {
-    let _ = snapshot_id;
+    format!(
+        "{}/snapshots/{}.kwsnap",
+        workspace_root_prefix(cfg),
+        snapshot_id.trim()
+    )
+}
+
+fn legacy_snapshot_key(cfg: &PersistedSyncConfig) -> String {
     format!(
         "{}/snapshots/{}",
         workspace_root_prefix(cfg),
         SINGLE_SNAPSHOT_OBJECT_NAME
     )
+}
+
+fn snapshots_prefix(cfg: &PersistedSyncConfig) -> String {
+    format!("{}/snapshots/", workspace_root_prefix(cfg))
 }
 
 fn read_remote_head(
@@ -1133,6 +1254,7 @@ fn ensure_workspace_initialized(
             parent_snapshot_id: None,
             updated_at: now_iso(),
             device_id: None,
+            snapshot_plain_hash: None,
         };
         write_remote_head(client, cfg, &head)?;
     }
@@ -1250,9 +1372,10 @@ fn write_local_material(app: &AppHandle, material: &LocalSyncMaterial) -> Result
 fn build_snapshot_bytes(
     material: &LocalSyncMaterial,
     sync_key: &[u8; 32],
+    snapshot_id: &str,
     parent_snapshot_id: Option<String>,
     device_id: &str,
-) -> Result<Vec<u8>, String> {
+) -> Result<SnapshotBuildResult, String> {
     let plain = SnapshotPlainBundle {
         created_at: now_iso(),
         db_content_b64: URL_SAFE_NO_PAD.encode(&material.db_bytes),
@@ -1278,25 +1401,56 @@ fn build_snapshot_bytes(
 
     let envelope = SnapshotEnvelope {
         v: SNAPSHOT_VERSION,
+        snapshot_id: Some(snapshot_id.to_string()),
         created_at: now_iso(),
         parent_snapshot_id,
         device_id: device_id.to_string(),
         nonce: URL_SAFE_NO_PAD.encode(nonce),
         cipher: URL_SAFE_NO_PAD.encode(&encrypted),
         checksum: blake3::hash(&encrypted).to_hex().to_string(),
-        plain_hash,
+        plain_hash: plain_hash.clone(),
     };
-    serde_json::to_vec(&envelope).map_err(|e| format!("序列化快照封装失败: {e}"))
+    let bytes = serde_json::to_vec(&envelope).map_err(|e| format!("序列化快照封装失败: {e}"))?;
+    Ok(SnapshotBuildResult { bytes, plain_hash })
 }
 
-fn parse_snapshot_bytes(
+fn parse_snapshot_bytes_for_ref(
     snapshot_bytes: &[u8],
     sync_key: &[u8; 32],
+    expected_snapshot_id: Option<&str>,
+    expected_parent_snapshot_id: Option<&str>,
+    expected_plain_hash: Option<&str>,
 ) -> Result<LocalSyncMaterial, String> {
     let envelope = serde_json::from_slice::<SnapshotEnvelope>(snapshot_bytes)
         .map_err(|e| format!("解析快照封装失败: {e}"))?;
     if envelope.v != SNAPSHOT_VERSION {
         return Err(format!("不支持的快照版本: {}", envelope.v));
+    }
+    if let (Some(expected), Some(actual)) = (expected_snapshot_id, envelope.snapshot_id.as_deref())
+    {
+        if expected != actual {
+            return Err(format!(
+                "远端 head 与快照不匹配：head={}, snapshot={}",
+                expected, actual
+            ));
+        }
+    }
+    if envelope.snapshot_id.is_none() {
+        match (
+            expected_parent_snapshot_id,
+            envelope.parent_snapshot_id.as_deref(),
+        ) {
+            (Some(expected), Some(actual)) if expected != actual => {
+                return Err(format!(
+                    "远端 head 与旧版快照 parent 不匹配：head_parent={}, snapshot_parent={}",
+                    expected, actual
+                ));
+            }
+            (Some(_), None) | (None, Some(_)) => {
+                return Err("远端 head 与旧版快照 parent 不匹配".to_string());
+            }
+            _ => {}
+        }
     }
 
     let nonce = URL_SAFE_NO_PAD
@@ -1320,6 +1474,11 @@ fn parse_snapshot_bytes(
     let plain_hash = blake3::hash(&plain).to_hex().to_string();
     if plain_hash != envelope.plain_hash {
         return Err("快照明文校验失败".to_string());
+    }
+    if let Some(expected) = expected_plain_hash {
+        if expected != plain_hash {
+            return Err("远端 head 与快照内容校验不匹配".to_string());
+        }
     }
 
     let decoded = serde_json::from_slice::<SnapshotPlainBundle>(&plain)
@@ -1460,13 +1619,62 @@ fn fetch_remote_snapshot_material(
     client: &S3Client,
     cfg: &PersistedSyncConfig,
     snapshot_id: &str,
+    expected_parent_snapshot_id: Option<&str>,
+    expected_plain_hash: Option<&str>,
 ) -> Result<LocalSyncMaterial, String> {
     let key = snapshot_key(cfg, snapshot_id);
-    let raw = client
-        .get_object_optional(&key)?
-        .ok_or_else(|| format!("远端快照不存在: {key}"))?;
+    let raw = match client.get_object_optional(&key)? {
+        Some(v) => v,
+        None => {
+            let legacy_key = legacy_snapshot_key(cfg);
+            client
+                .get_object_optional(&legacy_key)?
+                .ok_or_else(|| format!("远端快照不存在: {key}"))?
+        }
+    };
     let sync_key = get_sync_key_bytes(cfg)?;
-    parse_snapshot_bytes(&raw, &sync_key)
+    parse_snapshot_bytes_for_ref(
+        &raw,
+        &sync_key,
+        Some(snapshot_id),
+        expected_parent_snapshot_id,
+        expected_plain_hash,
+    )
+}
+
+fn cleanup_old_remote_snapshots(
+    client: &S3Client,
+    cfg: &PersistedSyncConfig,
+    current_snapshot_id: &str,
+) -> Result<usize, String> {
+    let current_key = snapshot_key(cfg, current_snapshot_id);
+    let mut snapshots = client.list_objects(&snapshots_prefix(cfg))?;
+    snapshots.sort_by(|a, b| {
+        b.last_modified
+            .cmp(&a.last_modified)
+            .then_with(|| b.key.cmp(&a.key))
+    });
+
+    let mut retained = Vec::<String>::new();
+    retained.push(current_key.clone());
+    for snapshot in &snapshots {
+        if retained.len() >= SNAPSHOT_RETENTION_COUNT {
+            break;
+        }
+        if !retained.iter().any(|key| key == &snapshot.key) {
+            retained.push(snapshot.key.clone());
+        }
+    }
+
+    let mut deleted = 0_usize;
+    for snapshot in snapshots {
+        if retained.iter().any(|key| key == &snapshot.key) {
+            continue;
+        }
+        client.delete_object(&snapshot.key)?;
+        deleted += 1;
+    }
+    Ok(deleted)
 }
 
 fn perform_remote_first_pull(
@@ -1492,7 +1700,13 @@ fn perform_remote_first_pull(
         return Ok(());
     };
 
-    let material = fetch_remote_snapshot_material(client, cfg, &snapshot_id)?;
+    let material = fetch_remote_snapshot_material(
+        client,
+        cfg,
+        &snapshot_id,
+        head.parent_snapshot_id.as_deref(),
+        head.snapshot_plain_hash.as_deref(),
+    )?;
     write_local_material(app, &material)?;
 
     state.remote_head = Some(snapshot_id.clone());
@@ -1513,14 +1727,15 @@ fn push_local_snapshot(
     let parent_snapshot_id = state.remote_head.clone();
     let snapshot_id = create_sync_snapshot_id();
     let sync_key = get_sync_key_bytes(cfg)?;
-    let snapshot_bytes = build_snapshot_bytes(
+    let snapshot = build_snapshot_bytes(
         material,
         &sync_key,
+        &snapshot_id,
         parent_snapshot_id.clone(),
         &state.device_id,
     )?;
     let key = snapshot_key(cfg, &snapshot_id);
-    client.put_object(&key, &snapshot_bytes, Some("application/octet-stream"))?;
+    client.put_object(&key, &snapshot.bytes, Some("application/octet-stream"))?;
 
     let latest_remote = read_remote_head(client, cfg)?
         .and_then(|h| h.snapshot_id)
@@ -1535,8 +1750,10 @@ fn push_local_snapshot(
         parent_snapshot_id,
         updated_at: now.to_string(),
         device_id: Some(state.device_id.clone()),
+        snapshot_plain_hash: Some(snapshot.plain_hash),
     };
     write_remote_head(client, cfg, &new_head)?;
+    let _ = cleanup_old_remote_snapshots(client, cfg, &snapshot_id);
 
     state.remote_head = Some(snapshot_id.clone());
     state.local_head = Some(snapshot_id);
@@ -1566,10 +1783,18 @@ fn run_reconcile_impl(
     ensure_workspace_initialized(&client, cfg)?;
 
     let now = now_iso();
-    let remote_head_id = read_remote_head(&client, cfg)?
-        .and_then(|h| h.snapshot_id)
+    let remote_head_ref = read_remote_head(&client, cfg)?;
+    let remote_head_id = remote_head_ref
+        .as_ref()
+        .and_then(|h| h.snapshot_id.clone())
         .map(|v| v.trim().to_string())
         .filter(|v| !v.is_empty());
+    let remote_head_plain_hash = remote_head_ref
+        .as_ref()
+        .and_then(|h| h.snapshot_plain_hash.as_deref());
+    let remote_head_parent_id = remote_head_ref
+        .as_ref()
+        .and_then(|h| h.parent_snapshot_id.as_deref());
 
     let local_material_before = read_local_sync_material(app)?;
     let local_hash_before = compute_material_hash(&local_material_before);
@@ -1582,7 +1807,23 @@ fn run_reconcile_impl(
 
     if remote_head_id != known_remote_head {
         if let Some(snapshot_id) = remote_head_id.clone() {
-            let remote_material = fetch_remote_snapshot_material(&client, cfg, &snapshot_id)?;
+            let remote_material_result = fetch_remote_snapshot_material(
+                &client,
+                cfg,
+                &snapshot_id,
+                remote_head_parent_id,
+                remote_head_plain_hash,
+            );
+            let remote_material = match remote_material_result {
+                Ok(material) => material,
+                Err(err) if local_dirty => {
+                    state.remote_head = Some(snapshot_id.clone());
+                    push_local_snapshot(cfg, state, &client, &local_material_before, &now)?;
+                    state.last_synced_hash = Some(local_hash_before);
+                    return Ok(format!("远端快照不完整，已使用本地数据修复同步链: {err}"));
+                }
+                Err(err) => return Err(err),
+            };
             let remote_hash = compute_material_hash(&remote_material);
             if local_dirty && known_remote_head.is_some() {
                 let _ = backup_local_db_for_conflict(app);
@@ -1910,7 +2151,13 @@ pub fn sync_status(app: AppHandle) -> Result<SyncStatus, String> {
 }
 
 #[tauri::command]
-pub fn sync_poll_remote_update(app: AppHandle) -> Result<SyncRemotePollResult, String> {
+pub async fn sync_poll_remote_update(app: AppHandle) -> Result<SyncRemotePollResult, String> {
+    async_runtime::spawn_blocking(move || sync_poll_remote_update_blocking(app))
+        .await
+        .map_err(|e| format!("同步轮询任务失败: {e}"))?
+}
+
+fn sync_poll_remote_update_blocking(app: AppHandle) -> Result<SyncRemotePollResult, String> {
     let cfg = match load_sync_config(&app)? {
         Some(v) => v,
         None => {
@@ -1968,7 +2215,13 @@ pub fn sync_poll_remote_update(app: AppHandle) -> Result<SyncRemotePollResult, S
 }
 
 #[tauri::command]
-pub fn sync_reconcile(app: AppHandle) -> Result<SyncReconcileResult, String> {
+pub async fn sync_reconcile(app: AppHandle) -> Result<SyncReconcileResult, String> {
+    async_runtime::spawn_blocking(move || sync_reconcile_blocking(app))
+        .await
+        .map_err(|e| format!("同步任务失败: {e}"))?
+}
+
+fn sync_reconcile_blocking(app: AppHandle) -> Result<SyncReconcileResult, String> {
     let cfg = load_sync_config(&app)?.ok_or_else(|| "尚未配置同步".to_string())?;
     let mut state =
         load_sync_state(&app)?.unwrap_or_else(|| default_state(Uuid::new_v4().to_string()));
@@ -2103,7 +2356,8 @@ pub fn sync_set_auto_policy(
 mod tests {
     use super::{
         build_snapshot_bytes, decrypt_share_payload, derive_workspace_sync_key, encode_rfc3986,
-        encrypt_share_payload, now_iso, parse_snapshot_bytes, LocalSyncMaterial, RuleFileBinary,
+        encrypt_share_payload, now_iso, parse_list_objects_snapshot_entries,
+        parse_snapshot_bytes_for_ref, xml_first_tag_text, LocalSyncMaterial, RuleFileBinary,
         ShareCodePayload, SYNC_PROVIDER,
     };
 
@@ -2161,8 +2415,16 @@ mod tests {
                 bytes: b"a,b,c".to_vec(),
             }],
         };
-        let snap = build_snapshot_bytes(&material, &key, None, "device-a").expect("build snapshot");
-        let decoded = parse_snapshot_bytes(&snap, &key).expect("parse snapshot");
+        let snap = build_snapshot_bytes(&material, &key, "snap-test", None, "device-a")
+            .expect("build snapshot");
+        let decoded = parse_snapshot_bytes_for_ref(
+            &snap.bytes,
+            &key,
+            Some("snap-test"),
+            None,
+            Some(&snap.plain_hash),
+        )
+        .expect("parse snapshot");
         assert_eq!(decoded.db_bytes, material.db_bytes);
         assert_eq!(decoded.rules.len(), 1);
         assert_eq!(decoded.rules[0].name, "merchant_map.csv");
@@ -2171,5 +2433,34 @@ mod tests {
     #[test]
     fn encode_rfc3986_should_escape_slash_in_query() {
         assert_eq!(encode_rfc3986("a/b"), "a%2Fb");
+    }
+
+    #[test]
+    fn parse_list_objects_snapshot_entries_reads_kwsnap_keys() {
+        let xml = r#"
+            <ListBucketResult>
+              <IsTruncated>false</IsTruncated>
+              <Contents>
+                <Key>keepwise-sync/ws/snapshots/snap-a.kwsnap</Key>
+                <LastModified>2026-05-25T10:00:00.000Z</LastModified>
+              </Contents>
+              <Contents>
+                <Key>keepwise-sync/ws/refs/head.json</Key>
+                <LastModified>2026-05-25T10:01:00.000Z</LastModified>
+              </Contents>
+              <Contents>
+                <Key>keepwise-sync/ws/snapshots/snap-b.kwsnap</Key>
+                <LastModified>2026-05-25T10:02:00.000Z</LastModified>
+              </Contents>
+            </ListBucketResult>
+        "#;
+        let entries = parse_list_objects_snapshot_entries(xml);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].key, "keepwise-sync/ws/snapshots/snap-a.kwsnap");
+        assert_eq!(entries[1].last_modified, "2026-05-25T10:02:00.000Z");
+        assert_eq!(
+            xml_first_tag_text(xml, "IsTruncated").as_deref(),
+            Some("false")
+        );
     }
 }

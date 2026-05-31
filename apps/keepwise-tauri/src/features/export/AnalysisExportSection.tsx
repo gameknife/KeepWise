@@ -30,6 +30,7 @@ import {
 const EXPORT_PROFILE_STORAGE_KEY = "keepwise.desktop.export-profile.v1";
 const EXPORT_LOCAL_ANALYSIS_STORAGE_KEY = "keepwise.desktop.export-local-analysis.v1";
 const LEGACY_EXPORT_CODEX_ANALYSIS_STORAGE_KEY = "keepwise.desktop.export-codex-analysis.v1";
+const ANALYSIS_AMOUNT_MASK_TOKEN = "KW_ANALYSIS_AMOUNT_MASK";
 
 type AnalysisExportSectionProps = {
   isActive: boolean;
@@ -192,8 +193,25 @@ function parseLocalCliRows(payload: unknown): AnalysisExportLocalCli[] {
     .filter((row): row is AnalysisExportLocalCli => row !== null);
 }
 
-function MarkdownReport({ content }: { content: string }) {
-  const lines = content.replace(/\r\n/g, "\n").split("\n");
+function maskAnalysisAmountText(content: string): string {
+  const numberPattern = "[+-]?(?:\\d{1,3}(?:,\\d{3})+|\\d+)(?:\\.\\d+)?";
+  const moneyLikeNumberPattern = "[+-]?(?:\\d{1,3}(?:,\\d{3})+(?:\\.\\d+)?|\\d+\\.\\d{2})";
+  const moneyUnitPattern = "(?:亿元|万元|元|CNY|RMB|人民币|万|亿)";
+  return content
+    .replace(
+      new RegExp(`${numberPattern}\\s*(?:-|~|～|至|到)\\s*${numberPattern}\\s*${moneyUnitPattern}`, "gi"),
+      ANALYSIS_AMOUNT_MASK_TOKEN,
+    )
+    .replace(new RegExp(`[<>]=?\\s*${numberPattern}\\s*${moneyUnitPattern}`, "gi"), ANALYSIS_AMOUNT_MASK_TOKEN)
+    .replace(new RegExp(`[￥¥]\\s*${numberPattern}`, "g"), ANALYSIS_AMOUNT_MASK_TOKEN)
+    .replace(new RegExp(`\\b(?:CNY|RMB)\\s*${numberPattern}`, "gi"), ANALYSIS_AMOUNT_MASK_TOKEN)
+    .replace(new RegExp(`${numberPattern}\\s*${moneyUnitPattern}`, "gi"), ANALYSIS_AMOUNT_MASK_TOKEN)
+    .replace(new RegExp(`(^|[|\\s:*（(])(${moneyLikeNumberPattern})(?=$|[|\\s,，。;；)）])`, "g"), `$1${ANALYSIS_AMOUNT_MASK_TOKEN}`);
+}
+
+function MarkdownReport({ content, hideAmounts = false }: { content: string; hideAmounts?: boolean }) {
+  const displayContent = hideAmounts ? maskAnalysisAmountText(content) : content;
+  const lines = displayContent.replace(/\r\n/g, "\n").split("\n");
   const nodes: ReactNode[] = [];
   let i = 0;
 
@@ -223,6 +241,16 @@ function MarkdownReport({ content }: { content: string }) {
     const tokens = text.split(/(<br\s*\/?>|\n|`[^`]+`|\*\*[^*]+\*\*)/g);
     const rendered: ReactNode[] = [];
     let partIndex = 0;
+    const renderTextWithAmountMasks = (value: string, prefix: string): ReactNode[] => {
+      const parts = value.split(ANALYSIS_AMOUNT_MASK_TOKEN);
+      if (parts.length === 1) return [value];
+      return parts.flatMap((part, index) => {
+        const next: ReactNode[] = [];
+        if (part) next.push(part);
+        if (index < parts.length - 1) next.push(<span className="analysis-export-amount-mask" key={`${prefix}-mask-${index}`}>****</span>);
+        return next;
+      });
+    };
     for (const token of tokens) {
       if (!token) continue;
       if (token === "\n" || /^<br\s*\/?>$/.test(token)) {
@@ -232,17 +260,17 @@ function MarkdownReport({ content }: { content: string }) {
       }
       const strongMatch = /^\*\*([\s\S]+)\*\*$/.exec(token);
       if (strongMatch) {
-        rendered.push(<strong key={`${keyPrefix}-strong-${partIndex}`}>{strongMatch[1]}</strong>);
+        rendered.push(<strong key={`${keyPrefix}-strong-${partIndex}`}>{renderTextWithAmountMasks(strongMatch[1], `${keyPrefix}-strong-${partIndex}`)}</strong>);
         partIndex += 1;
         continue;
       }
       const codeMatch = /^`([\s\S]+)`$/.exec(token);
       if (codeMatch) {
-        rendered.push(<code key={`${keyPrefix}-code-${partIndex}`}>{codeMatch[1]}</code>);
+        rendered.push(<code key={`${keyPrefix}-code-${partIndex}`}>{renderTextWithAmountMasks(codeMatch[1], `${keyPrefix}-code-${partIndex}`)}</code>);
         partIndex += 1;
         continue;
       }
-      rendered.push(token);
+      rendered.push(...renderTextWithAmountMasks(token, `${keyPrefix}-text-${partIndex}`));
       partIndex += 1;
     }
     return rendered;
@@ -414,6 +442,7 @@ export function AnalysisExportSection({
   const [actionError, setActionError] = useState("");
   const [codexBusy, setCodexBusy] = useState(false);
   const [codexResult, setCodexResult] = useState<LoosePayload | null>(null);
+  const [latestRunAnalyzedAt, setLatestRunAnalyzedAt] = useState("");
   const [codexProgress, setCodexProgress] = useState<CodexProgressEvent | null>(null);
   const [codexProgressLog, setCodexProgressLog] = useState<CodexProgressEvent[]>([]);
   const [storedCodexAnalysis, setStoredCodexAnalysis] = useState<StoredCodexAnalysis | null>(() => parseStoredCodexAnalysis());
@@ -645,6 +674,7 @@ export function AnalysisExportSection({
     setActionStatus("");
     setCodexBusy(true);
     setCodexResult(null);
+    setLatestRunAnalyzedAt("");
     setCodexProgress({
       run_id: runId,
       cli_key: selectedCli.cli_key,
@@ -664,13 +694,15 @@ export function AnalysisExportSection({
         run_id: runId,
       });
       setCodexResult(result);
+      const analyzedAt = new Date().toISOString();
+      setLatestRunAnalyzedAt(analyzedAt);
       const success = readBool(result, "success");
       const outputPath = readString(result, "markdown_path");
       const stdout = readString(result, "stdout") ?? "";
       if (success && stdout.trim()) {
         const nextAnalysis = {
           content: stdout,
-          analyzedAt: new Date().toISOString(),
+          analyzedAt,
           markdownPath: outputPath,
           cliKey: readString(result, "cli_key") ?? selectedCli.cli_key,
           cliLabel: readString(result, "cli_label") ?? selectedCli.label,
@@ -693,8 +725,6 @@ export function AnalysisExportSection({
 
   const codexStderr = readString(codexResult, "stderr") ?? "";
   const codexStdout = readString(codexResult, "stdout") ?? "";
-  const codexExitCode = readNumber(codexResult, "exit_code");
-  const codexTimedOut = readBool(codexResult, "timed_out");
   const codexSuccess = readBool(codexResult, "success");
   const codexElapsedMs = codexProgress?.elapsed_ms ?? 0;
   const codexTimeoutMs = (codexProgress?.timeout_seconds ?? 900) * 1000;
@@ -702,11 +732,7 @@ export function AnalysisExportSection({
   const codexProgressPct = Math.max(4, Math.min(100, (codexElapsedMs / codexTimeoutMs) * 100));
   const codexLatestOutput = codexProgress?.stdout_tail || codexProgress?.stderr_tail || "";
   const storedAnalysisCliLabel = storedCodexAnalysis?.cliLabel ?? "";
-  const storedAnalysisCliPath = storedCodexAnalysis?.cliPath ?? "";
-  const storedAnalysisMarkdownPath = storedCodexAnalysis?.markdownPath ?? "";
   const latestRunCliLabel = readString(codexResult, "cli_label") ?? "";
-  const latestRunCliPath = readString(codexResult, "cli_path") ?? "";
-  const latestRunMarkdownPath = readString(codexResult, "markdown_path") ?? "";
   const renderedAnalysisContent = codexStdout.trim();
   const shouldShowRunResult = Boolean(codexResult && (!storedCodexAnalysis || !codexSuccess));
 
@@ -730,10 +756,8 @@ export function AnalysisExportSection({
               <div className="analysis-export-codex-meta">
                 {storedAnalysisCliLabel ? <span>工具：{storedAnalysisCliLabel}</span> : null}
                 <span>分析日期：{formatAnalysisDate(storedCodexAnalysis.analyzedAt)}</span>
-                {storedAnalysisCliPath ? <span>CLI：{storedAnalysisCliPath}</span> : null}
-                {storedAnalysisMarkdownPath ? <span>快照：{storedAnalysisMarkdownPath}</span> : null}
               </div>
-              <MarkdownReport content={storedCodexAnalysis.content} />
+              <MarkdownReport content={storedCodexAnalysis.content} hideAmounts={defaultHideAmounts} />
             </>
           ) : null}
         </details>
@@ -783,7 +807,7 @@ export function AnalysisExportSection({
         ) : null}
         <div className="analysis-export-markdown-preview" aria-label="Markdown 渲染预览">
           {markdown ? (
-            <MarkdownReport content={markdown} />
+            <MarkdownReport content={markdown} hideAmounts={defaultHideAmounts} />
           ) : (
             <div className="analysis-export-empty-preview">点击“生成预览”后显示只读 Markdown 渲染结果。</div>
           )}
@@ -842,14 +866,10 @@ export function AnalysisExportSection({
           <div className="analysis-export-codex-result">
             <div className="analysis-export-codex-meta">
               {latestRunCliLabel ? <span>工具：{latestRunCliLabel}</span> : null}
-              {latestRunCliPath ? <span>CLI：{latestRunCliPath}</span> : null}
-              {latestRunMarkdownPath ? <span>快照：{latestRunMarkdownPath}</span> : null}
-              {codexResult ? <span>exit_code: {codexExitCode ?? "-"}</span> : null}
-              {codexResult ? <span>{codexTimedOut ? "已超时" : "已返回"}</span> : null}
-              {codexResult ? <span>{codexSuccess ? "success" : "non-zero / failed"}</span> : null}
+              {latestRunAnalyzedAt ? <span>分析日期：{formatAnalysisDate(latestRunAnalyzedAt)}</span> : null}
             </div>
             {renderedAnalysisContent ? (
-              <MarkdownReport content={renderedAnalysisContent} />
+              <MarkdownReport content={renderedAnalysisContent} hideAmounts={defaultHideAmounts} />
             ) : (
               <div className="analysis-export-empty-preview">本次 CLI 没有返回 stdout 内容。</div>
             )}
@@ -872,6 +892,8 @@ export function AnalysisExportSection({
             <span>财富曲线</span>
             <select value={wealthCurvePreset} onChange={(e) => setWealthCurvePreset(e.target.value)}>
               <option value="ytd">年初至今</option>
+              <option value="3m">近三月</option>
+              <option value="6m">近半年</option>
               <option value="1y">近1年</option>
               <option value="3y">近3年</option>
               <option value="since_inception">成立以来</option>

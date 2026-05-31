@@ -116,6 +116,10 @@ export function formatPresetLabel(preset?: string): string {
   switch (preset) {
     case "ytd":
       return "年初至今";
+    case "3m":
+      return "近三月";
+    case "6m":
+      return "近半年";
     case "1y":
       return "近1年";
     case "3y":

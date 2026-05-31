@@ -17,6 +17,7 @@ npm run build
 npm run tauri:dev:mobile-preview
 npm run tauri:ios:init
 npm run tauri:ios:dev
+npm run tauri:ios:dev:ipad
 npm run tauri:android:init
 npm run tauri:android:dev
 npm run tauri:android:build:internal
@@ -28,6 +29,19 @@ npm run desktop:release:prepare -- 0.2.0-rc.1
 ```
 
 `tauri:dev:mobile-preview` 会强制移动模式，并将窗口锁定为 iPhone 17 Pro Max 竖屏预览尺寸（440x956）。
+
+`tauri:ios:dev:ipad` 会自动：
+
+- 检测本机局域网 IP
+- 清理 1420/1421 端口上的旧 Vite 进程
+- 启动新的 Vite dev server
+- 对默认真机 `恺铭易的iPad Pro` 执行安装并启动
+
+如需改成别的真机名称：
+
+```bash
+npm run tauri:ios:dev:ipad -- "你的设备名"
+```
 
 ## Android 开发前置
 

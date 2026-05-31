@@ -128,8 +128,7 @@ pub fn analysis_export_snapshot_at_db_path(
         .unwrap_or_else(|| "since_inception".to_string())
         .trim()
         .to_string();
-    let include_consumption_detail =
-        bool_param(req.include_consumption_detail.as_deref(), false);
+    let include_consumption_detail = bool_param(req.include_consumption_detail.as_deref(), false);
     let fire_withdrawal_rate = req
         .fire_withdrawal_rate
         .unwrap_or_else(|| "0.04".to_string())
@@ -220,10 +219,8 @@ pub fn analysis_export_snapshot_at_db_path(
         prune_consumption_detail(consumption)
     };
 
-    let account_notes_payload = query_account_notes_at_db_path(
-        db_path,
-        AccountNotesQueryRequest { account_id: None },
-    )?;
+    let account_notes_payload =
+        query_account_notes_at_db_path(db_path, AccountNotesQueryRequest { account_id: None })?;
     let account_notes = account_notes_payload
         .get("rows")
         .cloned()
@@ -281,7 +278,10 @@ pub fn analysis_export_snapshot_at_db_path(
 }
 
 #[tauri::command]
-pub fn analysis_export_snapshot(app: AppHandle, req: AnalysisExportRequest) -> Result<Value, String> {
+pub fn analysis_export_snapshot(
+    app: AppHandle,
+    req: AnalysisExportRequest,
+) -> Result<Value, String> {
     let db_path = resolve_ledger_db_path(&app)?;
     analysis_export_snapshot_at_db_path(&db_path, req)
 }
@@ -391,7 +391,8 @@ fn build_local_cli_prompt(markdown_path: &Path, analysis_prompt: &str) -> String
          3. 明确区分事实、推断和需要用户补充的信息。\n\
          4. 给出可执行的下一步建议，但不要假装知道实时行情或税务细节。\n\
          5. 如数据缺失或用户备注不足，请列出缺口。\n\
-         6. 只输出最终中文分析结果，不要解释你如何调用工具。\n\
+         6. 报告必须简明扼要：控制在 800 字以内，最多 5 个小节，每节优先写 2-4 条要点，避免复述快照明细。\n\
+         7. 只输出最终中文分析结果，不要解释你如何调用工具。\n\
          \n\
          用户额外诉求：\n\
          {analysis_prompt}\n\
@@ -700,12 +701,13 @@ fn analysis_export_run_local_cli_blocking(
     std::fs::create_dir_all(&base_dir).map_err(|e| format!("创建分析临时目录失败: {e}"))?;
     let stamp = Local::now().format("%Y%m%d-%H%M%S").to_string();
     let markdown_path = base_dir.join(format!("keepwise-{}-analysis-{stamp}.md", cli.key));
-    std::fs::write(&markdown_path, bytes).map_err(|e| format!("写入分析临时 Markdown 失败: {e}"))?;
+    std::fs::write(&markdown_path, bytes)
+        .map_err(|e| format!("写入分析临时 Markdown 失败: {e}"))?;
 
     let cli_path = resolve_local_cli_path(cli)?;
-    let analysis_prompt = req
-        .analysis_prompt
-        .unwrap_or_else(|| "请给出资产配置、风险集中度、再平衡、现金流与 FIRE 进度建议。".to_string());
+    let analysis_prompt = req.analysis_prompt.unwrap_or_else(|| {
+        "请给出资产配置、风险集中度、再平衡、现金流与 FIRE 进度建议。".to_string()
+    });
     let prompt = build_local_cli_prompt(&markdown_path, &analysis_prompt);
     let timeout_seconds = req
         .timeout_seconds
@@ -714,8 +716,15 @@ fn analysis_export_run_local_cli_blocking(
     let run_id = req
         .run_id
         .unwrap_or_else(|| format!("{}-{}", cli.key, Local::now().format("%Y%m%d-%H%M%S")));
-    let (exit_code, stdout, stderr, timed_out) =
-        run_local_cli_exec(&app, &run_id, cli, &cli_path, &base_dir, &prompt, timeout_seconds)?;
+    let (exit_code, stdout, stderr, timed_out) = run_local_cli_exec(
+        &app,
+        &run_id,
+        cli,
+        &cli_path,
+        &base_dir,
+        &prompt,
+        timeout_seconds,
+    )?;
     let success = exit_code == 0 && !timed_out;
 
     Ok(json!({
@@ -784,7 +793,8 @@ mod tests {
     }
 
     fn create_temp_test_db() -> PathBuf {
-        let path = std::env::temp_dir().join(format!("kw_analysis_export_{}.sqlite", Uuid::new_v4()));
+        let path =
+            std::env::temp_dir().join(format!("kw_analysis_export_{}.sqlite", Uuid::new_v4()));
         if path.exists() {
             let _ = fs::remove_file(&path);
         }
@@ -820,24 +830,30 @@ mod tests {
         )
         .expect("snapshot");
 
-        assert!(payload.get("generated_at").and_then(Value::as_str).is_some());
+        assert!(payload
+            .get("generated_at")
+            .and_then(Value::as_str)
+            .is_some());
         assert!(payload.get("wealth_overview").is_some());
         assert_eq!(
-            payload.get("account_notes").and_then(Value::as_array).map(Vec::len),
+            payload
+                .get("account_notes")
+                .and_then(Value::as_array)
+                .map(Vec::len),
             Some(0)
         );
-        assert!(
-            payload
-                .get("consumption")
-                .and_then(|v| v.get("transactions"))
-                .is_none()
-        );
+        assert!(payload
+            .get("consumption")
+            .and_then(|v| v.get("transactions"))
+            .is_none());
     }
 
     #[test]
     fn write_file_rejects_non_markdown_path() {
-        let target = std::env::temp_dir().join(format!("kw_analysis_export_{}.txt", Uuid::new_v4()));
-        let result = analysis_export_write_file(target.to_string_lossy().to_string(), "# x".to_string());
+        let target =
+            std::env::temp_dir().join(format!("kw_analysis_export_{}.txt", Uuid::new_v4()));
+        let result =
+            analysis_export_write_file(target.to_string_lossy().to_string(), "# x".to_string());
         assert!(result.is_err());
     }
 
@@ -848,5 +864,6 @@ mod tests {
         assert!(prompt.contains("/tmp/keepwise-test.md"));
         assert!(prompt.contains("keepwise-test.md"));
         assert!(prompt.contains("关注再平衡"));
+        assert!(prompt.contains("简明扼要"));
     }
 }
