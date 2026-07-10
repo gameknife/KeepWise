@@ -9,6 +9,7 @@ import {
   queryAccountNotes,
   queryAnalysisExportSnapshot,
   runAnalysisExportLocalCli,
+  runAnalysisExportOpenAiCompatible,
   upsertAccountNote,
   writeAnalysisExportFile,
   type AccountNote,
@@ -26,6 +27,7 @@ import {
   type AnalysisExportOptions,
   type AnalysisExportProfile,
 } from "./buildMarkdown";
+import { type AppSettings } from "../../types/app";
 
 const EXPORT_PROFILE_STORAGE_KEY = "keepwise.desktop.export-profile.v1";
 const EXPORT_LOCAL_ANALYSIS_STORAGE_KEY = "keepwise.desktop.export-local-analysis.v1";
@@ -37,6 +39,8 @@ type AnalysisExportSectionProps = {
   currentYearText: string;
   defaultHideAmounts: boolean;
   fireWithdrawalRate: string;
+  appSettings: AppSettings;
+  allowLocalCli: boolean;
 };
 
 type StoredExportState = {
@@ -66,6 +70,10 @@ type StoredCodexAnalysis = {
   content: string;
   analyzedAt: string;
   markdownPath?: string;
+  providerKind?: "api" | "local_cli";
+  providerLabel?: string;
+  endpoint?: string;
+  model?: string;
   cliKey?: string;
   cliLabel?: string;
   cliPath?: string;
@@ -154,6 +162,11 @@ function parseStoredCodexAnalysis(): StoredCodexAnalysis | null {
       content: parsed.content,
       analyzedAt: typeof parsed.analyzedAt === "string" ? parsed.analyzedAt : new Date().toISOString(),
       markdownPath: typeof parsed.markdownPath === "string" ? parsed.markdownPath : undefined,
+      providerKind:
+        parsed.providerKind === "api" || parsed.providerKind === "local_cli" ? parsed.providerKind : undefined,
+      providerLabel: typeof parsed.providerLabel === "string" ? parsed.providerLabel : undefined,
+      endpoint: typeof parsed.endpoint === "string" ? parsed.endpoint : undefined,
+      model: typeof parsed.model === "string" ? parsed.model : undefined,
       cliKey: typeof parsed.cliKey === "string" ? parsed.cliKey : undefined,
       cliLabel: typeof parsed.cliLabel === "string" ? parsed.cliLabel : undefined,
       cliPath: typeof parsed.cliPath === "string" ? parsed.cliPath : undefined,
@@ -420,6 +433,8 @@ export function AnalysisExportSection({
   currentYearText,
   defaultHideAmounts,
   fireWithdrawalRate,
+  appSettings,
+  allowLocalCli,
 }: AnalysisExportSectionProps) {
   const stored = useMemo(() => parseStoredExportState(defaultHideAmounts), [defaultHideAmounts]);
   const [profile, setProfile] = useState<AnalysisExportProfile>(stored.profile);
@@ -443,14 +458,21 @@ export function AnalysisExportSection({
   const [codexBusy, setCodexBusy] = useState(false);
   const [codexResult, setCodexResult] = useState<LoosePayload | null>(null);
   const [latestRunAnalyzedAt, setLatestRunAnalyzedAt] = useState("");
+  const [runningAnalysisKind, setRunningAnalysisKind] = useState<"api" | "local_cli" | null>(null);
   const [codexProgress, setCodexProgress] = useState<CodexProgressEvent | null>(null);
   const [codexProgressLog, setCodexProgressLog] = useState<CodexProgressEvent[]>([]);
   const [storedCodexAnalysis, setStoredCodexAnalysis] = useState<StoredCodexAnalysis | null>(() => parseStoredCodexAnalysis());
   const [storedAnalysisExpanded, setStoredAnalysisExpanded] = useState(true);
   const codexRunIdRef = useRef("");
   const selectedCli = availableCliRows.find((item) => item.cli_key === selectedCliKey) ?? availableCliRows[0] ?? null;
+  const localCliEnabled = allowLocalCli && appSettings.aiLocalCliEnabled;
+  const apiEndpoint = appSettings.aiApiEndpoint.trim();
+  const apiKey = appSettings.aiApiKey.trim();
+  const apiModel = appSettings.aiModel.trim();
+  const apiConfigured = Boolean(apiEndpoint && apiKey && apiModel);
 
   const loadAvailableCliRows = async () => {
+    if (!localCliEnabled) return;
     setCliScanBusy(true);
     setCliScanError("");
     try {
@@ -526,12 +548,24 @@ export function AnalysisExportSection({
 
   useDebouncedAutoRun(
     async () => {
-      if (!isActive || cliScanBusy || cliScanAttempted) return;
+      if (!isActive || !localCliEnabled || cliScanBusy || cliScanAttempted) return;
       await loadAvailableCliRows();
     },
-    [isActive, cliScanBusy, cliScanAttempted],
-    { enabled: isActive && !cliScanAttempted, delayMs: 120 },
+    [isActive, localCliEnabled, cliScanBusy, cliScanAttempted],
+    { enabled: isActive && localCliEnabled && !cliScanAttempted, delayMs: 120 },
   );
+
+  useEffect(() => {
+    if (localCliEnabled) {
+      setCliScanAttempted(false);
+      return;
+    }
+    setAvailableCliRows([]);
+    setCliScanBusy(false);
+    setCliScanAttempted(false);
+    setCliScanError("");
+    setSelectedCliKey("");
+  }, [localCliEnabled]);
 
   useDebouncedAutoRun(
     async () => {
@@ -666,13 +700,70 @@ export function AnalysisExportSection({
     }
   };
 
-  const handleRunCodex = async () => {
-    if (!markdown || codexBusy || !selectedCli) return;
+  const handleRunApiAnalysis = async () => {
+    if (!markdown || codexBusy) return;
+    if (!apiConfigured) {
+      setActionError("请先在设置 > AI 中填写 API endpoint、API key 和模型名称。");
+      return;
+    }
+    const runId = `openai-compatible-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    codexRunIdRef.current = runId;
+    setActionError("");
+    setActionStatus("");
+    setCodexBusy(true);
+    setRunningAnalysisKind("api");
+    setCodexResult(null);
+    setLatestRunAnalyzedAt("");
+    setCodexProgress(null);
+    setCodexProgressLog([]);
+    try {
+      const result = await runAnalysisExportOpenAiCompatible({
+        endpoint: apiEndpoint,
+        api_key: apiKey,
+        model: apiModel,
+        content: markdown,
+        analysis_prompt: profile.analysisAsk,
+        timeout_seconds: 180,
+        run_id: runId,
+      });
+      setCodexResult(result);
+      const analyzedAt = new Date().toISOString();
+      setLatestRunAnalyzedAt(analyzedAt);
+      const success = readBool(result, "success");
+      const outputPath = readString(result, "markdown_path");
+      const content = readString(result, "content") ?? "";
+      if (success && content.trim()) {
+        const nextAnalysis = {
+          content,
+          analyzedAt,
+          markdownPath: outputPath,
+          providerKind: "api" as const,
+          providerLabel: readString(result, "provider_label") ?? "OpenAI 兼容 API",
+          endpoint: readString(result, "endpoint") ?? apiEndpoint,
+          model: readString(result, "model") ?? apiModel,
+        };
+        setStoredCodexAnalysis(nextAnalysis);
+        if (typeof window !== "undefined") {
+          window.localStorage.setItem(EXPORT_LOCAL_ANALYSIS_STORAGE_KEY, JSON.stringify(nextAnalysis));
+        }
+      }
+      setActionStatus(success ? `AI API 分析完成：${outputPath ?? ""}` : "AI API 分析未成功，请查看返回结果。");
+    } catch (err) {
+      setActionError(`AI API 分析失败：${toErrorMessage(err)}`);
+    } finally {
+      setCodexBusy(false);
+      setRunningAnalysisKind(null);
+    }
+  };
+
+  const handleRunLocalCliAnalysis = async () => {
+    if (!markdown || codexBusy || !selectedCli || !localCliEnabled) return;
     const runId = `${selectedCli.cli_key}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     codexRunIdRef.current = runId;
     setActionError("");
     setActionStatus("");
     setCodexBusy(true);
+    setRunningAnalysisKind("local_cli");
     setCodexResult(null);
     setLatestRunAnalyzedAt("");
     setCodexProgress({
@@ -704,6 +795,8 @@ export function AnalysisExportSection({
           content: stdout,
           analyzedAt,
           markdownPath: outputPath,
+          providerKind: "local_cli" as const,
+          providerLabel: readString(result, "provider_label") ?? selectedCli.label,
           cliKey: readString(result, "cli_key") ?? selectedCli.cli_key,
           cliLabel: readString(result, "cli_label") ?? selectedCli.label,
           cliPath: readString(result, "cli_path") ?? selectedCli.path,
@@ -718,21 +811,25 @@ export function AnalysisExportSection({
       setActionError(`${selectedCli.label} 分析失败：${toErrorMessage(err)}`);
     } finally {
       setCodexBusy(false);
+      setRunningAnalysisKind(null);
       setCodexProgress(null);
       setCodexProgressLog([]);
     }
   };
 
   const codexStderr = readString(codexResult, "stderr") ?? "";
-  const codexStdout = readString(codexResult, "stdout") ?? "";
+  const codexStdout = readString(codexResult, "stdout") ?? readString(codexResult, "content") ?? "";
   const codexSuccess = readBool(codexResult, "success");
   const codexElapsedMs = codexProgress?.elapsed_ms ?? 0;
   const codexTimeoutMs = (codexProgress?.timeout_seconds ?? 900) * 1000;
   const codexRemainingMs = Math.max(0, codexTimeoutMs - codexElapsedMs);
   const codexProgressPct = Math.max(4, Math.min(100, (codexElapsedMs / codexTimeoutMs) * 100));
   const codexLatestOutput = codexProgress?.stdout_tail || codexProgress?.stderr_tail || "";
-  const storedAnalysisCliLabel = storedCodexAnalysis?.cliLabel ?? "";
-  const latestRunCliLabel = readString(codexResult, "cli_label") ?? "";
+  const storedAnalysisProviderLabel =
+    storedCodexAnalysis?.providerLabel ?? storedCodexAnalysis?.cliLabel ?? "";
+  const latestRunProviderLabel =
+    readString(codexResult, "provider_label") ?? readString(codexResult, "cli_label") ?? "";
+  const latestRunModel = readString(codexResult, "model") ?? "";
   const renderedAnalysisContent = codexStdout.trim();
   const shouldShowRunResult = Boolean(codexResult && (!storedCodexAnalysis || !codexSuccess));
 
@@ -754,7 +851,8 @@ export function AnalysisExportSection({
           {storedAnalysisExpanded ? (
             <>
               <div className="analysis-export-codex-meta">
-                {storedAnalysisCliLabel ? <span>工具：{storedAnalysisCliLabel}</span> : null}
+                {storedAnalysisProviderLabel ? <span>方式：{storedAnalysisProviderLabel}</span> : null}
+                {storedCodexAnalysis.model ? <span>模型：{storedCodexAnalysis.model}</span> : null}
                 <span>分析日期：{formatAnalysisDate(storedCodexAnalysis.analyzedAt)}</span>
               </div>
               <MarkdownReport content={storedCodexAnalysis.content} hideAmounts={defaultHideAmounts} />
@@ -767,43 +865,56 @@ export function AnalysisExportSection({
         <div className="panel-header analysis-export-preview-header">
           <div>
             <h2>智能分析预览</h2>
-            <p>生成结果为只读渲染视图；请通过下方“辅助信息”和本页选项调整内容后重新生成，再选择本地 CLI 开始分析。</p>
+            <p>生成结果为只读渲染视图；请通过下方“辅助信息”和本页选项调整内容后重新生成，再调用 AI API 分析。桌面版也可在设置 &gt; AI 中手动开启本地 CLI 备用模式。</p>
           </div>
           <button type="button" className="primary-btn" onClick={() => void handleGenerate()} disabled={snapshotQuery.busy}>
             {snapshotQuery.busy ? "生成中..." : "生成预览"}
           </button>
         </div>
         {snapshotQuery.error ? <div className="inline-error" role="alert">{snapshotQuery.error}</div> : null}
-        {cliScanError ? <div className="inline-error" role="alert">{cliScanError}</div> : null}
+        {localCliEnabled && cliScanError ? <div className="inline-error" role="alert">{cliScanError}</div> : null}
         {actionError ? <div className="inline-error" role="alert">{actionError}</div> : null}
         {actionStatus ? <div className="inline-success">{actionStatus}</div> : null}
-        <div className="analysis-export-cli-toolbar">
-          <label className="field">
-            <span>分析 CLI</span>
-            <select
-              value={selectedCli?.cli_key ?? ""}
-              onChange={(e) => setSelectedCliKey(e.target.value)}
-              disabled={cliScanBusy || availableCliRows.length === 0}
-            >
-              {availableCliRows.length === 0 ? (
-                <option value="">未发现可用 CLI</option>
-              ) : (
-                availableCliRows.map((item) => (
-                  <option key={item.cli_key} value={item.cli_key}>
-                    {item.label}
-                  </option>
-                ))
-              )}
-            </select>
-          </label>
-          <button type="button" className="secondary-btn" onClick={() => void loadAvailableCliRows()} disabled={cliScanBusy}>
-            {cliScanBusy ? "扫描中..." : "重新扫描 CLI"}
-          </button>
+        <div className="analysis-export-cli-meta">
+          {apiConfigured ? (
+            <>默认方式：OpenAI 兼容 API · {apiModel} · {apiEndpoint}</>
+          ) : (
+            <>默认方式：OpenAI 兼容 API。请先在设置 &gt; AI 中填写 API endpoint、API key 和模型名称。</>
+          )}
         </div>
-        {selectedCli ? (
-          <div className="analysis-export-cli-meta">
-            当前工具：{selectedCli.label} · {selectedCli.path}
-          </div>
+        {localCliEnabled ? (
+          <>
+            <div className="analysis-export-cli-toolbar">
+              <label className="field">
+                <span>本地 CLI</span>
+                <select
+                  value={selectedCli?.cli_key ?? ""}
+                  onChange={(e) => setSelectedCliKey(e.target.value)}
+                  disabled={cliScanBusy || availableCliRows.length === 0}
+                >
+                  {availableCliRows.length === 0 ? (
+                    <option value="">未发现可用 CLI</option>
+                  ) : (
+                    availableCliRows.map((item) => (
+                      <option key={item.cli_key} value={item.cli_key}>
+                        {item.label}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </label>
+              <button type="button" className="secondary-btn" onClick={() => void loadAvailableCliRows()} disabled={cliScanBusy}>
+                {cliScanBusy ? "扫描中..." : "重新扫描 CLI"}
+              </button>
+            </div>
+            {selectedCli ? (
+              <div className="analysis-export-cli-meta">
+                本地备用：{selectedCli.label} · {selectedCli.path}
+              </div>
+            ) : null}
+          </>
+        ) : allowLocalCli ? (
+          <div className="analysis-export-cli-meta">本地 CLI 备用模式默认关闭，可在设置 &gt; AI 中手动开启。</div>
         ) : null}
         <div className="analysis-export-markdown-preview" aria-label="Markdown 渲染预览">
           {markdown ? (
@@ -822,13 +933,25 @@ export function AnalysisExportSection({
           <button
             type="button"
             className="secondary-btn"
-            onClick={() => void handleRunCodex()}
-            disabled={!markdown || codexBusy || !selectedCli}
+            onClick={() => void handleRunApiAnalysis()}
+            disabled={!markdown || codexBusy || !apiConfigured}
           >
-            {codexBusy ? `${codexProgress?.cli_label ?? selectedCli?.label ?? "本地 CLI"} 分析中...` : `用 ${selectedCli?.label ?? "本地 CLI"} 分析`}
+            {codexBusy && runningAnalysisKind === "api" ? "AI API 分析中..." : "用 AI API 分析"}
           </button>
+          {localCliEnabled ? (
+            <button
+              type="button"
+              className="secondary-btn"
+              onClick={() => void handleRunLocalCliAnalysis()}
+              disabled={!markdown || codexBusy || !selectedCli}
+            >
+              {codexBusy && runningAnalysisKind === "local_cli"
+                ? `${codexProgress?.cli_label ?? selectedCli?.label ?? "本地 CLI"} 分析中...`
+                : `用 ${selectedCli?.label ?? "本地 CLI"} 本地分析`}
+            </button>
+          ) : null}
         </div>
-        {codexBusy && codexProgress ? (
+        {codexBusy && runningAnalysisKind === "local_cli" && codexProgress ? (
           <div className="analysis-export-codex-status">
             <div className="analysis-export-codex-status-head">
               <div>
@@ -865,13 +988,14 @@ export function AnalysisExportSection({
         {shouldShowRunResult ? (
           <div className="analysis-export-codex-result">
             <div className="analysis-export-codex-meta">
-              {latestRunCliLabel ? <span>工具：{latestRunCliLabel}</span> : null}
+              {latestRunProviderLabel ? <span>方式：{latestRunProviderLabel}</span> : null}
+              {latestRunModel ? <span>模型：{latestRunModel}</span> : null}
               {latestRunAnalyzedAt ? <span>分析日期：{formatAnalysisDate(latestRunAnalyzedAt)}</span> : null}
             </div>
             {renderedAnalysisContent ? (
               <MarkdownReport content={renderedAnalysisContent} hideAmounts={defaultHideAmounts} />
             ) : (
-              <div className="analysis-export-empty-preview">本次 CLI 没有返回 stdout 内容。</div>
+              <div className="analysis-export-empty-preview">本次分析没有返回可展示的文本内容。</div>
             )}
             {codexStderr ? <pre className="analysis-export-codex-stderr">{codexStderr}</pre> : null}
           </div>

@@ -19,6 +19,7 @@ export function AppSettingsModal(props: AppSettingsModalProps) {
     setSettingsOpen,
     appSettings,
     setAppSettings,
+    isDesktopApp,
     syncStatus,
     handleManualSyncNow,
     syncSetupBusy,
@@ -33,7 +34,7 @@ export function AppSettingsModal(props: AppSettingsModalProps) {
     handleSyncSetupLink,
     handleSyncShareCodeRefresh,
   } = props as Record<string, any>;
-  const [activeCategory, setActiveCategory] = useState<"display" | "data" | "fire" | "sync">("display");
+  const [activeCategory, setActiveCategory] = useState<"display" | "data" | "fire" | "ai" | "sync">("display");
   const [syncShareQrDataUrl, setSyncShareQrDataUrl] = useState("");
 
   useEffect(() => {
@@ -111,6 +112,14 @@ export function AppSettingsModal(props: AppSettingsModalProps) {
                   >
                     <span className="settings-nav-item-title">数据</span>
                     <span className="settings-nav-item-subtitle">行情源与外部数据</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`settings-nav-item ${activeCategory === "ai" ? "active" : ""}`}
+                    onClick={() => setActiveCategory("ai")}
+                  >
+                    <span className="settings-nav-item-title">AI</span>
+                    <span className="settings-nav-item-subtitle">API 与本地 CLI</span>
                   </button>
                   <button
                     type="button"
@@ -320,6 +329,90 @@ export function AppSettingsModal(props: AppSettingsModalProps) {
                             </button>
                           </div>
                         </div>
+                      </div>
+                    </>
+                  ) : activeCategory === "ai" ? (
+                    <>
+                      <div className="settings-group-head">
+                        <h4>AI</h4>
+                        <p>配置智能分析默认使用的 OpenAI 兼容 API，并管理本地 CLI 备用模式。</p>
+                      </div>
+
+                      <div className="settings-item-card">
+                        <div className="settings-item-card-head">
+                          <h5>OpenAI 兼容 API</h5>
+                          <p>智能分析会默认调用这里配置的接口。支持填写 `/v1` 基础地址，也支持直接填写完整接口 URL。</p>
+                        </div>
+                        <div className="settings-item-grid">
+                          <label className="field">
+                            <span>API Endpoint</span>
+                            <input
+                              type="text"
+                              value={appSettings.aiApiEndpoint}
+                              placeholder="https://api.openai.com/v1"
+                              onChange={(e: LooseUiEvent) =>
+                                setAppSettings((prev: Record<string, any>) => ({ ...prev, aiApiEndpoint: e.target.value ?? "" }))
+                              }
+                            />
+                          </label>
+                          <label className="field">
+                            <span>API Key</span>
+                            <input
+                              type="password"
+                              value={appSettings.aiApiKey}
+                              placeholder="sk-..."
+                              autoComplete="off"
+                              onChange={(e: LooseUiEvent) =>
+                                setAppSettings((prev: Record<string, any>) => ({ ...prev, aiApiKey: e.target.value ?? "" }))
+                              }
+                            />
+                          </label>
+                          <label className="field">
+                            <span>模型名称</span>
+                            <input
+                              type="text"
+                              value={appSettings.aiModel}
+                              placeholder="gpt-4.1-mini"
+                              onChange={(e: LooseUiEvent) =>
+                                setAppSettings((prev: Record<string, any>) => ({ ...prev, aiModel: e.target.value ?? "" }))
+                              }
+                            />
+                          </label>
+                        </div>
+                        <p className="inline-hint">多数 OpenAI 兼容服务除了 endpoint 和 key 外，还需要显式提供模型名称。</p>
+                      </div>
+
+                      <div className="settings-item-card">
+                        <div className="settings-item-card-head">
+                          <h5>本地 CLI 分析</h5>
+                          <p>默认关闭。仅桌面版支持在本机调用 Codex / Copilot / Claude CLI 做离线式补充分析。</p>
+                        </div>
+                        {isDesktopApp ? (
+                          <div className="settings-item-grid">
+                            <div className="settings-segmented" role="group" aria-label="本地 CLI 分析">
+                              <button
+                                type="button"
+                                className={`settings-segmented-btn ${!appSettings.aiLocalCliEnabled ? "active" : ""}`}
+                                onClick={() =>
+                                  setAppSettings((prev: Record<string, any>) => ({ ...prev, aiLocalCliEnabled: false }))
+                                }
+                              >
+                                保持关闭
+                              </button>
+                              <button
+                                type="button"
+                                className={`settings-segmented-btn ${appSettings.aiLocalCliEnabled ? "active" : ""}`}
+                                onClick={() =>
+                                  setAppSettings((prev: Record<string, any>) => ({ ...prev, aiLocalCliEnabled: true }))
+                                }
+                              >
+                                手动开启
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="inline-hint">当前环境不是桌面版，因此不提供本地 CLI 分析开关。</p>
+                        )}
                       </div>
                     </>
                   ) : (

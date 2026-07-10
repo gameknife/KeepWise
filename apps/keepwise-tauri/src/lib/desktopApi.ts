@@ -221,6 +221,16 @@ export type AnalysisExportRunLocalCliRequest = {
   run_id?: string;
 };
 
+export type AnalysisExportRunOpenAiCompatibleRequest = {
+  endpoint: string;
+  api_key: string;
+  model: string;
+  content: string;
+  analysis_prompt?: string;
+  timeout_seconds?: number;
+  run_id?: string;
+};
+
 export type AnalysisExportRunCodexRequest = Omit<AnalysisExportRunLocalCliRequest, "cli_key">;
 
 export type MonthlyBudgetItemUpsertRequest = {
@@ -254,6 +264,7 @@ export type AccountNoteMutationPayload = LoosePayload;
 export type AnalysisExportWriteFilePayload = LoosePayload;
 export type AnalysisExportListLocalClisPayload = LoosePayload;
 export type AnalysisExportRunLocalCliPayload = LoosePayload;
+export type AnalysisExportRunOpenAiCompatiblePayload = LoosePayload;
 export type AnalysisExportRunCodexPayload = LoosePayload;
 export type MetaAccountsPayload = LoosePayload;
 export type QueryTransactionsPayload = LoosePayload;
@@ -772,6 +783,12 @@ export async function runAnalysisExportLocalCli(
   req: AnalysisExportRunLocalCliRequest,
 ): Promise<AnalysisExportRunLocalCliPayload> {
   return invoke<AnalysisExportRunLocalCliPayload>("analysis_export_run_local_cli", { req });
+}
+
+export async function runAnalysisExportOpenAiCompatible(
+  req: AnalysisExportRunOpenAiCompatibleRequest,
+): Promise<AnalysisExportRunOpenAiCompatiblePayload> {
+  return invoke<AnalysisExportRunOpenAiCompatiblePayload>("analysis_export_run_openai_compatible", { req });
 }
 
 export async function runAnalysisExportCodex(

@@ -75,6 +75,7 @@ pub fn run() {
             analysis_export::analysis_export_write_file,
             analysis_export::analysis_export_list_local_clis,
             analysis_export::analysis_export_run_local_cli,
+            analysis_export::analysis_export_run_openai_compatible,
             analysis_export::analysis_export_run_codex,
             record_mutations::upsert_manual_investment,
             record_mutations::update_investment_record,

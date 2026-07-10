@@ -11,6 +11,10 @@ export type AppSettings = {
   fireWithdrawalRate: FireWithdrawalRate;
   consumptionExcludeNeedsReviewByDefault: boolean;
   benchmarkMarketDataSource: BenchmarkMarketDataSource;
+  aiApiEndpoint: string;
+  aiApiKey: string;
+  aiModel: string;
+  aiLocalCliEnabled: boolean;
 };
 
 export type SmokeStatus = "idle" | "pass" | "fail";

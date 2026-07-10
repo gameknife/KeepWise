@@ -2434,6 +2434,8 @@ function App() {
   const isLandscapeViewport = viewportSize.width > 0 && viewportSize.width > viewportSize.height;
   const forceDesktopLayout = !isForcedMobilePreview && isNativeMobileUA && isLandscapeViewport;
   const isMobileMode = isForcedMobilePreview || (isNativeMobileUA && !forceDesktopLayout);
+  const isDesktopApp =
+    probe != null ? probe.metadata.target_os !== "android" && probe.metadata.target_os !== "ios" : !isNativeMobileUA;
   const [activeTab, setActiveTab] = useState<ProductTabKey>("wealth-overview");
   const [mobileView, setMobileView] = useState<MobileView>("home");
   const mobileSceneViewRef = useRef<MobileView>("home");
@@ -2450,6 +2452,10 @@ function App() {
         fireWithdrawalRate: "0.03",
         consumptionExcludeNeedsReviewByDefault: true,
         benchmarkMarketDataSource: "eastmoney",
+        aiApiEndpoint: "https://api.openai.com/v1",
+        aiApiKey: "",
+        aiModel: "gpt-4.1-mini",
+        aiLocalCliEnabled: false,
       };
     }
     return parseStoredAppSettings(window.localStorage.getItem(APP_SETTINGS_STORAGE_KEY));
@@ -3038,6 +3044,7 @@ function App() {
           setSettingsOpen={setSettingsOpen}
           appSettings={appSettings}
           setAppSettings={setAppSettings}
+          isDesktopApp={isDesktopApp}
           syncStatus={syncRuntimeStatus}
           handleManualSyncNow={handleManualSyncNow}
           syncSetupBusy={syncSetupBusy}
@@ -3504,6 +3511,8 @@ function App() {
         currentYearText={currentYearText}
         defaultHideAmounts={amountPrivacyMasked}
         fireWithdrawalRate={appSettings.fireWithdrawalRate}
+        appSettings={appSettings}
+        allowLocalCli={isDesktopApp}
       />
 
       <WealthOverviewSection

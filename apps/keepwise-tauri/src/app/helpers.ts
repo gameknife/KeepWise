@@ -23,6 +23,10 @@ export function parseStoredAppSettings(raw: string | null): AppSettings {
     fireWithdrawalRate: "0.03",
     consumptionExcludeNeedsReviewByDefault: true,
     benchmarkMarketDataSource: "eastmoney",
+    aiApiEndpoint: "https://api.openai.com/v1",
+    aiApiKey: "",
+    aiModel: "gpt-4.1-mini",
+    aiLocalCliEnabled: false,
   };
   if (!raw) return fallback;
   try {
@@ -46,6 +50,10 @@ export function parseStoredAppSettings(raw: string | null): AppSettings {
       fireWithdrawalRate,
       consumptionExcludeNeedsReviewByDefault: parsed.consumptionExcludeNeedsReviewByDefault !== false,
       benchmarkMarketDataSource,
+      aiApiEndpoint: typeof parsed.aiApiEndpoint === "string" ? parsed.aiApiEndpoint : fallback.aiApiEndpoint,
+      aiApiKey: typeof parsed.aiApiKey === "string" ? parsed.aiApiKey : fallback.aiApiKey,
+      aiModel: typeof parsed.aiModel === "string" ? parsed.aiModel : fallback.aiModel,
+      aiLocalCliEnabled: parsed.aiLocalCliEnabled === true,
     };
   } catch {
     return fallback;
