@@ -11,25 +11,27 @@ apps/keepwise-tauri/          # Main (only) application
   src/App.tsx                 # Thin default export forwarding to ./app/App
   src/app/App.tsx             # Main product shell and feature assembly
   src/app/{helpers,summaries,requestBuilders,amountFormatting}.ts
+  src/api/desktop/            # Domain IPC clients, contracts, and sole invoke entry
   src/features/<domain>/      # Feature sections, previews, modals, layout
   src/hooks/                  # Shared React hooks
   src/types/app.ts            # Shared frontend app types
   src/utils/value.ts          # Safe value helpers for loose payload edges
-  src/lib/desktopApi.ts       # Typed Tauri invoke wrappers
-  src-tauri/src/              # Rust backend (flat module-per-domain)
+  src/styles/                 # Ordered modular CSS layers
+  src-tauri/src/              # Rust backend (domain modules plus smaller flat domains)
     lib.rs                    # Module declarations + pub use re-exports
     commands.rs               # Health ping, app metadata, paths
     ledger_db.rs              # SQLite migration & DB path resolution
-    investment_analytics.rs   # Investment return/curve queries
-    wealth_analytics.rs       # Wealth overview/curve queries
-    budget_fire_analytics.rs  # Budget, income, consumption, FIRE
+    investment/               # Returns, curves, benchmark, repository, commands
+    wealth/                   # Overview, curve, commands
+    budget/                   # Budget, income, consumption, FIRE
+    imports/{yzxy,cmb_eml,cmb_pdf}/
+    sync/                     # Config, crypto, S3, snapshot, merge, reconcile
+    analysis_export/          # Snapshot, file, CLI, OpenAI-compatible pipeline
+    error.rs                  # Internal AppError/AppResult pilot
     rules_management.rs       # CSV-based rule CRUD
-    cmb_eml_import.rs         # CMB credit card EML import
-    cmb_bank_pdf_import.rs    # CMB bank statement PDF import
-    yzxy_import.rs            # YZXY CSV/XLSX import
     bin/kw_migration_adapter.rs  # CLI adapter for diff regression
   scripts/                    # Tauri build/validation shell scripts
-db/migrations/                # SQLite migration SQL files (0001-0006)
+db/migrations/                # SQLite migration SQL files (0001-0007)
 docs/engineering/             # Architecture & runbook docs
 ```
 
@@ -48,7 +50,7 @@ npm run tauri:build:mac        # macOS app + dmg only
 ## Test Commands
 
 ```bash
-# All Rust unit tests (14 tests across 5 files)
+# All Rust unit tests (52 discovered: 51 active + 1 ignored)
 npm run test:rust
 # Equivalent: cargo test --manifest-path src-tauri/Cargo.toml
 
@@ -65,6 +67,10 @@ npm run test:rust:regression
 
 # Core analytics baseline regression (25 cases + 2 cross-checks)
 npm run test:diff:core
+
+# Frontend unit/controller tests and architecture boundaries
+npm run test:frontend
+npm run test:boundaries
 
 # Full release gate (regression + diff + frontend build + cargo check)
 npm run desktop:release:check
@@ -89,7 +95,7 @@ GitHub Actions at `.github/workflows/`:
 1. React core: `import { useState, useEffect } from "react"`
 2. Third-party: `react-datepicker`, `d3-sankey`, `@tauri-apps/*`
 3. CSS/assets: `"./App.css"`, SVG imports
-4. Local modules: `"./lib/desktopApi"` with inline `type` keyword for type imports
+4. Local modules: `"./api/desktop"` with inline `type` keyword for type imports
 
 ### Naming
 - Components: **PascalCase** function declarations - `function LineAreaChart(...)`
@@ -101,7 +107,7 @@ GitHub Actions at `.github/workflows/`:
 ### Types
 - Always use `type`, never `interface`
 - Inline object types for component props (no separate `Props` type)
-- Some API response types are still aliased to `unknown` (loose response, strict request)
+- Dynamic aggregate subtrees use localized `unknown`; public feature props are precise
 - Union literals for state: `type LoadStatus = "idle" | "loading" | "ready" | "error"`
 
 ### Exports
@@ -115,7 +121,7 @@ catch (err) {
 }
 ```
 - `RootErrorBoundary` class component in `main.tsx` for unhandled errors
-- `desktopApi.ts` functions propagate Rust errors as rejected Promises (no try/catch in API layer)
+- Domain clients under `api/desktop` propagate Rust errors as rejected Promises
 
 ### UI Strings & Comments
 - All user-facing strings are in **Chinese**
@@ -123,15 +129,15 @@ catch (err) {
 - No JSDoc/TSDoc
 
 ### Architecture Notes
-- Frontend shell lives in `src/app/App.tsx`; feature panels/previews/modals are split under `src/features/`
-- State management: raw `useState` only (no Redux/Zustand)
-- CSS: single `App.css` with BEM-like classes (`preview-stat-label`, `line-area-chart-wrap`)
+- Frontend shell lives in `src/app/App.tsx`; major domains own controller hooks under `src/features/`
+- State management: React hooks/domain controllers only (no Redux/Zustand)
+- CSS: ordered layers under `src/styles/`, composed by `styles/index.css`
 - Conditional rendering: ternary `{cond ? <X /> : null}` (not `&&` short-circuit)
 
 ## Rust Code Style
 
 ### Module Organization
-- Flat structure: one file per domain, all declared as `mod` in `lib.rs`
+- Large domains use responsibility-based module directories; smaller domains stay flat
 - Public API: `#[tauri::command] pub fn foo(app, req) -> Result<Value, String>`
 - Testable internals: `*_at_db_path` variants that accept a DB path directly
 - Re-exports in `lib.rs` via `pub use` for external consumption
@@ -143,7 +149,7 @@ catch (err) {
 - Tauri commands: snake_case matching JS invoke name
 
 ### Error Handling
-- Universal return type: `Result<Value, String>` (no custom error types, no `thiserror`)
+- Command boundaries retain compatible `Result<_, String>`; internal `AppError/AppResult` is piloted in the system domain
 - Error conversion: `.map_err(|e| format!("描述: {e}"))`
 - Error messages are in **Chinese**: `"打开数据库失败"`, `"account_id 必填"`
 - Early returns with `?` operator; `let Some(x) = y else { return Err(...) };`
@@ -160,7 +166,7 @@ catch (err) {
 
 ### Test Patterns
 - Inline `#[cfg(test)] mod tests` in each source file
-- Each test module duplicates helpers: `create_temp_test_db()`, `apply_all_migrations_for_test()`, `repo_root()`, `approx_eq()`
+- DB tests reuse helpers from `test_support.rs`
 - Tests create temp SQLite DBs with `uuid::Uuid` filenames
 - Idempotency testing: import data twice, verify no duplicates
 - ID stability: deterministic transaction IDs across repeated parses

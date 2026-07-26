@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import DatePicker from "react-datepicker";
-import { type AccountCatalogPayload, type PathProbe } from "../../lib/desktopApi";
+import { type AccountCatalogPayload, type PathProbe } from "../../api/desktop";
 import { isRecord, readArray } from "../../utils/value";
 
 export type BoolFieldProps = {

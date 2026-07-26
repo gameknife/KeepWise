@@ -6,10 +6,14 @@ import {
   summarizeYzxyImportPayload,
   summarizeYzxyPreviewPayload,
 } from "../../app/summaries";
+import { type ReactNode } from "react";
+import { type ImportJobRow } from "../../api/desktop";
+import { BasePreviewStat } from "../shared/UiPrimitives";
+import { type ImportSource, useImportCenterController } from "./useImportCenterController";
 
-function formatImportJobRange(row: Record<string, any>) {
-  const from = typeof row?.data_date_from === "string" ? row.data_date_from : "";
-  const to = typeof row?.data_date_to === "string" ? row.data_date_to : "";
+function formatImportJobRange(row: ImportJobRow) {
+  const from = row.data_date_from ?? "";
+  const to = row.data_date_to ?? "";
   if (!from && !to) return "-";
   if (from && to) return from === to ? from : `${from} ~ ${to}`;
   return from || to;
@@ -22,7 +26,24 @@ function mapImportJobStatusTone(status: string) {
   return "idle";
 }
 
-function resolveImportFlowState(args: Record<string, any>) {
+type ImportFlowStatus = {
+  tone: "idle" | "loading" | "error" | "ready";
+  label: string;
+  detail: string;
+};
+
+function resolveImportFlowState(args: {
+  path: string;
+  previewBusy: boolean;
+  importBusy: boolean;
+  previewError: string;
+  importError: string;
+  previewResult: Record<string, unknown> | null;
+  importResult: Record<string, unknown> | null;
+  summarizePreview: (payload: unknown) => string;
+  summarizeImport: (payload: unknown) => string;
+  emptyHint: string;
+}): ImportFlowStatus {
   const {
     path,
     previewBusy,
@@ -92,22 +113,31 @@ function resolveImportFlowState(args: Record<string, any>) {
   };
 }
 
-type ImportFlowCardProps = Record<string, unknown>;
+type ImportFlowCardProps = {
+  title: string;
+  description: string;
+  pathLabel: string;
+  pathValue: string;
+  onPathChange: (value: string) => void;
+  browseButtons: ReactNode;
+  actionLabel: string;
+  onRun: () => void | Promise<void>;
+  disabled: boolean;
+  status: ImportFlowStatus;
+};
 
-function ImportFlowCard(props: ImportFlowCardProps) {
-  const {
-    title,
-    description,
-    pathLabel,
-    pathValue,
-    onPathChange,
-    browseButtons,
-    actionLabel,
-    onRun,
-    disabled,
-    status,
-  } = props as Record<string, any>;
-
+function ImportFlowCard({
+  title,
+  description,
+  pathLabel,
+  pathValue,
+  onPathChange,
+  browseButtons,
+  actionLabel,
+  onRun,
+  disabled,
+  status,
+}: ImportFlowCardProps) {
   return (
     <section className="card panel">
       <div className="panel-header">
@@ -118,7 +148,7 @@ function ImportFlowCard(props: ImportFlowCardProps) {
       <div className="db-import-path-row">
         <label className="field db-import-path-field">
           <span>{pathLabel}</span>
-          <input value={pathValue} onChange={(e: { target: { value: string; checked?: boolean } }) => onPathChange(e.target.value)} />
+          <input value={pathValue} onChange={(e) => onPathChange(e.target.value)} />
         </label>
         {browseButtons}
       </div>
@@ -140,11 +170,16 @@ function ImportFlowCard(props: ImportFlowCardProps) {
   );
 }
 
-type ImportCenterSectionsProps = Record<string, unknown>;
-
-export function ImportCenterSections(props: ImportCenterSectionsProps) {
+export function ImportCenterSections({
+  active,
+  invalidationEpoch,
+  onImported,
+}: {
+  active: boolean;
+  invalidationEpoch: number;
+  onImported: (source: ImportSource) => void;
+}) {
   const {
-    isTab,
     handleImportJobsQuery,
     importJobsBusy,
     importJobsError,
@@ -181,11 +216,10 @@ export function ImportCenterSections(props: ImportCenterSectionsProps) {
     cmbPdfImportError,
     cmbPdfPreviewResult,
     cmbPdfImportResult,
-    PreviewStat,
-  } = props as Record<string, any>;
+  } = useImportCenterController({ active, invalidationEpoch, onImported });
 
-  const importJobRows = Array.isArray(importJobsResult?.rows) ? importJobsResult.rows : [];
-  const importJobsSummary = importJobsResult?.summary ?? {};
+  const importJobRows = importJobsResult?.rows ?? [];
+  const importJobsSummary = importJobsResult?.summary;
   const yzxyStatus = resolveImportFlowState({
     path: yzxyFilePath,
     previewBusy: yzxyPreviewBusy,
@@ -225,7 +259,7 @@ export function ImportCenterSections(props: ImportCenterSectionsProps) {
 
   return (
     <>
-      {isTab("import-center") ? (
+      {active ? (
         <ImportFlowCard
           title="有知有行导入"
           description="选择导出文件后，系统会自动先预检，再写入账本。"
@@ -249,7 +283,7 @@ export function ImportCenterSections(props: ImportCenterSectionsProps) {
         />
       ) : null}
 
-      {isTab("import-center") ? (
+      {active ? (
         <ImportFlowCard
           title="招行信用卡 EML 导入"
           description="支持单个 `.eml` 文件或账单目录，点击后自动完成预检和导入。"
@@ -283,7 +317,7 @@ export function ImportCenterSections(props: ImportCenterSectionsProps) {
         />
       ) : null}
 
-      {isTab("import-center") ? (
+      {active ? (
         <ImportFlowCard
           title="招行银行流水 PDF 导入"
           description="选择 PDF 后自动执行预检与导入，适合银行流水批量入账。"
@@ -307,7 +341,7 @@ export function ImportCenterSections(props: ImportCenterSectionsProps) {
         />
       ) : null}
 
-      {isTab("import-center") ? (
+      {active ? (
         <section className="card panel">
           <div className="panel-header">
             <h2>导入记录</h2>
@@ -329,10 +363,10 @@ export function ImportCenterSections(props: ImportCenterSectionsProps) {
           </div>
 
           <div className="preview-stat-grid">
-            <PreviewStat label="总记录数" value={typeof importJobsSummary.total_count === "number" ? importJobsSummary.total_count : 0} />
-            <PreviewStat label="成功" value={typeof importJobsSummary.success_count === "number" ? importJobsSummary.success_count : 0} tone="good" />
-            <PreviewStat label="失败" value={typeof importJobsSummary.failed_count === "number" ? importJobsSummary.failed_count : 0} tone={importJobsSummary.failed_count > 0 ? "warn" : "default"} />
-            <PreviewStat label="运行中" value={typeof importJobsSummary.running_count === "number" ? importJobsSummary.running_count : 0} />
+            <BasePreviewStat label="总记录数" value={importJobsSummary?.total_count ?? 0} />
+            <BasePreviewStat label="成功" value={importJobsSummary?.success_count ?? 0} tone="good" />
+            <BasePreviewStat label="失败" value={importJobsSummary?.failed_count ?? 0} tone={(importJobsSummary?.failed_count ?? 0) > 0 ? "warn" : "default"} />
+            <BasePreviewStat label="运行中" value={importJobsSummary?.running_count ?? 0} />
           </div>
 
           {importJobsError ? (
@@ -353,17 +387,17 @@ export function ImportCenterSections(props: ImportCenterSectionsProps) {
                   </tr>
                 </thead>
                 <tbody>
-                  {importJobRows.map((row: Record<string, any>, index: number) => {
-                    const status = typeof row?.status === "string" ? row.status : "unknown";
+                  {importJobRows.map((row, index) => {
+                    const status = row.status;
                     const statusTone = mapImportJobStatusTone(status);
-                    const sourceType = typeof row?.source_type === "string" ? row.source_type : "-";
-                    const rangeLabel = typeof row?.data_label === "string" ? row.data_label : "时间范围";
+                    const sourceType = row.source_type;
+                    const rangeLabel = row.data_label;
                     const rangeText = formatImportJobRange(row);
                     const totalCount = typeof row?.total_count === "number" ? row.total_count : 0;
                     const importedCount = typeof row?.imported_count === "number" ? row.imported_count : 0;
                     const errorCount = typeof row?.error_count === "number" ? row.error_count : 0;
                     return (
-                      <tr key={typeof row?.id === "string" ? row.id : `${sourceType}-${index}`}>
+                    <tr key={row.id || `${sourceType}-${index}`}>
                         <td>
                           <span className={`status-pill status-${statusTone}`}>{status.toUpperCase()}</span>
                         </td>

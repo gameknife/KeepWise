@@ -1075,3 +1075,38 @@ pub fn query_merchant_rule_suggestions(
         "rows": rows,
     }))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rule_validation_keeps_confidence_and_bool_contracts() {
+        assert_eq!(
+            parse_confidence_text(Some("0.95".into()), 0.8).unwrap(),
+            "0.95"
+        );
+        assert!(parse_confidence_text(Some("1.1".into()), 0.8).is_err());
+        assert!(parse_boolish(Some("true"), false).unwrap());
+        assert!(!parse_boolish(Some("0"), true).unwrap());
+        assert!(parse_boolish(Some("maybe"), false).is_err());
+    }
+
+    #[test]
+    fn category_rules_sort_by_priority_then_identity() {
+        let mut rows = vec![
+            BTreeMap::from([
+                ("priority".into(), "20".into()),
+                ("match_type".into(), "contains".into()),
+                ("pattern".into(), "b".into()),
+            ]),
+            BTreeMap::from([
+                ("priority".into(), "10".into()),
+                ("match_type".into(), "exact".into()),
+                ("pattern".into(), "a".into()),
+            ]),
+        ];
+        sort_category_rows(&mut rows);
+        assert_eq!(rows[0].get("priority").map(String::as_str), Some("10"));
+    }
+}

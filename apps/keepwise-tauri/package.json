@@ -11,6 +11,8 @@
     "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
     "test:rust:regression": "bash scripts/validate_tauri_desktop_rust_regression.sh",
     "test:diff:core": "bash scripts/validate_tauri_core_diff_regression.sh",
+    "test:boundaries": "bash scripts/validate_frontend_boundaries.sh",
+    "test:frontend": "vitest run",
     "tauri:dev": "tauri dev",
     "tauri:dev:mobile-preview": "VITE_FORCE_MOBILE=1 tauri dev --config src-tauri/tauri.mobile-preview.conf.json",
     "tauri:build": "tauri build",
@@ -41,11 +43,14 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
+    "@testing-library/react": "^16.3.2",
     "@types/d3-sankey": "^0.12.5",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",
+    "jsdom": "^29.1.1",
     "typescript": "~5.8.3",
-    "vite": "^7.0.4"
+    "vite": "^7.0.4",
+    "vitest": "^3.2.4"
   }
 }

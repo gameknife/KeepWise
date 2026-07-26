@@ -13,11 +13,14 @@ import {
   upsertAccountNote,
   writeAnalysisExportFile,
   type AccountNote,
+  type AccountCatalogPayload,
   type AnalysisExportLocalCli,
+  type AnalysisExportProgressPayload,
+  type AnalysisExportRunLocalCliPayload,
+  type AnalysisExportRunOpenAiCompatiblePayload,
   type AnalysisExportSnapshotPayload,
   type AnalysisExportSnapshotRequest,
-  type LoosePayload,
-} from "../../lib/desktopApi";
+} from "../../api/desktop";
 import { useAsyncQuery } from "../../hooks/useAsyncQuery";
 import { useDebouncedAutoRun } from "../../hooks/useDebouncedAutoRun";
 import { readArray, readBool, readNumber, readString } from "../../utils/value";
@@ -443,7 +446,7 @@ export function AnalysisExportSection({
   const [wealthCurvePreset, setWealthCurvePreset] = useState(stored.wealthCurvePreset);
   const [noteVisibleKind, setNoteVisibleKind] = useState(stored.noteVisibleKind);
   const [selectedCliKey, setSelectedCliKey] = useState(stored.selectedCliKey);
-  const [accountCatalog, setAccountCatalog] = useState<LoosePayload | null>(null);
+  const [accountCatalog, setAccountCatalog] = useState<AccountCatalogPayload | null>(null);
   const [notesByAccountId, setNotesByAccountId] = useState<Record<string, AccountNote>>({});
   const [catalogError, setCatalogError] = useState("");
   const [catalogBusy, setCatalogBusy] = useState(false);
@@ -456,7 +459,7 @@ export function AnalysisExportSection({
   const [actionStatus, setActionStatus] = useState("");
   const [actionError, setActionError] = useState("");
   const [codexBusy, setCodexBusy] = useState(false);
-  const [codexResult, setCodexResult] = useState<LoosePayload | null>(null);
+  const [codexResult, setCodexResult] = useState<AnalysisExportRunLocalCliPayload | AnalysisExportRunOpenAiCompatiblePayload | null>(null);
   const [latestRunAnalyzedAt, setLatestRunAnalyzedAt] = useState("");
   const [runningAnalysisKind, setRunningAnalysisKind] = useState<"api" | "local_cli" | null>(null);
   const [codexProgress, setCodexProgress] = useState<CodexProgressEvent | null>(null);
@@ -602,7 +605,7 @@ export function AnalysisExportSection({
   useEffect(() => {
     let disposed = false;
     let unlisten: (() => void) | null = null;
-    void listen<LoosePayload>("analysis-export-cli-progress", (event) => {
+    void listen<AnalysisExportProgressPayload>("analysis-export-cli-progress", (event) => {
       const payload = event.payload;
       const runId = readString(payload, "run_id") ?? "";
       if (!codexRunIdRef.current || runId !== codexRunIdRef.current) return;

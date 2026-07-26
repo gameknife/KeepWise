@@ -28,7 +28,7 @@ import {
   type RuleMutationPayload,
   type RulesListQueryRequest,
   type RulesQueryPayload,
-} from "../../lib/desktopApi";
+} from "../../api/desktop";
 import { type BoolString } from "../../types/app";
 import { isRecord, readArray, readBool, readNumber, readString } from "../../utils/value";
 

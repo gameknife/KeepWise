@@ -1,41 +1,58 @@
-type AccountCatalogAdminPanelProps = Record<string, unknown>;
-type LooseUiEvent = {
-  target: EventTarget & { value?: string; checked?: boolean };
-  currentTarget: { getBoundingClientRect: () => DOMRect; select?: () => void };
-  clientX?: number;
-  clientY?: number;
-  stopPropagation: () => void;
+import { type Dispatch, type SetStateAction } from "react";
+
+import { type AccountCatalogDeletePayload, type AccountCatalogPayload, type AccountCatalogUpsertPayload, type AccountKind, type QueryAccountCatalogRequest, type UpsertAccountCatalogEntryRequest } from "../../api/desktop";
+import { makeEnterToQueryHandler, parseNumericInputWithFallback, safeNumericInputValue } from "../../app/helpers";
+import { type ProductTabKey } from "../../types/app";
+import { AccountCatalogPreview } from "../records/RecordsPreviews";
+import { PrivacyJsonResultCard as JsonResultCard, PrivacyPreviewStat as PreviewStat } from "../shared/PrivacyUi";
+import { AutoRefreshHint, SortableHeaderButton, compareSortValues, nextSortState } from "../shared/UiPrimitives";
+
+type AccountCatalogAdminPanelProps = {
+  isTab: (...keys: ProductTabKey[]) => boolean;
+  handleAccountCatalogQuery: () => Promise<void>;
+  acctCatalogQuery: QueryAccountCatalogRequest;
+  setAcctCatalogQuery: Dispatch<SetStateAction<QueryAccountCatalogRequest>>;
+  openAccountCatalogCreateModal: () => void;
+  openAccountCatalogRenameModal: (accountId: string, accountName: string, accountKind: string) => void;
+  acctCatalogUpsertBusy: boolean;
+  acctCatalogModalMode: "create" | "rename";
+  acctCatalogBusy: boolean;
+  acctCatalogError: string;
+  acctCatalogDeleteError: string;
+  acctCatalogUpsertResult: AccountCatalogUpsertPayload | null;
+  showDebugJson: boolean;
+  acctCatalogDeleteResult: AccountCatalogDeletePayload | null;
+  acctCatalogResult: AccountCatalogPayload | null;
+  acctCatalogDeleteBusy: boolean;
+  acctCatalogDeletingRowId: string;
+  handleAccountCatalogDelete: (accountIdOverride?: string) => Promise<void>;
+  acctCatalogCreateOpen: boolean;
+  closeAccountCatalogCreateModal: () => void;
+  acctCatalogUpsertForm: UpsertAccountCatalogEntryRequest;
+  setAcctCatalogUpsertForm: Dispatch<SetStateAction<UpsertAccountCatalogEntryRequest>>;
+  acctCatalogUpsertError: string;
+  handleAccountCatalogUpsert: () => Promise<void>;
 };
 
 export function AccountCatalogAdminPanel(props: AccountCatalogAdminPanelProps) {
   const {
     isTab,
-    makeEnterToQueryHandler,
     handleAccountCatalogQuery,
     acctCatalogQuery,
     setAcctCatalogQuery,
-    safeNumericInputValue,
-    parseNumericInputWithFallback,
     openAccountCatalogCreateModal,
     openAccountCatalogRenameModal,
     acctCatalogUpsertBusy,
     acctCatalogModalMode,
-    AutoRefreshHint,
     acctCatalogBusy,
     acctCatalogError,
     acctCatalogDeleteError,
     acctCatalogUpsertResult,
     showDebugJson,
-    JsonResultCard,
     acctCatalogDeleteResult,
-    AccountCatalogPreview,
     acctCatalogResult,
     acctCatalogDeleteBusy,
     acctCatalogDeletingRowId,
-    PreviewStat,
-    SortableHeaderButton,
-    nextSortState,
-    compareSortValues,
     handleAccountCatalogDelete,
     acctCatalogCreateOpen,
     closeAccountCatalogCreateModal,
@@ -43,7 +60,7 @@ export function AccountCatalogAdminPanel(props: AccountCatalogAdminPanelProps) {
     setAcctCatalogUpsertForm,
     acctCatalogUpsertError,
     handleAccountCatalogUpsert,
-  } = props as Record<string, any>;
+  } = props;
   const isRenameMode = acctCatalogModalMode === "rename";
 
   return isTab("admin") ? (
@@ -58,10 +75,10 @@ export function AccountCatalogAdminPanel(props: AccountCatalogAdminPanelProps) {
           <span>查询种类</span>
           <select
             value={acctCatalogQuery.kind ?? "all"}
-            onChange={(e: LooseUiEvent) =>
-              setAcctCatalogQuery((s: Record<string, any>) => ({
-                ...s,
-                kind: e.target.value as any,
+            onChange={(event) =>
+              setAcctCatalogQuery((previous) => ({
+                ...previous,
+                kind: event.target.value as QueryAccountCatalogRequest["kind"],
               }))
             }
           >
@@ -80,7 +97,7 @@ export function AccountCatalogAdminPanel(props: AccountCatalogAdminPanelProps) {
           <span>查询关键词</span>
           <input
             value={`${acctCatalogQuery.keyword ?? ""}`}
-            onChange={(e: LooseUiEvent) => setAcctCatalogQuery((s: Record<string, any>) => ({ ...s, keyword: e.target.value }))}
+            onChange={(event) => setAcctCatalogQuery((previous) => ({ ...previous, keyword: event.target.value }))}
             placeholder="账户 ID / 名称 / 种类"
           />
         </label>
@@ -91,10 +108,10 @@ export function AccountCatalogAdminPanel(props: AccountCatalogAdminPanelProps) {
             min={1}
             max={1000}
             value={safeNumericInputValue(acctCatalogQuery.limit, 200)}
-            onChange={(e: LooseUiEvent) =>
-              setAcctCatalogQuery((s: Record<string, any>) => ({
-                ...s,
-                limit: parseNumericInputWithFallback(e.target.value || "200", 200),
+            onChange={(event) =>
+              setAcctCatalogQuery((previous) => ({
+                ...previous,
+                limit: parseNumericInputWithFallback(event.target.value || "200", 200),
               }))
             }
           />
@@ -154,7 +171,7 @@ export function AccountCatalogAdminPanel(props: AccountCatalogAdminPanelProps) {
             role="dialog"
             aria-modal="true"
             aria-labelledby="acct-catalog-create-modal-title"
-            onClick={(e: LooseUiEvent) => e.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
           >
             <div className="kw-modal-head">
               <div>
@@ -178,11 +195,11 @@ export function AccountCatalogAdminPanel(props: AccountCatalogAdminPanelProps) {
                 <input
                   autoFocus
                   value={`${acctCatalogUpsertForm.account_name ?? ""}`}
-                  onChange={(e: LooseUiEvent) =>
-                    setAcctCatalogUpsertForm((s: Record<string, any>) => ({
-                      ...s,
-                      account_id: isRenameMode ? s.account_id : "",
-                      account_name: e.target.value,
+                  onChange={(event) =>
+                    setAcctCatalogUpsertForm((previous) => ({
+                      ...previous,
+                      account_id: isRenameMode ? previous.account_id : "",
+                      account_name: event.target.value,
                     }))
                   }
                   placeholder="账户显示名称"
@@ -193,11 +210,11 @@ export function AccountCatalogAdminPanel(props: AccountCatalogAdminPanelProps) {
                 <select
                   value={acctCatalogUpsertForm.account_kind ?? "cash"}
                   disabled={isRenameMode}
-                  onChange={(e: LooseUiEvent) =>
-                    setAcctCatalogUpsertForm((s: Record<string, any>) => ({
-                      ...s,
-                      account_id: isRenameMode ? s.account_id : "",
-                      account_kind: e.target.value as any,
+                  onChange={(event) =>
+                    setAcctCatalogUpsertForm((previous) => ({
+                      ...previous,
+                      account_id: isRenameMode ? previous.account_id : "",
+                      account_kind: event.target.value as AccountKind,
                     }))
                   }
                 >

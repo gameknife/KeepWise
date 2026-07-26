@@ -1,0 +1,220 @@
+.query-form-grid {
+  margin-top: 0.9rem;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.query-form-grid-compact {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.field {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.wealth-asset-filter-field {
+  grid-column: 1 / -1;
+}
+
+.wealth-asset-chip-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.field > span {
+  font-size: 0.76rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(243, 239, 229, 0.68);
+}
+
+.field input,
+.field select,
+.field textarea,
+.field .kw-date-picker-input {
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.03);
+  color: #f4efe4;
+  padding: 0.6rem 0.7rem;
+  min-height: 40px;
+  height: 40px;
+  line-height: 1.2;
+  box-sizing: border-box;
+  font-family: inherit;
+  font-size: 0.88rem;
+  font-weight: 400;
+}
+
+.field textarea {
+  min-height: 84px;
+  height: auto;
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.field select.account-id-select {
+  width: 100%;
+  max-width: 260px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.field input::placeholder {
+  color: rgba(243, 239, 229, 0.35);
+}
+
+.field textarea::placeholder {
+  color: rgba(243, 239, 229, 0.35);
+}
+
+.field input:focus-visible,
+.field select:focus-visible,
+.field textarea:focus-visible {
+  outline: 2px solid rgba(76, 135, 176, 0.65);
+  outline-offset: 2px;
+  border-color: rgba(76, 135, 176, 0.4);
+}
+
+.kw-date-input-shell {
+  display: block;
+  width: 100%;
+}
+
+.kw-date-input-shell .react-datepicker-wrapper,
+.kw-date-input-shell .react-datepicker__input-container {
+  display: block;
+  width: 100%;
+}
+
+.field .kw-date-picker-input {
+  width: 100%;
+  padding-right: 2rem;
+}
+
+.field .kw-date-picker-input::placeholder {
+  color: rgba(243, 239, 229, 0.35);
+}
+
+.field .kw-date-picker-input:focus-visible {
+  outline: 2px solid rgba(76, 135, 176, 0.65);
+  outline-offset: 2px;
+  border-color: rgba(76, 135, 176, 0.4);
+}
+
+.kw-date-popper {
+  z-index: 80;
+}
+
+.kw-date-calendar.react-datepicker {
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: #171c22;
+  color: #f4efe4;
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32);
+}
+
+.kw-date-calendar .react-datepicker__header {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.kw-date-calendar .react-datepicker__current-month,
+.kw-date-calendar .react-datepicker-time__header,
+.kw-date-calendar .react-datepicker-year-header,
+.kw-date-calendar .react-datepicker__day-name {
+  color: rgba(243, 239, 229, 0.86);
+}
+
+.kw-date-calendar .react-datepicker__day,
+.kw-date-calendar .react-datepicker__month-text {
+  color: rgba(243, 239, 229, 0.88);
+  border-radius: 8px;
+}
+
+.kw-date-calendar .react-datepicker__day:hover,
+.kw-date-calendar .react-datepicker__month-text:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.kw-date-calendar .react-datepicker__day--keyboard-selected,
+.kw-date-calendar .react-datepicker__month-text--keyboard-selected {
+  background: rgba(86, 140, 178, 0.32);
+  color: #f8f4ec;
+}
+
+.kw-date-calendar .react-datepicker__day--selected,
+.kw-date-calendar .react-datepicker__month-text--selected {
+  background: rgba(110, 168, 207, 0.42);
+  color: #fff;
+}
+
+.kw-date-calendar .react-datepicker__day--today,
+.kw-date-calendar .react-datepicker__month-text--today {
+  box-shadow: inset 0 0 0 1px rgba(var(--kw-accent-rgb), 0.6);
+}
+
+.kw-date-calendar .react-datepicker__triangle {
+  display: none;
+}
+
+.kw-date-calendar .react-datepicker__today-button {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+  color: #e8dcc1;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.55rem 0.7rem;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.kw-date-calendar .react-datepicker__today-button:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #f5ead2;
+}
+
+.kw-date-input-shell .react-datepicker__close-icon {
+  right: 0.1rem;
+}
+
+.kw-date-input-shell .react-datepicker__close-icon::after {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(243, 239, 229, 0.86);
+  font-size: 12px;
+  width: 18px;
+  height: 18px;
+  line-height: 18px;
+}
+
+.checkbox-field {
+  align-content: start;
+}
+
+.checkbox-field input[type="checkbox"] {
+  width: 1.05rem;
+  height: 1.05rem;
+  margin: 0.15rem 0 0;
+  padding: 0;
+  border-radius: 4px;
+  accent-color: var(--kw-accent);
+}
+
+.json-pre {
+  margin: 0;
+  padding: 0.8rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(0, 0, 0, 0.23);
+  color: #d6edf8;
+  overflow: auto;
+  max-height: 360px;
+  font-family:
+    "SF Mono", "JetBrains Mono", "Fira Code", "Menlo", "Monaco", "Cascadia Code", monospace;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}

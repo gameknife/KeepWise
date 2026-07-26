@@ -1,14 +1,20 @@
-type AdminProbePanelsProps = Record<string, unknown>;
+import { type BootstrapProbe } from "../../api/desktop";
+import { type LoadStatus } from "../../types/app";
+import { PathRow } from "../shared/UiPrimitives";
 
-export function AdminProbePanels(props: AdminProbePanelsProps) {
-  const {
-    isAdminDeveloperMode,
-    status,
-    error,
-    isReady,
-    probe,
-    PathRow,
-  } = props as Record<string, any>;
+export function AdminProbePanels({
+  isAdminDeveloperMode,
+  status,
+  error,
+  isReady,
+  probe,
+}: {
+  isAdminDeveloperMode: boolean;
+  status: LoadStatus;
+  error: string;
+  isReady: boolean;
+  probe: BootstrapProbe | null;
+}) {
 
   return (
     <>

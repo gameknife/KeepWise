@@ -744,3 +744,49 @@ pub fn delete_asset_valuation(app: AppHandle, req: RecordDeleteRequest) -> Resul
     let db_path = resolve_ledger_db_path(&app)?;
     delete_asset_valuation_at_db_path(&db_path, req)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::read_queries::{query_investments_at_db_path, InvestmentsQueryRequest};
+    use crate::test_support::{apply_all_migrations_for_test, create_temp_test_db};
+    use std::fs;
+
+    #[test]
+    fn manual_investment_upsert_is_stable_and_queryable() {
+        let db_path = create_temp_test_db();
+        apply_all_migrations_for_test(&db_path);
+        let request = || ManualInvestmentUpsertRequest {
+            snapshot_date: Some("2026-07-15".into()),
+            account_id: None,
+            account_name: Some("测试投资账户".into()),
+            total_assets: Some("12,345.67".into()),
+            transfer_amount: Some("100.00".into()),
+        };
+        let first = upsert_manual_investment_at_db_path(&db_path, request()).unwrap();
+        let second = upsert_manual_investment_at_db_path(&db_path, request()).unwrap();
+        assert_eq!(first["account_id"], second["account_id"]);
+        let result = query_investments_at_db_path(
+            &db_path,
+            InvestmentsQueryRequest {
+                limit: Some(10),
+                from_date: None,
+                to_date: None,
+                source_type: Some("manual".into()),
+                account_id: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(result["summary"]["count"], 1);
+        assert_eq!(result["rows"][0]["total_assets_cents"], 1_234_567);
+        let _ = fs::remove_file(db_path);
+    }
+
+    #[test]
+    fn mutation_parsers_preserve_rounding_and_validation() {
+        assert_eq!(parse_amount_to_cents("￥1,234.5元").unwrap(), 123_450);
+        assert_eq!(parse_amount_to_cents("-0.01").unwrap(), -1);
+        assert!(parse_amount_to_cents("1.001").is_err());
+        assert!(normalize_date("2026-02-30").is_err());
+    }
+}

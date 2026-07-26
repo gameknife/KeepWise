@@ -13,7 +13,7 @@ import {
   type WealthCurveQueryRequest,
   type WealthOverviewQueryRequest,
   type UpsertAccountCatalogEntryRequest,
-} from "../lib/desktopApi";
+} from "../api/desktop";
 
 export function toErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : typeof err === "string" ? err : "Unknown error";

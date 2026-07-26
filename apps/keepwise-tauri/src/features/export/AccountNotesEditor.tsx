@@ -1,8 +1,7 @@
-import type { AccountNote, LoosePayload } from "../../lib/desktopApi";
-import { readArray, readString } from "../../utils/value";
+import type { AccountCatalogPayload, AccountNote } from "../../api/desktop";
 
 type AccountNotesEditorProps = {
-  accountCatalog: LoosePayload | null;
+  accountCatalog: AccountCatalogPayload | null;
   notesByAccountId: Record<string, AccountNote>;
   visibleKind: string;
   onVisibleKindChange: (kind: string) => void;
@@ -24,9 +23,9 @@ export function AccountNotesEditor({
   onVisibleKindChange,
   onNoteChange,
 }: AccountNotesEditorProps) {
-  const accounts = readArray(accountCatalog, "rows").filter((row) => {
+  const accounts = (accountCatalog?.rows ?? []).filter((row) => {
     if (visibleKind === "all") return true;
-    return readString(row, "account_kind") === visibleKind;
+    return row.account_kind === visibleKind;
   });
 
   return (
@@ -60,14 +59,14 @@ export function AccountNotesEditor({
               </tr>
             ) : (
               accounts.map((account) => {
-                const accountId = readString(account, "account_id") ?? "";
+                const accountId = account.account_id;
                 const note = notesByAccountId[accountId];
                 return (
                   <tr key={accountId}>
                     <td>
                       <div className="analysis-export-account-cell">
-                        <strong>{readString(account, "account_name") ?? accountId}</strong>
-                        <span>{readString(account, "account_kind") ?? "-"}</span>
+                        <strong>{account.account_name || accountId}</strong>
+                        <span>{account.account_kind}</span>
                       </div>
                     </td>
                     <td>

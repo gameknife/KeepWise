@@ -1,6 +1,6 @@
 # KeepWise 全代码库渐进式重构方案与 Agent 执行计划
 
-> 状态：后续重构工作的主计划（Canonical）
+> 状态：Wave 0–5 已全部完成（2026-07-16）；最终度量、验证结果与兼容保留项见 `KEEPWISE_CODEBASE_REFACTOR_COMPLETION_REPORT.md`
 > 代码快照：2026-07-10 当前工作树
 > 适用范围：`apps/keepwise-tauri` React/TypeScript 前端、Rust/Tauri 后端及其测试和工程文档
 > 核心目标：在不改变可见功能、财务口径、数据格式和同步兼容性的前提下，提高可读性、模块内聚性、类型安全和可测试性，并减少重复代码。

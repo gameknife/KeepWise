@@ -50,6 +50,16 @@ jobs:
         working-directory: apps/keepwise-tauri
         run: npm run build
 
+      - name: Frontend and IPC boundary check
+        id: boundary_check
+        working-directory: apps/keepwise-tauri
+        run: npm run test:boundaries
+
+      - name: Frontend unit tests
+        id: frontend_test
+        working-directory: apps/keepwise-tauri
+        run: npm run test:frontend
+
       - name: Rust check
         id: rust_check
         working-directory: apps/keepwise-tauri
@@ -74,6 +84,8 @@ jobs:
           {
             echo "KeepWise Tauri desktop-check regression summary"
             echo "frontend_build_outcome=${FRONTEND_BUILD_OUTCOME:-unknown}"
+            echo "boundary_check_outcome=${BOUNDARY_CHECK_OUTCOME:-unknown}"
+            echo "frontend_test_outcome=${FRONTEND_TEST_OUTCOME:-unknown}"
             echo "rust_check_outcome=${RUST_CHECK_OUTCOME:-unknown}"
             echo "rust_regression_outcome=${RUST_REGRESSION_OUTCOME:-unknown}"
             echo "core_diff_outcome=${CORE_DIFF_OUTCOME:-unknown}"
@@ -89,6 +101,8 @@ jobs:
           echo "$out"
         env:
           FRONTEND_BUILD_OUTCOME: ${{ steps.frontend_build.outcome }}
+          BOUNDARY_CHECK_OUTCOME: ${{ steps.boundary_check.outcome }}
+          FRONTEND_TEST_OUTCOME: ${{ steps.frontend_test.outcome }}
           RUST_CHECK_OUTCOME: ${{ steps.rust_check.outcome }}
           RUST_REGRESSION_OUTCOME: ${{ steps.rust_regression.outcome }}
           CORE_DIFF_OUTCOME: ${{ steps.core_diff.outcome }}

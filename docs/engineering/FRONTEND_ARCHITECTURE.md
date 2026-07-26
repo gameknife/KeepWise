@@ -1,80 +1,59 @@
 # KeepWise Frontend Architecture
 
-> Updated: 2026-05-08. Current frontend is a React 19 + TypeScript 5.8 Vite app inside `apps/keepwise-tauri`.
+> Updated: 2026-07-16. React 19 + TypeScript 5.8 + Vite 7 frontend in `apps/keepwise-tauri`.
 
-## Current Shape
+## Current Structure
 
-The UI is no longer a single `src/App.tsx` implementation. The public entry is still intentionally thin:
-
+```text
+src/main.tsx                       # React entry + RootErrorBoundary
+src/App.tsx                        # thin default-export forwarding entry
+src/app/App.tsx                    # controller installation, invalidation coordination and feature assembly
+src/app/useAppShellController.ts   # viewport, navigation, settings persistence and mobile back lifecycle
+src/app/useAppAutoRefresh.ts       # visibility/filter-driven query orchestration
+src/app/{helpers,requestBuilders,summaries,amountFormatting}.ts
+src/api/desktop/invoke.ts          # sole @tauri-apps/api/core invoke entry
+src/api/desktop/<domain>.ts        # precise request/response contracts by domain
+src/features/<domain>/             # pages, previews, modals and domain controllers
+src/features/layout/useSidebarMetrics.ts # quick metrics independent of mounted pages
+src/hooks/                         # shared async/debounce hooks
+src/styles/index.css               # ordered CSS composition root
+src/styles/*.css                   # tokens, shell, controls, analytics and responsive layers
+src/types/app.ts                   # cross-feature UI types
+src/utils/value.ts                 # adapters for intentionally dynamic payload subtrees
 ```
-src/main.tsx                  # React entry + RootErrorBoundary
-src/App.tsx                   # default export forwarding to ./app/App
-src/app/App.tsx               # product shell, state orchestration, feature assembly
-src/app/helpers.ts            # shared app helpers
-src/app/requestBuilders.ts    # request object builders
-src/app/summaries.ts          # app-level summary helpers
-src/app/amountFormatting.ts   # amount display and privacy masking helpers
-src/features/<domain>/        # sections, previews, modals, layout
-src/hooks/                    # useAsyncQuery, useDebouncedAutoRun
-src/lib/desktopApi.ts         # Tauri invoke wrappers and request/payload types
-src/types/app.ts              # cross-feature UI types
-src/utils/value.ts            # loose payload read helpers
+
+The deleted `src/lib/desktopApi.ts` compatibility barrel must not be restored. Feature code imports from `src/api/desktop` or a specific domain client. `invoke` is allowed only in `src/api/desktop/invoke.ts`; `npm run test:boundaries` enforces this and checks the 78-command protocol inventory.
+
+## State and Feature Boundaries
+
+- Import, sync, budget/FIRE/income, consumption, investment, wealth, accounts, records, manual entry and admin runtime/validation use domain controllers.
+- Investment curve benchmark hydration retains request-sequence protection and deferred hydration.
+- `WorkspaceContentPanels`, investment and wealth pages receive domain controllers plus small shell configuration, not UI primitives or loose prop bags.
+- Public feature props contain no `Record<string, any>` and the frontend has no `LoosePayload` references.
+- Settings/privacy, viewport, navigation and mobile back handling live in the shell controller because multiple shell surfaces consume them.
+- `App.tsx` keeps only two direct state values (import invalidation epoch and debug JSON visibility); business forms, CRUD and selectors remain inside their domains.
+
+## API Contracts
+
+`src/api/desktop/index.ts` is the public domain barrel. Responses used directly by pages are named TypeScript payloads. A small number of inherently aggregate payloads—analysis snapshot, rules and import summaries—retain `Record<string, unknown>` only at the API boundary and are narrowed through adapters.
+
+Rust command names, snake_case JSON fields and rejected-Promise Chinese error strings remain compatible. Rust uses named DTOs where stable and permits localized `serde_json::Value` for dynamic analytics/export trees.
+
+## Styling and Bundles
+
+CSS is imported in explicit cascade order from `src/styles/index.css`. The original selector/declaration order was preserved during the mechanical split. Responsive and platform overrides remain last.
+
+Vite creates separate vendor chunks and lazy-loads low-frequency import, export and admin pages. On the 2026-07-16 final release build the entry chunk is 400.96 kB (gzip 114.91 kB), below Vite's 500 kB warning threshold.
+
+## Verification
+
+```bash
+npm run test:frontend
+npm run test:boundaries
+npm run build
+npm run test:rust
+npm run test:diff:core
+npm run desktop:release:check
 ```
 
-`src/app/App.tsx` remains the largest file and still owns most feature state. That is the main remaining frontend refactor target.
-
-## Product Tabs
-
-| Tab key | Name | Main modules |
-|---|---|---|
-| `manual-entry` | 更新收益 | manual investment/asset modals, records previews, account catalog |
-| `wealth-overview` | 财富总览 | `features/analytics/WealthOverviewSection`, `features/wealth/*` |
-| `return-analysis` | 投资收益 | `features/analytics/ReturnAnalysisSection`, investment curve preview |
-| `budget-fire` | FIRE进度 | `features/budget/BudgetFirePreviews` |
-| `income-analysis` | 收入分析 | `features/income/SalaryIncomeOverviewPreview` |
-| `consumption-analysis` | 消费分析 | `features/consumption/ConsumptionOverviewPreview` |
-| `import-center` | 导入中心 | `features/import/ImportCenterSections`, import summary previews |
-| `admin` | 高级管理 | DB panel, probes, rules, query workbench, sync management |
-
-## Feature Inventory
-
-| Domain | Files |
-|---|---|
-| `admin` | DB panel, runtime previews, health/probe panels, account catalog, admin sections |
-| `analytics` | investment return section, wealth overview section |
-| `budget` | budget items, yearly overview, monthly review, FIRE progress previews |
-| `consumption` | yearly consumption report preview |
-| `import` | YZXY / CMB EML / CMB PDF import center and summary cards |
-| `income` | salary and housing fund income overview |
-| `layout` | mobile home grid, sidebar, content panel router |
-| `modals` | app settings, investment edit, quick manual investment, quick manual asset valuation |
-| `records` | investment curve, investment rows, asset valuations, accounts, account catalog previews |
-| `rules` | rules CRUD panel for merchant map, category rules, whitelist, analysis exclusions |
-| `shared` | primitive controls, chart primitives, table helpers |
-| `wealth` | wealth overview, curve, stacked trend, sankey previews |
-
-## Data Flow
-
-Frontend calls backend exclusively through `src/lib/desktopApi.ts`. Components do not call `invoke` directly.
-
-The common flow is:
-
-1. UI state in `src/app/App.tsx` builds a strict request object.
-2. `desktopApi.ts` invokes a Tauri command.
-3. Rust returns JSON payloads or a rejected promise with a Chinese error string.
-4. App state stores `{ busy, error, result }` and feature panels render from props.
-
-`useAsyncQuery` is available for repeated query flows, but many older domains still keep explicit `useState` triplets in `App.tsx`.
-
-## Styling
-
-Styling is still centralized in `src/App.css`. Class names are BEM-like and shared across feature components. CSS module extraction has not happened yet.
-
-Current rule: keep new CSS conservative and local to existing class patterns unless the stylesheet is intentionally split in a dedicated refactor.
-
-## Remaining Refactor Items
-
-- Type the feature section props and remove the remaining `// @ts-nocheck` files.
-- Move feature state out of `src/app/App.tsx` into domain hooks.
-- Replace loose `unknown` response payloads in `desktopApi.ts` with explicit payload types.
-- Split `src/App.css` once component boundaries are stable.
+Frontend tests cover request builders, formatting/privacy, settings/helpers, Markdown export, `useAsyncQuery`, and investment controller success/error behavior. Forced-mobile browser smoke verifies the home grid, page transition/back header and absence of horizontal overflow; Tauri data calls require the native host.

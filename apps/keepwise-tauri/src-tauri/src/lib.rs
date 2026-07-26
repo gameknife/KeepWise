@@ -4,29 +4,28 @@ mod account_catalog;
 mod account_notes;
 mod admin_health;
 mod analysis_export;
-mod budget_fire_analytics;
-mod cmb_bank_pdf_import;
-mod cmb_eml_import;
+mod budget;
 mod commands;
-pub mod investment_analytics;
+mod error;
+mod imports;
+pub mod investment;
 mod ledger_db;
 mod read_queries;
 mod record_mutations;
 mod rules_management;
 mod rules_store;
-mod sync_management;
+mod sync;
 #[cfg(test)]
 mod test_support;
 mod transaction_mutations;
-pub mod wealth_analytics;
-mod yzxy_import;
+pub mod wealth;
 
-pub use investment_analytics::{
+pub use investment::{
     investment_curve_benchmarks_query_at_db_path, investment_curve_query_at_db_path,
     investment_return_query_at_db_path, investment_returns_query_at_db_path,
     InvestmentCurveQueryRequest, InvestmentReturnQueryRequest, InvestmentReturnsQueryRequest,
 };
-pub use wealth_analytics::{
+pub use wealth::{
     wealth_curve_query_at_db_path, wealth_overview_query_at_db_path, WealthCurveQueryRequest,
     WealthOverviewQueryRequest,
 };
@@ -46,20 +45,20 @@ pub fn run() {
             ledger_db::ledger_db_import_from_path,
             ledger_db::ledger_db_admin_stats,
             admin_health::runtime_db_health_check,
-            investment_analytics::investment_return_query,
-            investment_analytics::investment_returns_query,
-            investment_analytics::investment_curve_query,
-            investment_analytics::investment_curve_benchmarks_query,
-            wealth_analytics::wealth_overview_query,
-            wealth_analytics::wealth_curve_query,
-            budget_fire_analytics::query_monthly_budget_items,
-            budget_fire_analytics::upsert_monthly_budget_item,
-            budget_fire_analytics::delete_monthly_budget_item,
-            budget_fire_analytics::query_budget_overview,
-            budget_fire_analytics::query_budget_monthly_review,
-            budget_fire_analytics::query_salary_income_overview,
-            budget_fire_analytics::query_consumption_report,
-            budget_fire_analytics::query_fire_progress,
+            investment::investment_return_query,
+            investment::investment_returns_query,
+            investment::investment_curve_query,
+            investment::investment_curve_benchmarks_query,
+            wealth::wealth_overview_query,
+            wealth::wealth_curve_query,
+            budget::query_monthly_budget_items,
+            budget::upsert_monthly_budget_item,
+            budget::delete_monthly_budget_item,
+            budget::query_budget_overview,
+            budget::query_budget_monthly_review,
+            budget::query_salary_income_overview,
+            budget::query_consumption_report,
+            budget::query_fire_progress,
             read_queries::meta_accounts_query,
             read_queries::query_transactions,
             read_queries::query_investments,
@@ -87,12 +86,12 @@ pub fn run() {
             transaction_mutations::confirm_transaction_review,
             ledger_db::ledger_db_admin_reset_all,
             ledger_db::ledger_db_admin_reset_transactions,
-            yzxy_import::yzxy_preview_file,
-            yzxy_import::yzxy_import_file,
-            cmb_eml_import::cmb_eml_preview,
-            cmb_eml_import::cmb_eml_import,
-            cmb_bank_pdf_import::cmb_bank_pdf_preview,
-            cmb_bank_pdf_import::cmb_bank_pdf_import,
+            imports::yzxy::yzxy_preview_file,
+            imports::yzxy::yzxy_import_file,
+            imports::cmb_eml::cmb_eml_preview,
+            imports::cmb_eml::cmb_eml_import,
+            imports::cmb_pdf::cmb_bank_pdf_preview,
+            imports::cmb_pdf::cmb_bank_pdf_import,
             rules_management::query_merchant_map_rules,
             rules_management::upsert_merchant_map_rule,
             rules_management::delete_merchant_map_rule,
@@ -106,16 +105,16 @@ pub fn run() {
             rules_management::upsert_analysis_exclusion_rule,
             rules_management::delete_analysis_exclusion_rule,
             rules_management::query_merchant_rule_suggestions,
-            sync_management::sync_setup_create,
-            sync_management::sync_share_code_generate,
-            sync_management::sync_share_code_parse,
-            sync_management::sync_setup_link,
-            sync_management::sync_test_connection,
-            sync_management::sync_status,
-            sync_management::sync_poll_remote_update,
-            sync_management::sync_reconcile,
-            sync_management::sync_resolve_conflict,
-            sync_management::sync_set_auto_policy
+            sync::sync_setup_create,
+            sync::sync_share_code_generate,
+            sync::sync_share_code_parse,
+            sync::sync_setup_link,
+            sync::sync_test_connection,
+            sync::sync_status,
+            sync::sync_poll_remote_update,
+            sync::sync_reconcile,
+            sync::sync_resolve_conflict,
+            sync::sync_set_auto_policy
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

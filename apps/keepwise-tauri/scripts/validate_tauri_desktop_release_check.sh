@@ -10,6 +10,8 @@ frontend_status="not_run"
 rust_check_status="not_run"
 rust_regression_status="not_run"
 core_diff_status="not_run"
+boundary_status="not_run"
+frontend_test_status="not_run"
 overall_status="running"
 
 write_summary() {
@@ -23,6 +25,8 @@ write_summary() {
     echo "rust_check_outcome=$rust_check_status"
     echo "rust_regression_outcome=$rust_regression_status"
     echo "core_diff_outcome=$core_diff_status"
+    echo "boundary_check_outcome=$boundary_status"
+    echo "frontend_test_outcome=$frontend_test_status"
     echo "overall_status=$overall_status"
     if [[ -f "$ARTIFACT_DIR/core_analytics_diff_regression.json" ]]; then
       echo "core_diff_cases_total=$(jq -r '.summary.cases.total // "n/a"' "$ARTIFACT_DIR/core_analytics_diff_regression.json")"
@@ -56,17 +60,33 @@ on_exit() {
 }
 trap on_exit EXIT
 
-echo "[1/4] Rust regression subset"
+echo "[1/6] Frontend and IPC boundary check"
+boundary_status="running"
+(
+  cd "$APP_DIR"
+  npm run test:boundaries
+)
+boundary_status="pass"
+
+echo "[2/6] Frontend unit tests"
+frontend_test_status="running"
+(
+  cd "$APP_DIR"
+  npm run test:frontend
+)
+frontend_test_status="pass"
+
+echo "[3/6] Rust regression subset"
 rust_regression_status="running"
 bash "$ROOT_DIR/apps/keepwise-tauri/scripts/validate_tauri_desktop_rust_regression.sh"
 rust_regression_status="pass"
 
-echo "[2/4] Core analytics diff regression"
+echo "[4/6] Core analytics diff regression"
 core_diff_status="running"
 KEEPWISE_DIFF_REPORT_DIR="$ARTIFACT_DIR" bash "$ROOT_DIR/apps/keepwise-tauri/scripts/validate_tauri_core_diff_regression.sh"
 core_diff_status="pass"
 
-echo "[3/4] Frontend build"
+echo "[5/6] Frontend build"
 frontend_status="running"
 (
   cd "$APP_DIR"
@@ -74,7 +94,7 @@ frontend_status="running"
 )
 frontend_status="pass"
 
-echo "[4/4] Rust check"
+echo "[6/6] Rust check"
 rust_check_status="running"
 cargo check --manifest-path "$APP_DIR/src-tauri/Cargo.toml"
 rust_check_status="pass"

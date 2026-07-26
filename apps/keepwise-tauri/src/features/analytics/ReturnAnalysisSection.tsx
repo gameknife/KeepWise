@@ -1,54 +1,39 @@
-type ReturnAnalysisSectionProps = Record<string, unknown>;
-type LooseUiEvent = {
-  target: EventTarget & { value?: string; checked?: boolean };
-  currentTarget: { getBoundingClientRect: () => DOMRect; select?: () => void };
-  clientX?: number;
-  clientY?: number;
-  stopPropagation: () => void;
+import { formatCentsShort, formatRatePct, signedMetricTone } from "../../app/amountFormatting";
+import { formatPresetLabel, makeEnterToQueryHandler } from "../../app/helpers";
+import { useInvestmentController } from "../investment/useInvestmentController";
+import { InvestmentCurvePreview } from "../records/InvestmentCurvePreview";
+import { InvestmentReturnsPreview } from "../records/RecordsPreviews";
+import { PrivacyJsonResultCard as JsonResultCard, PrivacyPreviewStat as PreviewStat } from "../shared/PrivacyUi";
+import { AccountIdSelect, AutoRefreshHint, DateInput, LineAreaChart, SortableHeaderButton, compareSortValues, nextSortState, type AccountSelectOption } from "../shared/UiPrimitives";
+
+type ReturnAnalysisSectionProps = {
+  isActive: boolean;
+  controller: ReturnType<typeof useInvestmentController>;
+  accountSelectOptions: AccountSelectOption[];
+  accountSelectOptionsLoading: boolean;
+  showRawJson: boolean;
 };
 
 export function ReturnAnalysisSection(props: ReturnAnalysisSectionProps) {
   const {
-    isTab,
-    makeEnterToQueryHandler,
-    handleInvestmentReturnQuery,
-    handleInvestmentCurveQuery,
-    handleRetryInvestmentCurveBenchmarks,
-    handleInvestmentReturnsQuery,
-    AccountIdSelect,
-    invCurveQuery,
-    setInvestmentAnalysisSharedQuery,
+    isActive,
+    controller,
     accountSelectOptions,
     accountSelectOptionsLoading,
-    DateInput,
-    AutoRefreshHint,
-    invBusy,
-    invCurveBusy,
-    invBatchBusy,
-    invError,
-    invCurveError,
-    invCurveBenchmarksBusy,
-    invBatchError,
-    InvestmentCurvePreview,
-    invCurveResult,
-    invResult,
-    formatCentsShort,
-    formatRatePct,
-    signedMetricTone,
-    PreviewStat,
-    LineAreaChart,
-    InvestmentReturnsPreview,
-    invBatchResult,
-    formatPresetLabel,
-    SortableHeaderButton,
-    nextSortState,
-    compareSortValues,
     showRawJson,
-    JsonResultCard,
-  } = props as Record<string, any>;
+  } = props;
+  const {
+    busy: invBusy, error: invError, result: invResult,
+    batchBusy: invBatchBusy, batchError: invBatchError, batchResult: invBatchResult,
+    curveBusy: invCurveBusy, curveError: invCurveError, curveResult: invCurveResult,
+    curveBenchmarksBusy: invCurveBenchmarksBusy, curveQuery: invCurveQuery,
+    setSharedQuery: setInvestmentAnalysisSharedQuery,
+    refreshReturn: handleInvestmentReturnQuery, refreshReturns: handleInvestmentReturnsQuery,
+    refreshCurve: handleInvestmentCurveQuery, retryBenchmarks: handleRetryInvestmentCurveBenchmarks,
+  } = controller;
   return (
     <>
-      {isTab("return-analysis") ? <section className="card panel panel-flat-content panel-return-analysis">
+      {isActive ? <section className="card panel panel-flat-content panel-return-analysis">
         <div
           className="query-form-grid"
           onKeyDown={makeEnterToQueryHandler(async () => {
@@ -59,9 +44,9 @@ export function ReturnAnalysisSection(props: ReturnAnalysisSectionProps) {
             <span>账户</span>
             <AccountIdSelect
               value={invCurveQuery.account_id}
-              onChange={(value: string) =>
-                setInvestmentAnalysisSharedQuery((s: Record<string, any>) => ({
-                  ...s,
+              onChange={(value) =>
+                setInvestmentAnalysisSharedQuery((previous) => ({
+                  ...previous,
                   account_id: value,
                 }))
               }
@@ -77,10 +62,10 @@ export function ReturnAnalysisSection(props: ReturnAnalysisSectionProps) {
             <span>预设区间</span>
             <select
               value={invCurveQuery.preset}
-              onChange={(e: LooseUiEvent) =>
-                setInvestmentAnalysisSharedQuery((s: Record<string, any>) => ({
-                  ...s,
-                  preset: e.target.value,
+              onChange={(event) =>
+                setInvestmentAnalysisSharedQuery((previous) => ({
+                  ...previous,
+                  preset: event.target.value,
                 }))
               }
             >
@@ -99,10 +84,10 @@ export function ReturnAnalysisSection(props: ReturnAnalysisSectionProps) {
                 <span>开始日期（自定义）</span>
                 <DateInput
                   value={invCurveQuery.from}
-                  onChange={(e: LooseUiEvent) =>
-                    setInvestmentAnalysisSharedQuery((s: Record<string, any>) => ({
-                      ...s,
-                      from: e.target.value,
+                  onChange={(event) =>
+                    setInvestmentAnalysisSharedQuery((previous) => ({
+                      ...previous,
+                      from: event.target.value,
                     }))
                   }
                   type="date"
@@ -113,10 +98,10 @@ export function ReturnAnalysisSection(props: ReturnAnalysisSectionProps) {
                 <span>结束日期（可选）</span>
                 <DateInput
                   value={invCurveQuery.to}
-                  onChange={(e: LooseUiEvent) =>
-                    setInvestmentAnalysisSharedQuery((s: Record<string, any>) => ({
-                      ...s,
-                      to: e.target.value,
+                  onChange={(event) =>
+                    setInvestmentAnalysisSharedQuery((previous) => ({
+                      ...previous,
+                      to: event.target.value,
                     }))
                   }
                   type="date"

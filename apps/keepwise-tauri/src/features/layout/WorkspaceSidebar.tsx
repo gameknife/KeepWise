@@ -1,52 +1,47 @@
-type WorkspaceSidebarProps = Record<string, unknown>;
+import { type Dispatch, type SetStateAction } from "react";
 
-export function WorkspaceSidebar(props: WorkspaceSidebarProps) {
-  const {
-    sidebarCollapsed,
-    setSidebarCollapsed,
-    keepwiseLogoSvg,
-    PRODUCT_TABS,
-    activeTab,
-    openQuickManualInvestmentModal,
-    openQuickManualAssetValuationModal,
-    setActiveTab,
-    returnTabQuickMetricLabel,
-    incomeTabMonthlyLabel,
-    consumptionTabMonthlyLabel,
-    wealthTabMonthlyGrowthLabel,
-    returnTabAnnualizedText,
-    returnTabNetGrowthText,
-    manualEntryTabMonthCountText,
-    manualAssetEntryLastDateLabel,
-    manualAssetEntryLastDateText,
-    wealthTabMonthlyGrowthText,
-    wealthTabNetAssetText,
-    fireTabFreedomText,
-    fireTabInvestableText,
-    incomeTabMonthlyText,
-    incomeTabYearTotalLabel,
-    incomeTabYearTotalText,
-    consumptionTabMonthlyText,
-    consumptionTabYearTotalLabel,
-    consumptionTabYearTotalText,
-    returnTabAnnualizedTone,
-    returnTabNetGrowthTone,
-    wealthTabMonthlyGrowthTone,
-    wealthTabNetAssetTone,
-    fireTabFreedomTone,
-    fireTabInvestableTone,
-    incomeTabMonthlyTone,
-    incomeTabYearTotalTone,
-    consumptionTabMonthlyTone,
-    consumptionTabYearTotalTone,
-    setSettingsOpen,
-    amountPrivacyMasked,
-    setAmountPrivacyMasked,
-    syncQuickState,
-    syncQuickTitle,
-    syncQuickAriaLabel,
-    handleQuickSyncIndicatorClick,
-  } = props as Record<string, any>;
+import keepwiseLogoSvg from "../../assets/keepwise-logo.svg";
+import { type ProductTabDef, type ProductTabKey } from "../../types/app";
+
+export type SidebarQuickMetric = {
+  label: string;
+  value: string;
+  tone: "default" | "good" | "warn";
+};
+
+export function WorkspaceSidebar({
+  sidebarCollapsed,
+  setSidebarCollapsed,
+  tabs,
+  activeTab,
+  quickMetricsByTab,
+  openQuickManualInvestmentModal,
+  openQuickManualAssetValuationModal,
+  setActiveTab,
+  setSettingsOpen,
+  amountPrivacyMasked,
+  setAmountPrivacyMasked,
+  syncQuickState,
+  syncQuickTitle,
+  syncQuickAriaLabel,
+  handleQuickSyncIndicatorClick,
+}: {
+  sidebarCollapsed: boolean;
+  setSidebarCollapsed: Dispatch<SetStateAction<boolean>>;
+  tabs: ProductTabDef[];
+  activeTab: ProductTabKey;
+  quickMetricsByTab: Partial<Record<ProductTabKey, SidebarQuickMetric[]>>;
+  openQuickManualInvestmentModal: () => void;
+  openQuickManualAssetValuationModal: () => void;
+  setActiveTab: Dispatch<SetStateAction<ProductTabKey>>;
+  setSettingsOpen: Dispatch<SetStateAction<boolean>>;
+  amountPrivacyMasked: boolean;
+  setAmountPrivacyMasked: Dispatch<SetStateAction<boolean>>;
+  syncQuickState: "syncing" | "pending" | "synced";
+  syncQuickTitle: string;
+  syncQuickAriaLabel: string;
+  handleQuickSyncIndicatorClick: () => Promise<void>;
+}) {
 
   return (
     <>
@@ -63,7 +58,7 @@ export function WorkspaceSidebar(props: WorkspaceSidebarProps) {
             <button
               type="button"
               className="sidebar-toggle-btn"
-              onClick={() => setSidebarCollapsed((v: string) => !v)}
+              onClick={() => setSidebarCollapsed((value) => !value)}
               title={sidebarCollapsed ? "展开侧栏" : "收纳侧栏（仅显示图标）"}
               aria-label={sidebarCollapsed ? "展开侧栏" : "收纳侧栏"}
               aria-pressed={sidebarCollapsed}
@@ -72,7 +67,7 @@ export function WorkspaceSidebar(props: WorkspaceSidebarProps) {
             </button>
           </div>
           <nav className="tab-nav">
-        {PRODUCT_TABS.map((tab: Record<string, any>) => {
+        {tabs.map((tab) => {
               const isReturnTabButton = tab.key === "return-analysis";
               const isWealthTabButton = tab.key === "wealth-overview";
               const isFireTabButton = tab.key === "budget-fire";
@@ -91,36 +86,7 @@ export function WorkspaceSidebar(props: WorkspaceSidebarProps) {
                 || isIncomeTabButton
                 || isConsumptionTabButton)
                 && !sidebarCollapsed;
-              const quickMetrics = isManualEntryTabButton
-                ? [{ label: "本月已记", value: manualEntryTabMonthCountText, tone: "default" }]
-                : isManualAssetEntryTabButton
-                  ? [{ label: manualAssetEntryLastDateLabel, value: manualAssetEntryLastDateText, tone: "default" }]
-                  : isReturnTabButton
-                    ? [
-                        { label: returnTabQuickMetricLabel, value: returnTabAnnualizedText, tone: returnTabAnnualizedTone },
-                        { label: `${new Date().getFullYear()}年净增`, value: returnTabNetGrowthText, tone: returnTabNetGrowthTone },
-                      ]
-                      : isWealthTabButton
-                        ? [
-                            { label: wealthTabMonthlyGrowthLabel, value: wealthTabMonthlyGrowthText, tone: wealthTabMonthlyGrowthTone },
-                            { label: "净资产", value: wealthTabNetAssetText, tone: wealthTabNetAssetTone },
-                          ]
-                      : isFireTabButton
-                        ? [
-                            { label: "自由度", value: fireTabFreedomText, tone: fireTabFreedomTone },
-                            { label: "可投金额", value: fireTabInvestableText, tone: fireTabInvestableTone },
-                          ]
-                        : isIncomeTabButton
-                          ? [
-                              { label: incomeTabMonthlyLabel, value: incomeTabMonthlyText, tone: incomeTabMonthlyTone },
-                              { label: incomeTabYearTotalLabel, value: incomeTabYearTotalText, tone: incomeTabYearTotalTone },
-                            ]
-                          : isConsumptionTabButton
-                            ? [
-                                { label: consumptionTabMonthlyLabel, value: consumptionTabMonthlyText, tone: consumptionTabMonthlyTone },
-                                { label: consumptionTabYearTotalLabel, value: consumptionTabYearTotalText, tone: consumptionTabYearTotalTone },
-                              ]
-                            : [];
+              const quickMetrics = quickMetricsByTab[tab.key] ?? [];
               const titleSuffix = quickMetrics.length > 0
                 ? ` · ${quickMetrics.map((metric) => `${metric.label} ${metric.value}`).join(" · ")}`
                 : "";
@@ -223,7 +189,7 @@ export function WorkspaceSidebar(props: WorkspaceSidebarProps) {
             <button
               type="button"
               className={`sidebar-tool-btn sidebar-privacy-btn ${amountPrivacyMasked ? "active" : ""}`}
-              onClick={() => setAmountPrivacyMasked((v: string) => !v)}
+              onClick={() => setAmountPrivacyMasked((value) => !value)}
               title={amountPrivacyMasked ? "关闭隐私显示（显示实际金额）" : "开启隐私显示（隐藏实际金额）"}
               aria-label={amountPrivacyMasked ? "关闭隐私显示" : "开启隐私显示"}
               aria-pressed={amountPrivacyMasked}

@@ -3,9 +3,9 @@ use rusqlite::Connection;
 use serde_json::{json, Map, Value};
 use tauri::AppHandle;
 
-use crate::investment_analytics::{investment_curve_query_at_db_path, InvestmentCurveQueryRequest};
+use crate::investment::{investment_curve_query_at_db_path, InvestmentCurveQueryRequest};
 use crate::ledger_db::{ledger_db_admin_stats, resolve_ledger_db_path};
-use crate::wealth_analytics::{wealth_overview_query_at_db_path, WealthOverviewQueryRequest};
+use crate::wealth::{wealth_overview_query_at_db_path, WealthOverviewQueryRequest};
 
 fn quote_ident(name: &str) -> String {
     format!("\"{}\"", name.replace('"', "\"\""))

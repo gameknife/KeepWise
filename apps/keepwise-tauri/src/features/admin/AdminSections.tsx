@@ -1,100 +1,80 @@
-type AdminSectionsProps = Record<string, unknown>;
-type LooseUiEvent = {
-  target: EventTarget & { value?: string; checked?: boolean };
-  currentTarget: { getBoundingClientRect: () => DOMRect; select?: () => void };
-  clientX?: number;
-  clientY?: number;
-  stopPropagation: () => void;
+import { type Dispatch, type SetStateAction } from "react";
+import { type MetaAccountsQueryRequest, type QueryAssetValuationsRequest } from "../../api/desktop";
+
+import { formatCentsShort, maskAmountDisplayText } from "../../app/amountFormatting";
+import { makeEnterToQueryHandler, parseNumericInputWithFallback, safeNumericInputValue } from "../../app/helpers";
+import { type ProductTabKey } from "../../types/app";
+import { readString } from "../../utils/value";
+import { AdminDbStatsPreview, RuntimeHealthPreview } from "./AdminRuntimePreviews";
+import { AssetValuationsPreview, InvestmentsListPreview, MetaAccountsPreview } from "../records/RecordsPreviews";
+import { RulesAdminPanel } from "../rules/RulesAdminPanel";
+import { PrivacyJsonResultCard as JsonResultCard, PrivacyPreviewStat as PreviewStat } from "../shared/PrivacyUi";
+import { AccountIdSelect, AutoRefreshHint, BoolField, DateInput, SortableHeaderButton, accountKindsForAssetClass, compareSortValues, nextSortState } from "../shared/UiPrimitives";
+import { type useAccountCatalogController } from "../accounts/useAccountCatalogController";
+import { type useManualEntryController } from "../accounts/useManualEntryController";
+import { type useRecordsController } from "../records/useRecordsController";
+import { type useDatabaseRuntimeController } from "./useDatabaseRuntimeController";
+import { type useValidationController } from "./useValidationController";
+
+type AdminSectionsProps = {
+  isTab: (...keys: ProductTabKey[]) => boolean;
+  developerMode: boolean; showDebugJson: boolean; isAdminDeveloperMode: boolean;
+  setShowRawJson: Dispatch<SetStateAction<boolean>>; showRawJson: boolean;
+  showQueryWorkbench: boolean; queryWorkbenchHeader: { title: string; description: string };
+  queryWorkbenchGridModeClass: "mode-manual" | "mode-base"; isAdminVisibleWorkbench: boolean;
+  databaseController: ReturnType<typeof useDatabaseRuntimeController>;
+  validationController: ReturnType<typeof useValidationController>;
+  accountCatalogController: ReturnType<typeof useAccountCatalogController>;
+  recordsController: ReturnType<typeof useRecordsController>;
+  manualEntryController: ReturnType<typeof useManualEntryController>;
 };
 
 export function AdminSections(props: AdminSectionsProps) {
   const {
     isTab,
-    handleRefreshAdminDbStats,
-    adminDbStatsBusy,
-    dbBusy,
-    adminDbStatsLastRunAt,
-    adminDbStatsError,
-    AdminDbStatsPreview,
-    adminDbStatsResult,
-    PreviewStat,
-    SortableHeaderButton,
-    nextSortState,
-    compareSortValues,
     developerMode,
-    readString,
-    adminResetConfirmText,
-    setAdminResetConfirmText,
-    handleAdminResetTransactions,
-    adminResetTxBusy,
-    adminResetAllBusy,
-    handleAdminResetAll,
-    adminResetTxError,
-    adminResetAllError,
-    adminResetTxResult,
-    adminResetAllResult,
     showDebugJson,
-    JsonResultCard,
     isAdminDeveloperMode,
-    handleRunValidationPipeline,
-    pipelineBusy,
-    smokeBusy,
-    handleRunCoreAnalyticsSmoke,
     setShowRawJson,
     showRawJson,
-    smokeLastRunAt,
-    pipelineStatus,
-    pipelineLastRunAt,
-    pipelineMessage,
-    smokeRows,
-    handleRunRuntimeHealthCheck,
-    runtimeHealthBusy,
-    runtimeHealthLastRunAt,
-    runtimeHealthError,
-    RuntimeHealthPreview,
-    runtimeHealthResult,
     showQueryWorkbench,
     queryWorkbenchHeader,
     queryWorkbenchGridModeClass,
-    DateInput,
-    AccountIdSelect,
-    accountSelectOptions,
-    accountSelectOptionsLoading,
-    deleteInvId,
-    deleteInvBusy,
-    accountKindsForAssetClass,
     isAdminVisibleWorkbench,
-    metaAccountsQuery,
-    setMetaAccountsQuery,
-    AutoRefreshHint,
-    metaAccountsBusy,
-    metaAccountsError,
-    MetaAccountsPreview,
-    metaAccountsResult,
-    makeEnterToQueryHandler,
-    handleInvestmentsListQuery,
-    safeNumericInputValue,
-    invListQuery,
-    setInvListQuery,
-    parseNumericInputWithFallback,
-    invListBusy,
-    invListError,
-    InvestmentsListPreview,
-    invListResult,
-    formatCentsShort,
-    prefillInvestmentUpdateFormFromRow,
-    handleDeleteInvestmentRecordById,
-    handleAssetValuationsQuery,
-    assetListQuery,
-    setAssetListQuery,
-    assetListBusy,
-    assetListError,
-    AssetValuationsPreview,
-    assetListResult,
-    RulesAdminPanel,
-    BoolField,
-    maskAmountDisplayText,
-  } = props as Record<string, any>;
+    databaseController, validationController, accountCatalogController, recordsController, manualEntryController,
+  } = props;
+  const {
+    dbBusy, adminStatsBusy: adminDbStatsBusy, adminStatsLastRunAt: adminDbStatsLastRunAt,
+    adminStatsError: adminDbStatsError, adminStatsResult: adminDbStatsResult,
+    refreshAdminStats: handleRefreshAdminDbStats, resetConfirmText: adminResetConfirmText,
+    setResetConfirmText: setAdminResetConfirmText, resetTransactions: handleAdminResetTransactions,
+    resetTransactionsBusy: adminResetTxBusy, resetAllBusy: adminResetAllBusy, resetAll: handleAdminResetAll,
+    resetTransactionsError: adminResetTxError, resetAllError: adminResetAllError,
+    resetTransactionsResult: adminResetTxResult, resetAllResult: adminResetAllResult,
+    refreshHealth: handleRunRuntimeHealthCheck, healthBusy: runtimeHealthBusy,
+    healthLastRunAt: runtimeHealthLastRunAt, healthError: runtimeHealthError, healthResult: runtimeHealthResult,
+  } = databaseController;
+  const {
+    runPipeline: handleRunValidationPipeline, pipelineBusy, smokeBusy,
+    runSmoke: handleRunCoreAnalyticsSmoke, smokeLastRunAt, pipelineStatus,
+    pipelineLastRunAt, pipelineMessage, smokeRows,
+  } = validationController;
+  const { selectOptions: accountSelectOptions, selectBusy, } = accountCatalogController;
+  const accountSelectOptionsLoading = selectBusy && accountSelectOptions.length === 0;
+  const {
+    metaQuery: metaAccountsQuery, setMetaQuery: setMetaAccountsQuery, metaBusy: metaAccountsBusy,
+    metaError: metaAccountsError, metaResult: metaAccountsResult,
+    refreshInvestments: handleInvestmentsListQuery, investmentsQuery: invListQuery,
+    setInvestmentsQuery: setInvListQuery, investmentsBusy: invListBusy,
+    investmentsError: invListError, investmentsResult: invListResult,
+    refreshAssets: handleAssetValuationsQuery, assetsQuery: assetListQuery,
+    setAssetsQuery: setAssetListQuery, assetsBusy: assetListBusy,
+    assetsError: assetListError, assetsResult: assetListResult,
+  } = recordsController;
+  const {
+    editRow: prefillInvestmentUpdateFormFromRow, removeInvestment: handleDeleteInvestmentRecordById,
+    deletingId: deleteInvId, deleteBusy: deleteInvBusy,
+  } = manualEntryController;
   return (
     <>
       {isTab("admin") ? <section className="card panel">
@@ -144,7 +124,7 @@ export function AdminSections(props: AdminSectionsProps) {
               <span>确认口令</span>
               <input
                 value={adminResetConfirmText}
-                onChange={(e: LooseUiEvent) => setAdminResetConfirmText(e.target.value)}
+                onChange={(event) => setAdminResetConfirmText(event.target.value)}
                 placeholder={readString(adminDbStatsResult, "confirm_phrase") ?? "RESET KEEPWISE"}
               />
             </label>
@@ -233,7 +213,7 @@ export function AdminSections(props: AdminSectionsProps) {
           <button
             type="button"
             className="secondary-btn"
-            onClick={() => setShowRawJson((v: string) => !v)}
+            onClick={() => setShowRawJson((value) => !value)}
             disabled={pipelineBusy}
           >
             {showRawJson ? "隐藏原始 JSON" : "显示原始 JSON"}
@@ -264,7 +244,7 @@ export function AdminSections(props: AdminSectionsProps) {
         {pipelineMessage ? <p className="pipeline-message">{pipelineMessage}</p> : null}
 
         <div className="smoke-grid">
-          {smokeRows.map((row: Record<string, any>) => (
+          {smokeRows.map((row) => (
             <div key={row.key} className={`smoke-row smoke-${row.status}`}>
               <div className="smoke-row-head">
                 <code>{row.label}</code>
@@ -338,9 +318,9 @@ export function AdminSections(props: AdminSectionsProps) {
                 <span>类型</span>
                 <select
                   value={metaAccountsQuery.kind ?? "all"}
-                  onChange={(e: LooseUiEvent) =>
+                  onChange={(event) =>
                     setMetaAccountsQuery({
-                      kind: e.target.value as any,
+                      kind: event.target.value as MetaAccountsQueryRequest["kind"],
                     })
                   }
                 >
@@ -386,10 +366,10 @@ export function AdminSections(props: AdminSectionsProps) {
                   min={1}
                   max={500}
                   value={safeNumericInputValue(invListQuery.limit, 30)}
-                  onChange={(e: LooseUiEvent) =>
-                    setInvListQuery((s: Record<string, any>) => ({
-                      ...s,
-                      limit: parseNumericInputWithFallback(e.target.value || "30", 30),
+                  onChange={(event) =>
+                    setInvListQuery((previous) => ({
+                      ...previous,
+                      limit: parseNumericInputWithFallback(event.target.value || "30", 30),
                     }))
                   }
                 />
@@ -398,7 +378,7 @@ export function AdminSections(props: AdminSectionsProps) {
                 <span>开始日期</span>
                 <DateInput
                   value={`${invListQuery.from ?? ""}`}
-                  onChange={(e: LooseUiEvent) => setInvListQuery((s: Record<string, any>) => ({ ...s, from: e.target.value }))}
+                  onChange={(event) => setInvListQuery((previous) => ({ ...previous, from: event.target.value }))}
                   type="date"
                   placeholder="YYYY-MM-DD"
                 />
@@ -407,7 +387,7 @@ export function AdminSections(props: AdminSectionsProps) {
                 <span>结束日期</span>
                 <DateInput
                   value={`${invListQuery.to ?? ""}`}
-                  onChange={(e: LooseUiEvent) => setInvListQuery((s: Record<string, any>) => ({ ...s, to: e.target.value }))}
+                  onChange={(event) => setInvListQuery((previous) => ({ ...previous, to: event.target.value }))}
                   type="date"
                   placeholder="YYYY-MM-DD"
                 />
@@ -416,7 +396,7 @@ export function AdminSections(props: AdminSectionsProps) {
                 <span>来源类型</span>
                 <input
                   value={`${invListQuery.source_type ?? ""}`}
-                  onChange={(e: LooseUiEvent) => setInvListQuery((s: Record<string, any>) => ({ ...s, source_type: e.target.value }))}
+                  onChange={(event) => setInvListQuery((previous) => ({ ...previous, source_type: event.target.value }))}
                   placeholder="manual / yzxy_xlsx / ..."
                 />
               </label>
@@ -424,7 +404,7 @@ export function AdminSections(props: AdminSectionsProps) {
                 <span>账户 ID</span>
                 <AccountIdSelect
                   value={`${invListQuery.account_id ?? ""}`}
-                  onChange={(value: string) => setInvListQuery((s: Record<string, any>) => ({ ...s, account_id: value }))}
+                  onChange={(value) => setInvListQuery((previous) => ({ ...previous, account_id: value }))}
                   options={accountSelectOptions}
                   kinds={["investment"]}
                   emptyLabel={accountSelectOptionsLoading ? "加载账户中..." : "全部投资账户"}
@@ -447,10 +427,10 @@ export function AdminSections(props: AdminSectionsProps) {
               SortableHeaderButton={SortableHeaderButton}
               nextSortState={nextSortState}
               compareSortValues={compareSortValues}
-              onEditRow={(row: Record<string, any>) => {
+              onEditRow={(row) => {
                 prefillInvestmentUpdateFormFromRow(row);
               }}
-              onDeleteRow={(id: string, row: Record<string, any>) => {
+              onDeleteRow={(id, row) => {
                 const accountName =
                   (typeof row.account_name === "string" && row.account_name) ||
                   (typeof row.account_id === "string" ? row.account_id : "该记录");
@@ -476,10 +456,10 @@ export function AdminSections(props: AdminSectionsProps) {
                   min={1}
                   max={500}
                   value={safeNumericInputValue(assetListQuery.limit, 30)}
-                  onChange={(e: LooseUiEvent) =>
-                    setAssetListQuery((s: Record<string, any>) => ({
-                      ...s,
-                      limit: parseNumericInputWithFallback(e.target.value || "30", 30),
+                  onChange={(event) =>
+                    setAssetListQuery((previous) => ({
+                      ...previous,
+                      limit: parseNumericInputWithFallback(event.target.value || "30", 30),
                     }))
                   }
                 />
@@ -488,7 +468,7 @@ export function AdminSections(props: AdminSectionsProps) {
                 <span>开始日期</span>
                 <DateInput
                   value={`${assetListQuery.from ?? ""}`}
-                  onChange={(e: LooseUiEvent) => setAssetListQuery((s: Record<string, any>) => ({ ...s, from: e.target.value }))}
+                  onChange={(event) => setAssetListQuery((previous) => ({ ...previous, from: event.target.value }))}
                   type="date"
                   placeholder="YYYY-MM-DD"
                 />
@@ -497,7 +477,7 @@ export function AdminSections(props: AdminSectionsProps) {
                 <span>结束日期</span>
                 <DateInput
                   value={`${assetListQuery.to ?? ""}`}
-                  onChange={(e: LooseUiEvent) => setAssetListQuery((s: Record<string, any>) => ({ ...s, to: e.target.value }))}
+                  onChange={(event) => setAssetListQuery((previous) => ({ ...previous, to: event.target.value }))}
                   type="date"
                   placeholder="YYYY-MM-DD"
                 />
@@ -506,10 +486,10 @@ export function AdminSections(props: AdminSectionsProps) {
                 <span>资产类型</span>
                 <select
                   value={assetListQuery.asset_class ?? ""}
-                  onChange={(e: LooseUiEvent) =>
-                    setAssetListQuery((s: Record<string, any>) => ({
-                      ...s,
-                      asset_class: e.target.value as any,
+                  onChange={(event) =>
+                    setAssetListQuery((previous) => ({
+                      ...previous,
+                      asset_class: event.target.value as QueryAssetValuationsRequest["asset_class"],
                     }))
                   }
                 >
@@ -523,7 +503,7 @@ export function AdminSections(props: AdminSectionsProps) {
                 <span>账户 ID</span>
                 <AccountIdSelect
                   value={`${assetListQuery.account_id ?? ""}`}
-                  onChange={(value: string) => setAssetListQuery((s: Record<string, any>) => ({ ...s, account_id: value }))}
+                  onChange={(value) => setAssetListQuery((previous) => ({ ...previous, account_id: value }))}
                   options={accountSelectOptions}
                   kinds={accountKindsForAssetClass(assetListQuery.asset_class ?? "") ?? undefined}
                   emptyLabel={accountSelectOptionsLoading ? "加载账户中..." : "全部账户"}

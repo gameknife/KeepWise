@@ -1,12 +1,12 @@
 # Tauri IPC API Protocol — KeepWise Desktop
 
-> Updated: 2026-05-08. Source of truth: `apps/keepwise-tauri/src-tauri/src/lib.rs` `generate_handler![]`.
+> Updated: 2026-07-16. Source of truth: `apps/keepwise-tauri/src-tauri/src/lib.rs` `generate_handler![]`.
 
 ## Overview
 
-The desktop frontend calls Rust through Tauri v2 `invoke`. All wrappers live in `apps/keepwise-tauri/src/lib/desktopApi.ts`; React components should not call `invoke` directly.
+The desktop frontend calls Rust through Tauri v2 `invoke`. The sole Tauri entrypoint is `apps/keepwise-tauri/src/api/desktop/invoke.ts`. All contracts/wrappers are organized by domain under `apps/keepwise-tauri/src/api/desktop/`; the former `src/lib/desktopApi.ts` compatibility barrel has been deleted. React components must not call `invoke` directly.
 
-Current registered command count: **69**.
+Current registered command count: **78**.
 
 ## Command Table
 
@@ -81,12 +81,21 @@ Current registered command count: **69**.
 | 67 | `sync_reconcile` | sync |
 | 68 | `sync_resolve_conflict` | sync |
 | 69 | `sync_set_auto_policy` | sync |
+| 70 | `query_account_notes` | account notes |
+| 71 | `upsert_account_note` | account notes |
+| 72 | `delete_account_note` | account notes |
+| 73 | `analysis_export_snapshot` | analysis export |
+| 74 | `analysis_export_write_file` | analysis export |
+| 75 | `analysis_export_list_local_clis` | analysis export |
+| 76 | `analysis_export_run_local_cli` | analysis export |
+| 77 | `analysis_export_run_openai_compatible` | analysis export |
+| 78 | `analysis_export_run_codex` | analysis export |
 
 ## Payload Conventions
 
 - Rust command entrypoints currently return `Result<Value, String>` or typed serializable structs that Tauri serializes as JSON.
 - Request structs are `serde::Deserialize` types with optional string fields where the UI allows empty filters.
-- Frontend wrappers expose typed request objects and, where still pending, loose payload aliases.
+- Frontend wrappers expose named request/response types; intentionally dynamic aggregate subtrees are localized as `unknown` at their domain boundary.
 - Tauri argument naming uses both snake_case and camelCase in selected wrappers for compatibility with Tauri serialization.
 - User-visible error messages are Chinese strings.
 

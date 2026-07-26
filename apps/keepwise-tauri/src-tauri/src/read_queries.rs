@@ -826,3 +826,28 @@ pub fn query_import_jobs(app: AppHandle, req: ImportJobsQueryRequest) -> Result<
     let db_path = resolve_ledger_db_path(&app)?;
     query_import_jobs_at_db_path(&db_path, req)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn query_inputs_keep_limits_dates_and_empty_filters_compatible() {
+        assert_eq!(parse_limit(None, 100, 500), 100);
+        assert_eq!(parse_limit(Some(0), 100, 500), 1);
+        assert_eq!(parse_limit(Some(900), 100, 500), 500);
+        assert_eq!(parse_optional_text(Some("  manual  ".into())), "manual");
+        assert!(parse_optional_date_text(Some("2026-02-30".into()), "from").is_err());
+        assert_eq!(
+            parse_optional_date_text(Some("2026-02-28".into()), "from").unwrap(),
+            "2026-02-28"
+        );
+    }
+
+    #[test]
+    fn query_date_range_helpers_ignore_missing_values() {
+        let values = vec![Some("2026-03-01".into()), None, Some("2026-01-01".into())];
+        assert_eq!(min_non_empty_date(&values).as_deref(), Some("2026-01-01"));
+        assert_eq!(max_non_empty_date(&values).as_deref(), Some("2026-03-01"));
+    }
+}

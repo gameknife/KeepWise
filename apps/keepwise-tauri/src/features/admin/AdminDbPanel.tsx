@@ -1,20 +1,38 @@
-type AdminDbPanelProps = Record<string, unknown>;
+import { type Dispatch, type SetStateAction } from "react";
 
-export function AdminDbPanel(props: AdminDbPanelProps) {
-  const {
-    isAdminDeveloperMode,
-    refreshDbStatus,
-    dbBusy,
-    handleRunMigrations,
-    dbImportPath,
-    setDbImportPath,
-    handlePickDbImportPath,
-    handleImportDbFromPath,
-    dbStatusError,
-    dbStatus,
-    dbLastResult,
-    dbImportLastResult,
-  } = props as Record<string, any>;
+import {
+  type LedgerDbImportRepoRuntimeResult,
+  type LedgerDbMigrateResult,
+  type LedgerDbStatus,
+} from "../../api/desktop";
+
+export function AdminDbPanel({
+  isAdminDeveloperMode,
+  refreshDbStatus,
+  dbBusy,
+  handleRunMigrations,
+  dbImportPath,
+  setDbImportPath,
+  handlePickDbImportPath,
+  handleImportDbFromPath,
+  dbStatusError,
+  dbStatus,
+  dbLastResult,
+  dbImportLastResult,
+}: {
+  isAdminDeveloperMode: boolean;
+  refreshDbStatus: () => Promise<void>;
+  dbBusy: boolean;
+  handleRunMigrations: () => Promise<void>;
+  dbImportPath: string;
+  setDbImportPath: Dispatch<SetStateAction<string>>;
+  handlePickDbImportPath: () => Promise<void>;
+  handleImportDbFromPath: () => Promise<void>;
+  dbStatusError: string;
+  dbStatus: LedgerDbStatus | null;
+  dbLastResult: LedgerDbMigrateResult | null;
+  dbImportLastResult: LedgerDbImportRepoRuntimeResult | null;
+}) {
 
   return (
     <>
@@ -38,7 +56,7 @@ export function AdminDbPanel(props: AdminDbPanelProps) {
             <span>从路径导入已有数据库</span>
             <input
               value={dbImportPath}
-              onChange={(e: { target: { value: string; checked?: boolean } }) => setDbImportPath(e.target.value)}
+              onChange={(e) => setDbImportPath(e.target.value)}
               placeholder="/absolute/path/to/keepwise.db"
             />
           </label>

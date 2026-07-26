@@ -3,6 +3,8 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
 
+use crate::error::{AppError, AppResult};
+
 #[derive(Debug, Serialize)]
 pub struct HealthPing {
     pub status: &'static str,
@@ -43,10 +45,16 @@ fn now_unix_ts() -> u64 {
         .unwrap_or(0)
 }
 
+fn normalize_path(result: Result<PathBuf, tauri::Error>) -> AppResult<String> {
+    result
+        .map(|path| path.to_string_lossy().to_string())
+        .map_err(|error| AppError::message(error.to_string()))
+}
+
 fn path_probe(result: Result<PathBuf, tauri::Error>) -> PathProbe {
-    match result {
+    match normalize_path(result) {
         Ok(path) => PathProbe {
-            path: Some(path.to_string_lossy().to_string()),
+            path: Some(path),
             error: None,
         },
         Err(err) => PathProbe {

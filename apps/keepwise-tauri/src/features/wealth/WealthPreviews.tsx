@@ -750,7 +750,7 @@ export function WealthOverviewPreview({
   const asOf = readString(data, "as_of") ?? "-";
   const requestedAsOf = readString(data, "requested_as_of") ?? "-";
   const accountRows = rows
-    .map((row: Record<string, any>) => {
+    .map((row) => {
       const assetClass = readString(row, "asset_class") ?? "";
       const accountName = readString(row, "account_name") ?? readString(row, "account_id") ?? "-";
       const accountId = readString(row, "account_id") ?? "";
@@ -769,14 +769,14 @@ export function WealthOverviewPreview({
         typeOrder: meta.order,
       };
     })
-    .filter((row: Record<string, any>) => row.rawValue !== 0)
+    .filter((row) => row.rawValue !== 0)
     .sort((a, b) => {
       if (a.typeOrder !== b.typeOrder) return a.typeOrder - b.typeOrder;
       const valueDiff = Math.abs(b.rawValue) - Math.abs(a.rawValue);
       if (valueDiff !== 0) return valueDiff;
       return a.accountName.localeCompare(b.accountName, "zh-Hans-CN");
     });
-  const displayedAccountRows = accountRows.filter((row: Record<string, any>) =>
+  const displayedAccountRows = accountRows.filter((row) =>
     accountListView === "investable" ? row.assetClass === "investment" || row.assetClass === "cash" : true,
   );
   const accountShareDenominator = displayedAccountRows.reduce((acc, row) => acc + Math.abs(row.signedValue), 0);
@@ -834,7 +834,7 @@ export function WealthOverviewPreview({
                   </tr>
                 </thead>
                 <tbody>
-                  {displayedAccountRows.map((row: Record<string, any>) => {
+                  {displayedAccountRows.map((row) => {
                     const share = accountShareDenominator > 0 ? (Math.abs(row.signedValue) / accountShareDenominator) * 100 : 0;
                     return (
                       <tr key={`${row.assetClass}:${row.accountId}:${row.snapshotDate}`}>

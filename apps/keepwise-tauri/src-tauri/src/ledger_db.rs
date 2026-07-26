@@ -674,3 +674,30 @@ pub fn ledger_db_admin_reset_transactions(
     let db_path = resolve_ledger_db_path(&app)?;
     reset_admin_transaction_data_at_path(&db_path, req.confirm_text.unwrap_or_default().as_str())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::create_temp_test_db;
+    use std::fs;
+
+    #[test]
+    fn embedded_migrations_are_idempotent_and_status_is_ready() {
+        let db_path = create_temp_test_db();
+        let first = apply_embedded_migrations(&db_path).unwrap();
+        let second = apply_embedded_migrations(&db_path).unwrap();
+        assert_eq!(first.applied_total, MIGRATIONS.len());
+        assert!(second.applied_now.is_empty());
+        let status = inspect_status_at_path(&db_path).unwrap();
+        assert!(status.ready);
+        assert!(status.pending_versions.is_empty());
+        let serialized = serde_json::to_value(status).unwrap();
+        assert!(serialized.get("schema_migrations_table_exists").is_some());
+        let _ = fs::remove_file(db_path);
+    }
+
+    #[test]
+    fn sqlite_identifier_quoting_escapes_quotes() {
+        assert_eq!(quote_ident("a\"b"), "\"a\"\"b\"");
+    }
+}

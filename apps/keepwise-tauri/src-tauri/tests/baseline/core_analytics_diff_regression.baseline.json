@@ -6123,7 +6123,15 @@
               "total_assets_cents": 13000000,
               "total_assets_yuan": "130000.00",
               "transfer_amount_cents": 2000000,
-              "transfer_amount_yuan": "20000.00"
+              "transfer_amount_yuan": "20000.00",
+              "transfer_details": [
+                {
+                  "account_id": "acct_inv_regression",
+                  "account_name": "回归测试投资账户",
+                  "transfer_amount_cents": 2000000,
+                  "transfer_amount_yuan": "20000.00"
+                }
+              ]
             },
             {
               "anchor_from_snapshot_date": "2026-01-10",
@@ -6283,7 +6291,15 @@
               "total_assets_cents": 12500000,
               "total_assets_yuan": "125000.00",
               "transfer_amount_cents": -1000000,
-              "transfer_amount_yuan": "-10000.00"
+              "transfer_amount_yuan": "-10000.00",
+              "transfer_details": [
+                {
+                  "account_id": "acct_inv_regression",
+                  "account_name": "回归测试投资账户",
+                  "transfer_amount_cents": -1000000,
+                  "transfer_amount_yuan": "-10000.00"
+                }
+              ]
             },
             {
               "anchor_from_snapshot_date": "2026-01-20",
@@ -6664,7 +6680,15 @@
               "total_assets_cents": 13000000,
               "total_assets_yuan": "130000.00",
               "transfer_amount_cents": 2000000,
-              "transfer_amount_yuan": "20000.00"
+              "transfer_amount_yuan": "20000.00",
+              "transfer_details": [
+                {
+                  "account_id": "acct_inv_regression",
+                  "account_name": "回归测试投资账户",
+                  "transfer_amount_cents": 2000000,
+                  "transfer_amount_yuan": "20000.00"
+                }
+              ]
             },
             {
               "anchor_from_snapshot_date": "2026-01-10",
@@ -6824,7 +6848,15 @@
               "total_assets_cents": 12500000,
               "total_assets_yuan": "125000.00",
               "transfer_amount_cents": -1000000,
-              "transfer_amount_yuan": "-10000.00"
+              "transfer_amount_yuan": "-10000.00",
+              "transfer_details": [
+                {
+                  "account_id": "acct_inv_regression",
+                  "account_name": "回归测试投资账户",
+                  "transfer_amount_cents": -1000000,
+                  "transfer_amount_yuan": "-10000.00"
+                }
+              ]
             },
             {
               "anchor_from_snapshot_date": "2026-01-20",
@@ -7204,7 +7236,15 @@
               "total_assets_cents": 13000000,
               "total_assets_yuan": "130000.00",
               "transfer_amount_cents": 2000000,
-              "transfer_amount_yuan": "20000.00"
+              "transfer_amount_yuan": "20000.00",
+              "transfer_details": [
+                {
+                  "account_id": "acct_inv_regression",
+                  "account_name": "回归测试投资账户",
+                  "transfer_amount_cents": 2000000,
+                  "transfer_amount_yuan": "20000.00"
+                }
+              ]
             },
             {
               "anchor_from_snapshot_date": "2026-01-10",
@@ -7364,7 +7404,15 @@
               "total_assets_cents": 12500000,
               "total_assets_yuan": "125000.00",
               "transfer_amount_cents": -1000000,
-              "transfer_amount_yuan": "-10000.00"
+              "transfer_amount_yuan": "-10000.00",
+              "transfer_details": [
+                {
+                  "account_id": "acct_inv_regression",
+                  "account_name": "回归测试投资账户",
+                  "transfer_amount_cents": -1000000,
+                  "transfer_amount_yuan": "-10000.00"
+                }
+              ]
             },
             {
               "anchor_from_snapshot_date": "2026-01-20",
